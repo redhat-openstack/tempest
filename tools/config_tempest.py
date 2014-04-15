@@ -197,7 +197,7 @@ class ClientManager(object):
             if image.name == name_alt:
                 image_alt_id = image.id
         if create and not (image_id and image_alt_id):
-            qcow2_img_path = "%s/%s" % (self.conf.get("scenario", "img_dir"),
+            qcow2_img_path = os.path.join(self.conf.get("scenario", "img_dir"),
                                         self.conf.get("scenario",
                                                       "qcow2_img_file"))
             # Make sure image location is writable beforeuploading
