@@ -722,8 +722,7 @@ scenario_group = cfg.OptGroup(name='scenario', title='Scenario Test Options')
 
 ScenarioGroup = [
     cfg.StrOpt('img_dir',
-               default='/opt/stack/new/devstack/files/images/'
-               'cirros-0.3.1-x86_64-uec',
+               default='etc',
                help='Directory containing image files'),
     cfg.StrOpt('qcow2_img_file',
                default='cirros-0.3.1-x86_64-disk.img',
