@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+tempest_dir=/usr/share/openstack-tempest
+ln -s $tempest_dir/tempest
+cp $tempest_dir/.testr.conf .
+cp -r $tempest_dir/tools .
+cp -r $tempest_dir/etc .
+
