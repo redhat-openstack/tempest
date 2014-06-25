@@ -1,8 +1,10 @@
-#!/usr/bin/env bash
+#!/usr/bin/env bash                                                             
 
-tempest_dir=/usr/share/openstack-tempest
+tempest_dir=$(dirname $(dirname $0))
+cp $tempest_dir/.* $tempest_dir/* . >&/dev/null
 ln -s $tempest_dir/tempest
-cp $tempest_dir/.testr.conf .
 cp -r $tempest_dir/tools .
 cp -r $tempest_dir/etc .
+cp -r $tempest_dir/doc .
+
 
