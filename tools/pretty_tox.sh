@@ -2,5 +2,12 @@
 
 set -o pipefail
 
-TESTRARGS=$1
-python setup.py testr --slowest --testr-args="--subunit $TESTRARGS" | subunit2pyunit
+TESTRARGS=$@
+
+if [ ! -d .testrepository ]; then
+    testr init
+fi
+testr run --parallel --subunit $TESTRARGS | subunit2pyunit
+retval=$?
+testr slowest
+exit $retval

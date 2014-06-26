@@ -320,6 +320,16 @@ class TempestConf():
     def is_modified(self, section, key):
         return key in self.modified[section]
 
+    def set_defaults(self):
+        def set_it(name, value):
+            if not self.is_modified('DEFAULT', name):
+                self.set('DEFAULT', name, value)
+
+        set_it("lock_path", "/tmp")
+        set_it("debug", "True")
+        set_it("log_file", "tempest.log")
+        set_it("use_stderr", "False")
+
     def set_identities(self):
         def set_it(name, value):
             if self.get('identity', name) in ["", "<None>"]:
@@ -417,6 +427,8 @@ def configure_tempest(sample=None, out=None, no_query=False, create=False,
         assert len(keyparts) == 2, keyparts
         conf.set(keyparts[0], keyparts[1], overrides[i + 1])
         i += 2
+    conf.set_defaults()
+    conf.set_identities()
     if not conf.is_modified("identity", "uri_v3"):
         uri = conf.get("identity", "uri")
         conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
