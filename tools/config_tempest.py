@@ -16,6 +16,7 @@
 #    under the License.
 
 import argparse
+import ConfigParser
 import glanceclient as glance_client
 import keystoneclient.exceptions as keystone_exception
 import keystoneclient.v2_0.client as keystone_client
@@ -28,7 +29,8 @@ import subprocess
 import sys
 import tempfile
 import urllib2
-import urlparse
+
+from tempest.common import api_discovery
 
 LOG = logging.getLogger(__name__)
 
@@ -227,7 +229,7 @@ class ClientManager(object):
                         image_alt_id = self.upload_image(name_alt, data).id
                 shutil.copyfile(path, qcow2_img_path)
 
-        if not os.path.exists(qcow2_img_path):
+        if not (create or os.path.exists(qcow2_img_path)):
             # Make sure the image file exists.
             with open(qcow2_img_path, "w") as image:
                 for chunk in self.image_client.images.data(image_id):
@@ -262,110 +264,66 @@ class ClientManager(object):
 
 
 class TempestConf():
-    def __init__(self, tempest_conf):
-        self.lines = []
-        self.sections = {}
-        self.modified = {}
-        section = None
-        index = -1
-        for line in open(tempest_conf):
-            index += 1
-            self.lines.append(line)
-            if line.startswith('# '):
-                continue
-            stripped = line.strip()
-            if stripped.startswith('['):
-                name = stripped[1:stripped.find(']')]
-                section = {}
-                self.sections[name] = section
-                self.modified[name] = {}
-                continue
-            if not stripped:
-                continue
-            if stripped.startswith('#'):
-                stripped = stripped[1:]
-            equal = stripped.find('=')
-            key = stripped[:equal].strip()
-            value = stripped[equal + 1:].strip()
-            if (value and
-                value[0] == value[-1] and
-                value.startswith(("\"", "'"))
-                ):
-                value = value[1:-1]
-            section[key] = (value, index)
+    def __init__(self, config_parser):
+        self.config_parser = config_parser
 
-    def validate_and_write(self, conf_file):
-        for section in self.modified.values():
-            for (key, (value, index)) in section.iteritems():
-                if value.strip() != value:
-                    value = '"%s"' % value
-                self.lines[index] = "%s=%s\n" % (key, value)
-        with tempfile.NamedTemporaryFile() as out:
-            for line in self.lines:
-                out.write(line)
-            out.flush()
-            shutil.copyfile(out.name, conf_file)
+    def write(self, conf_file):
+        with open(conf_file, 'w') as out:
+            self.config_parser.write(out)
 
     def get(self, section, key):
-        if key in self.modified[section]:
-            return self.modified[section][key][0]
-        return self.sections[section][key][0]
+        return self.config_parser.get(section, key)
 
     def set(self, section, key, value):
         assert isinstance(value, str) or isinstance(value, unicode),\
          "Section: %s Key: %s Value: %s" % (section, key, value)
-        (_, index) = self.sections[section][key]
-        self.modified[section][key] = (str(value), index)
+        if not self.config_parser.has_section(section):
+            self.config_parser.add_section(section)
+        self.config_parser.set(section, key, str(value))
 
     def is_modified(self, section, key):
-        return key in self.modified[section]
+        return self.config_parser.has_option(section, key)
 
-    def set_defaults(self):
-        def set_it(name, value):
-            if not self.is_modified('DEFAULT', name):
-                self.set('DEFAULT', name, value)
-
-        set_it("lock_path", "/tmp")
-        set_it("debug", "True")
-        set_it("log_file", "tempest.log")
-        set_it("use_stderr", "False")
-
-    def set_identities(self):
-        def set_it(name, value):
-            if self.get('identity', name) in ["", "<None>"]:
-                self.set('identity', name, value)
-
-        set_it("username", "demo")
-        set_it("tenant_name", "demo")
-        set_it("password", "secrete")
-        set_it("alt_username", "alt_demo")
-        set_it("alt_tenant_name", "alt_demo")
-        set_it("alt_password", "secrete")
-        set_it("admin_username", "admin")
-        set_it("admin_tenant_name", "admin")
-        set_it("admin_password", "secrete")
-
-    def set_service(self, name, section, services):
-        if section not in self.sections:
-            return
-        catalog_type = self.get(section, 'catalog_type')
-        old = self.get('service_available', name)
-        new = str(catalog_type in services)
-        if old.lower() != new.lower():
-            self.set('service_available', name, str(new))
+    def set_service(self, name, section, services, ext_key=None):
+        self.set('service_available', name, str(section in services))
+        if section in services and ext_key is not None:
+            extensions = ','.join(services[section]['extensions'])
+            self.set(section + '-feature-enabled', ext_key, extensions)
 
     def set_service_available(self, services):
         self.set_service('ironic', 'baremetal', services)
-        self.set_service('nova', 'compute', services)
+        self.set_service('nova', 'compute', services,
+                         ext_key='discoverable_apis')
         self.set_service('sahara', 'data_processing', services)
         self.set_service('glance', 'image', services)
-        self.set_service('neutron', 'network', services)
-        self.set_service('swift', 'object-storage', services)
+        self.set_service('neutron', 'network', services,
+                         ext_key='api_extensions')
+        self.set_service('swift', 'object-storage', services,
+                         ext_key='discoverable_apis')
         self.set_service('heat', 'orchestration', services)
         self.set_service('ceilometer', 'telemetry', services)
-        self.set_service('cinder', 'volume', services)
+        self.set_service('cinder', 'volume', services,
+                         ext_key='api_extensions')
         self.set_service('trove', 'database', services)
         self.set_service('marconi', 'queuing', services)
+
+        image_versions = services['image']['versions']
+        self.set('image-feature-enabled', 'api_v2',
+                 str('v2.0' in image_versions))
+        self.set('image-feature-enabled', 'api_v1',
+                 str('v1.1' in image_versions or 'v1.0' in image_versions))
+
+        identity_versions = services['identity']['versions']
+        self.set('identity-feature-enabled', 'api_v2',
+                 str('v2.0' in identity_versions))
+        self.set('identity-feature-enabled', 'api_v1',
+                 str('v3.0' in identity_versions))
+
+        volume_versions = services['volume']['versions']
+        self.set('volume-feature-enabled', 'api_v2',
+                 str('v2.0' in volume_versions))
+        self.set('volume-feature-enabled', 'api_v1',
+                 str('v1.0' in volume_versions))
 
     def do_resources(self, manager, image, has_neutron, create):
         if create:
@@ -411,37 +369,43 @@ class TempestConf():
             self.set('dashboard', 'login_url', base + '/auth/login/')
 
 
-def configure_tempest(sample=None, out=None, no_query=False, create=False,
+def configure_tempest(out=None, no_query=False, create=False,
                       overrides=[], image=None, patch=None, non_admin=False):
     if create and non_admin:
         raise Exception("--create requires admin credentials")
-    LOG.debug("Configuring from %s to %s" % (sample, out))
-    conf = TempestConf(sample)
+    path = os.path.join(os.path.abspath(
+        os.path.dirname(os.path.dirname(__file__))), "etc",
+                        "default-overrides.conf")
+    # Start with defaults
+    config_parser = ConfigParser.SafeConfigParser()
+    config_parser.optionxform = str
+    # If there is a site file, load it.
+    if os.path.isfile(path):
+        with open(path) as fp:
+            config_parser.readfp(fp)
+    # if there is a deploy-specific file, load it
     if patch:
-        for (section, values) in TempestConf(patch).sections.iteritems():
-            for (key, (value, _index)) in values.iteritems():
-                conf.set(section, key, value)
+        with open(patch) as fp:
+            config_parser.readfp(fp)
+    conf = TempestConf(config_parser)
+    # Now command line overrides
     i = 0
     while i < len(overrides):
         keyparts = overrides[i].split('.')
         assert len(keyparts) == 2, keyparts
         conf.set(keyparts[0], keyparts[1], overrides[i + 1])
         i += 2
-    conf.set_defaults()
-    conf.set_identities()
     if not conf.is_modified("identity", "uri_v3"):
         uri = conf.get("identity", "uri")
         conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
-    conf.set_identities()
     if non_admin:
         conf.set("identity", "admin_username", "")
         conf.set("identity", "admin_tenant_name", "")
         conf.set("identity", "admin_password", "")
         conf.set("compute", "allow_tenant_isolation", "False")
-        conf.set("compute", "allow_tenant_reuse", "False")
 
     manager = ClientManager(conf, not non_admin)
-    services = manager.identity_client.service_catalog.get_endpoints()
+    services = api_discovery.discover(manager.identity_client)
     has_neutron = "network" in services
     if has_neutron:
         manager.add_neutron_client()
@@ -453,7 +417,7 @@ def configure_tempest(sample=None, out=None, no_query=False, create=False,
         conf.set_service_available(services)
     conf.set_paths(services, not no_query)
     LOG.debug("Writing conf file")
-    conf.validate_and_write(out)
+    conf.write(out)
 
 if __name__ == "__main__":
 
@@ -462,13 +426,11 @@ if __name__ == "__main__":
                         help='Do not query the endpoint for services')
     parser.add_argument('--create', action='store_true', default=False,
                         help='create default tempest resources')
-    parser.add_argument('--sample', default="etc/tempest.conf.sample",
-                        help='the sample tempest.conf file to read')
     parser.add_argument('--out', default="etc/tempest.conf",
                         help='the tempest.conf file to write')
     parser.add_argument('--patch', default=None,
                         help="""A file in the format of tempest.conf that will
-                                override the values in the sample input. The
+                                override the default values. The
                                 patch file is an alternative to providing
                                 key/value pairs. If there are also key/value
                                 pairs they will be applied after the patch
@@ -501,6 +463,6 @@ if __name__ == "__main__":
         LOG.setLevel(logging.DEBUG)
         LOG.addHandler(ch)
 
-    configure_tempest(sample=ns.sample, out=ns.out, no_query=ns.no_query,
+    configure_tempest(out=ns.out, no_query=ns.no_query,
                       create=ns.create, overrides=ns.overrides, image=ns.image,
                       patch=ns.patch, non_admin=ns.non_admin)
