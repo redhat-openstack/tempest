@@ -14,12 +14,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import httplib2
 import json
 import urlparse
-
-import httplib2
-
-import keystoneclient.v2_0.client as keystone_client
 
 
 class Service(object):
@@ -134,7 +131,7 @@ def discover(identity_client):
     services = {}
     for (name, descriptor) in endpoints.iteritems():
         if (name in ['ec2', 's3'] or
-            name in ['cloudformation', 'orchestration', 'metering']):
+                name in ['cloudformation', 'orchestration', 'metering']):
             continue
 
         if name in service_dict:
@@ -145,6 +142,5 @@ def discover(identity_client):
         extensions = service.get_extensions()
         versions = service.get_versions()
         services[name] = {'extensions': extensions,
-                             'versions': versions}
+                          'versions': versions}
     return services
-

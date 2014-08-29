@@ -71,10 +71,9 @@ class ClientManager(object):
 
         # image client
         token = self.identity_client.auth_token
-        endpoint = self.identity_client.\
-        service_catalog.url_for(service_type='image',
-                                endpoint_type='publicURL'
-                            )
+        catalog = self.identity_client.service_catalog
+        endpoint = catalog.url_for(service_type='image',
+                                   endpoint_type='publicURL')
         creds = {'endpoint': endpoint,
                  'token': token,
                  'insecure': insecure}
@@ -88,11 +87,11 @@ class ClientManager(object):
 
     def add_neutron_client(self):
         self.network_client = \
-        neutron_client.Client(username=self.username,
-                              password=self.password,
-                              tenant_name=self.tenant_name,
-                              auth_url=self.auth_url,
-                              insecure=self.insecure)
+            neutron_client.Client(username=self.username,
+                                  password=self.password,
+                                  tenant_name=self.tenant_name,
+                                  auth_url=self.auth_url,
+                                  insecure=self.insecure)
 
     def create_users_and_tenants(self):
         LOG.debug("Creating users and tenants")
@@ -132,7 +131,7 @@ class ClientManager(object):
             for tenant in tenant_list:
                 if tenant.name == tenant_name:
                     tenant_id = tenant.id
-                    LOG.debug("Tenant %s exists: %s" % \
+                    LOG.debug("Tenant %s exists: %s" %
                               (tenant_name, tenant_id))
                     break
 
@@ -242,9 +241,8 @@ class ClientManager(object):
         label = None
         if has_neutron:
             for router in self.network_client.list_routers()['routers']:
-                if ('external_gateway_info' in router and
-                    router['external_gateway_info']['network_id'] is not None):
-                    net_id = router['external_gateway_info']['network_id']
+                net_id = router['external_gateway_info']['network_id']
+                if ('external_gateway_info' in router and net_id is not None):
                     self.conf.set('network', 'public_network_id', net_id)
                     self.conf.set('network', 'public_router_id', router['id'])
                     break
@@ -259,8 +257,8 @@ class ClientManager(object):
         if label:
             self.conf.set('compute', 'fixed_network_name', label)
         else:
-            raise Exception('fixed_network_name could not be discovered and' \
-                            'and must be specified')
+            raise Exception('fixed_network_name could not be discovered and'
+                            ' must be specified')
 
 
 class TempestConf():
@@ -276,7 +274,7 @@ class TempestConf():
 
     def set(self, section, key, value):
         assert isinstance(value, str) or isinstance(value, unicode),\
-         "Section: %s Key: %s Value: %s" % (section, key, value)
+            "Section: %s Key: %s Value: %s" % (section, key, value)
         if not self.config_parser.has_section(section):
             self.config_parser.add_section(section)
         self.config_parser.set(section, key, str(value))
@@ -347,13 +345,13 @@ class TempestConf():
                 path = subprocess.check_output(["which", "nova"],
                                                stderr=devnull)
                 self.set('cli', 'cli_dir', os.path.dirname(path.strip()))
-            except:
+            except Exception:
                 self.set('cli', 'enabled', 'False')
             try:
                 subprocess.check_output(["which", "nova-manage"],
                                         stderr=devnull)
                 self.set('cli', 'has_manage', 'True')
-            except:
+            except Exception:
                 self.set('cli', 'has_manage', 'False')
         uri = self.get('identity', 'uri')
         base = uri[:uri.rfind(':')]
@@ -362,7 +360,7 @@ class TempestConf():
             has_horizon = True
             try:
                 urllib2.urlopen(base)
-            except:
+            except Exception:
                 has_horizon = False
             self.set('service_available', 'horizon', str(has_horizon))
             self.set('dashboard', 'dashboard_url', base + '/')
@@ -374,7 +372,7 @@ def configure_tempest(out=None, no_query=False, create=False,
     if create and non_admin:
         raise Exception("--create requires admin credentials")
     path = os.path.join(os.path.abspath(
-        os.path.dirname(os.path.dirname(__file__))), "etc",
+                        os.path.dirname(os.path.dirname(__file__))), "etc",
                         "default-overrides.conf")
     # Start with defaults
     config_parser = ConfigParser.SafeConfigParser()
