@@ -27,11 +27,12 @@ class Service(object):
         self.service_url = service_url
         self.headers = {'Accept': 'application/json', 'X-Auth-Token': token}
 
-    def do_get(self, url, top_level=False):
+    def do_get(self, url, top_level=False, top_level_path=""):
         if top_level:
             parts = urlparse.urlparse(url)
             if parts.path != '':
-                url = url.replace(parts.path, '/')
+                url = url.replace(parts.path, '/') + top_level_path
+
         r, body = httplib2.Http().request(url, 'GET', headers=self.headers)
         assert r.status <= 400, r
         return body
@@ -98,19 +99,25 @@ class IdentityService(Service):
 
 class ObjectStorageService(Service):
     def __init__(self, service_url, token):
-        super(VolumeService, self).__init__(service_url, token)
+        super(ObjectStorageService, self).__init__(service_url, token)
 
     def get_extensions(self):
-        body = self.do_get(self.service_url + '/info')
+        body = self.do_get(self.service_url, top_level=True,
+                           top_level_path="info")
         body = json.loads(body)
         # Remove Swift general information from extensions list
         body.pop('swift')
         return body.keys()
 
+    def get_versions(self):
+        # swift does not return versions
+        return []
+
+
 service_dict = {'compute': ComputeService,
                 'image': ImageService,
                 'network': NetworkService,
-                'object_storage': ObjectStorageService,
+                'object-store': ObjectStorageService,
                 'volume': VolumeService,
                 'identity': IdentityService}
 
@@ -127,8 +134,9 @@ def discover(identity_client):
     services = {}
     for (name, descriptor) in endpoints.iteritems():
         if (name in ['ec2', 's3'] or
-            name in ['cloudformation', 'orchestration']):
+            name in ['cloudformation', 'orchestration', 'metering']):
             continue
+
         if name in service_dict:
             service_class = service_dict[name]
         else:
@@ -140,8 +148,3 @@ def discover(identity_client):
                              'versions': versions}
     return services
 
-
-# creds = {"username": "admin", "tenant_name": "admin", "password": "secrete",
-#          "auth_url": "http://devstack-neutron:5000/v2.0/"}
-# kc = keystone_client.Client(**creds)
-# print discover(kc)
