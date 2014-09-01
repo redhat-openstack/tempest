@@ -34,6 +34,31 @@ from tempest.common import api_discovery
 LOG = logging.getLogger(__name__)
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
+# translate service codenames (keys) into their normal names (values)
+CODENAMES = {
+    'ironic': 'baremetal',
+    'nova': 'compute',
+    'sahara': 'data_processing',
+    'glance': 'image',
+    'neutron': 'network',
+    'swift': 'object-storage',
+    'heat': 'orchestration',
+    'ceilometer': 'telemetry',
+    'cinder': 'volume',
+    'trove': 'database',
+    'marconi': 'queuing',
+}
+
+# Keep track of where the extensions are saved for that service.
+# This is necessary because the configuration file is inconsistent - it uses
+# different option names for service extension depending on the service.
+SERVICE_EXTENSION_KEY = {
+    'compute': 'discoverable_apis',
+    'object-storage': 'discoverable_apis',
+    'network': 'api_extensions',
+    'volume': 'api_extensions',
+}
+
 
 class ClientManager(object):
     """
@@ -271,28 +296,14 @@ class TempestConf(ConfigParser.SafeConfigParser):
             self.add_section(section)
         ConfigParser.SafeConfigParser.set(self, section, key, value)
 
-    def set_service(self, name, section, services, ext_key=None):
-        self.set('service_available', name, str(section in services))
-        if section in services and ext_key is not None:
-            extensions = ','.join(services[section]['extensions'])
-            self.set(section + '-feature-enabled', ext_key, extensions)
-
     def set_service_available(self, services):
-        self.set_service('ironic', 'baremetal', services)
-        self.set_service('nova', 'compute', services,
-                         ext_key='discoverable_apis')
-        self.set_service('sahara', 'data_processing', services)
-        self.set_service('glance', 'image', services)
-        self.set_service('neutron', 'network', services,
-                         ext_key='api_extensions')
-        self.set_service('swift', 'object-storage', services,
-                         ext_key='discoverable_apis')
-        self.set_service('heat', 'orchestration', services)
-        self.set_service('ceilometer', 'telemetry', services)
-        self.set_service('cinder', 'volume', services,
-                         ext_key='api_extensions')
-        self.set_service('trove', 'database', services)
-        self.set_service('marconi', 'queuing', services)
+        for codename, service in CODENAMES.iteritems():
+            self.set('service_available', codename, str(service in services))
+
+        for service, ext_key in SERVICE_EXTENSION_KEY.iteritems():
+            if service in services:
+                extensions = ','.join(services[service]['extensions'])
+                self.set(service + '-feature-enabled', ext_key, extensions)
 
         image_versions = services['image']['versions']
         self.set('image-feature-enabled', 'api_v2',
