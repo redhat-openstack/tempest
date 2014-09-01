@@ -19,8 +19,13 @@ import json
 import urlparse
 
 
+class ServiceError(Exception):
+    pass
+
+
 class Service(object):
-    def __init__(self, service_url, token):
+    def __init__(self, name, service_url, token):
+        self.name = name
         self.service_url = service_url
         self.headers = {'Accept': 'application/json', 'X-Auth-Token': token}
 
@@ -31,7 +36,9 @@ class Service(object):
                 url = url.replace(parts.path, '/') + top_level_path
 
         r, body = httplib2.Http().request(url, 'GET', headers=self.headers)
-        assert r.status <= 400, r
+        if r.status >= 400:
+            raise ServiceError("Requst on service '%s' with url '%s' failed"
+                               " with code %d" % (self.name, url, r.status))
         return body
 
     def get_extensions(self):
@@ -47,9 +54,6 @@ class Service(object):
 
 
 class ComputeService(Service):
-    def __init__(self, service_url, token):
-        super(ComputeService, self).__init__(service_url, token)
-
     def get_extensions(self):
         body = self.do_get(self.service_url + '/extensions')
         body = json.loads(body)
@@ -57,14 +61,10 @@ class ComputeService(Service):
 
 
 class ImageService(Service):
-    def __init__(self, service_url, token):
-        super(ImageService, self).__init__(service_url, token)
+    pass
 
 
 class NetworkService(Service):
-    def __init__(self, service_url, token):
-        super(NetworkService, self).__init__(service_url, token)
-
     def get_extensions(self):
         body = self.do_get(self.service_url + 'v2.0/extensions.json')
         body = json.loads(body)
@@ -72,9 +72,6 @@ class NetworkService(Service):
 
 
 class VolumeService(Service):
-    def __init__(self, service_url, token):
-        super(VolumeService, self).__init__(service_url, token)
-
     def get_extensions(self):
         body = self.do_get(self.service_url + '/extensions')
         body = json.loads(body)
@@ -82,9 +79,6 @@ class VolumeService(Service):
 
 
 class IdentityService(Service):
-    def __init__(self, service_url, token):
-        super(IdentityService, self).__init__(service_url, token)
-
     def get_extensions(self):
         body = self.do_get(self.service_url + '/extensions')
         body = json.loads(body)
@@ -95,9 +89,6 @@ class IdentityService(Service):
 
 
 class ObjectStorageService(Service):
-    def __init__(self, service_url, token):
-        super(ObjectStorageService, self).__init__(service_url, token)
-
     def get_extensions(self):
         body = self.do_get(self.service_url, top_level=True,
                            top_level_path="info")
@@ -119,6 +110,10 @@ service_dict = {'compute': ComputeService,
                 'identity': IdentityService}
 
 
+def get_service_class(service_name):
+    return service_dict.get(service_name, Service)
+
+
 def discover(identity_client):
     """
     Returns a dict with discovered apis.
@@ -130,15 +125,12 @@ def discover(identity_client):
     endpoints = identity_client.service_catalog.get_endpoints()
     services = {}
     for (name, descriptor) in endpoints.iteritems():
-        if (name in ['ec2', 's3'] or
-                name in ['cloudformation', 'orchestration', 'metering']):
+        if name in ['cloudformation', 'orchestration', 'metering',
+                    'ec2', 's3']:
             continue
 
-        if name in service_dict:
-            service_class = service_dict[name]
-        else:
-            service_class = Service
-        service = service_class(descriptor[0]['publicURL'], token)
+        service_class = get_service_class(name)
+        service = service_class(name, descriptor[0]['publicURL'], token)
         extensions = service.get_extensions()
         versions = service.get_versions()
         services[name] = {'extensions': extensions,
