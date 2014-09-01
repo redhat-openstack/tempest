@@ -173,9 +173,9 @@ class ClientManager(object):
             flavor = self.compute_client.flavors.create("m1.micro", 128, 1, 0,
                                                         flavorid=max_id + 2)
             flavor_alt_id = flavor.id
-        if not self.conf.is_modified('compute', 'flavor_ref'):
+        if not self.conf.has_option('compute', 'flavor_ref'):
             self.conf.set('compute', 'flavor_ref', flavor_id)
-        if not self.conf.is_modified('compute', 'flavor_ref_alt'):
+        if not self.conf.has_option('compute', 'flavor_ref_alt'):
             self.conf.set('compute', 'flavor_ref_alt', flavor_alt_id)
 
     def upload_image(self, name, data):
@@ -261,26 +261,15 @@ class ClientManager(object):
                             ' must be specified')
 
 
-class TempestConf():
-    def __init__(self, config_parser):
-        self.config_parser = config_parser
-
-    def write(self, conf_file):
-        with open(conf_file, 'w') as out:
-            self.config_parser.write(out)
-
-    def get(self, section, key):
-        return self.config_parser.get(section, key)
+class TempestConf(ConfigParser.SafeConfigParser):
+    # causes the config parser to preserve case of the options
+    optionxform = str
 
     def set(self, section, key, value):
-        assert isinstance(value, str) or isinstance(value, unicode),\
-            "Section: %s Key: %s Value: %s" % (section, key, value)
-        if not self.config_parser.has_section(section):
-            self.config_parser.add_section(section)
-        self.config_parser.set(section, key, str(value))
-
-    def is_modified(self, section, key):
-        return self.config_parser.has_option(section, key)
+        """Same as `SafeConfigParser.set`, but create non-existant section."""
+        if not self.has_section(section):
+            self.add_section(section)
+        ConfigParser.SafeConfigParser.set(self, section, key, value)
 
     def set_service(self, name, section, services, ext_key=None):
         self.set('service_available', name, str(section in services))
@@ -339,7 +328,7 @@ class TempestConf():
             self.set('boto', 'ec2_url', services['ec2']['url'])
         if 's3' in services and query:
             self.set('boto', 's3_url', services['s3']['url'])
-        if not self.is_modified('cli', 'cli_dir'):
+        if not self.has_option('cli', 'cli_dir'):
             devnull = open(os.devnull, 'w')
             try:
                 path = subprocess.check_output(["which", "nova"],
@@ -374,18 +363,13 @@ def configure_tempest(out=None, no_query=False, create=False,
     path = os.path.join(os.path.abspath(
                         os.path.dirname(os.path.dirname(__file__))), "etc",
                         "default-overrides.conf")
-    # Start with defaults
-    config_parser = ConfigParser.SafeConfigParser()
-    config_parser.optionxform = str
-    # If there is a site file, load it.
-    if os.path.isfile(path):
-        with open(path) as fp:
-            config_parser.readfp(fp)
-    # if there is a deploy-specific file, load it
-    if patch:
-        with open(patch) as fp:
-            config_parser.readfp(fp)
-    conf = TempestConf(config_parser)
+    conf = TempestConf()
+    if os.path.isfile(path):  # if there is a site file, load it.
+        conf.read(path)
+    if patch and os.path.isfile(patch):
+        # if there is a deploy-specific file, load it
+        conf.read(path)
+
     # Now command line overrides
     i = 0
     while i < len(overrides):
@@ -393,7 +377,7 @@ def configure_tempest(out=None, no_query=False, create=False,
         assert len(keyparts) == 2, keyparts
         conf.set(keyparts[0], keyparts[1], overrides[i + 1])
         i += 2
-    if not conf.is_modified("identity", "uri_v3"):
+    if not conf.has_option("identity", "uri_v3"):
         uri = conf.get("identity", "uri")
         conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
     if non_admin:
@@ -415,7 +399,8 @@ def configure_tempest(out=None, no_query=False, create=False,
         conf.set_service_available(services)
     conf.set_paths(services, not no_query)
     LOG.debug("Writing conf file")
-    conf.write(out)
+    with open(out, 'w') as f:
+        conf.write(f)
 
 
 def parse_arguments():
