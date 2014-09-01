@@ -26,13 +26,13 @@ import novaclient.client as nova_client
 import os
 import shutil
 import subprocess
-import sys
 import tempfile
 import urllib2
 
 from tempest.common import api_discovery
 
 LOG = logging.getLogger(__name__)
+LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
 
 class ClientManager(object):
@@ -417,8 +417,8 @@ def configure_tempest(out=None, no_query=False, create=False,
     LOG.debug("Writing conf file")
     conf.write(out)
 
-if __name__ == "__main__":
 
+def parse_arguments():
     parser = argparse.ArgumentParser("Generate the tempest.conf file")
     parser.add_argument('--no-query', action='store_true', default=False,
                         help='Do not query the endpoint for services')
@@ -449,18 +449,20 @@ if __name__ == "__main__":
                                 can be either a filename or url. Default is
                                 http://download.cirros-cloud.net/0.3.1/
                                 cirros-0.3.1-x86_64-disk.img """)
+    return parser.parse_args()
 
-    ns = parser.parse_args()
 
-    if ns.debug:
-        ch = logging.StreamHandler(sys.stdout)
-        ch.setLevel(logging.DEBUG)
-        fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        formatter = logging.Formatter(fmt)
-        ch.setFormatter(formatter)
+if __name__ == "__main__":
+    args = parse_arguments()
+    logging.basicConfig(format=LOG_FORMAT)
+
+    if args.debug:
         LOG.setLevel(logging.DEBUG)
-        LOG.addHandler(ch)
 
-    configure_tempest(out=ns.out, no_query=ns.no_query,
-                      create=ns.create, overrides=ns.overrides, image=ns.image,
-                      patch=ns.patch, non_admin=ns.non_admin)
+    configure_tempest(out=args.out,
+                      no_query=args.no_query,
+                      create=args.create,
+                      overrides=args.overrides,
+                      image=args.image,
+                      patch=args.patch,
+                      non_admin=args.non_admin)
