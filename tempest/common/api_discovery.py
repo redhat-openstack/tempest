@@ -45,6 +45,11 @@ class Service(object):
         return []
 
     def get_versions(self):
+        return []
+
+
+class VersionedService(Service):
+    def get_versions(self):
         body = self.do_get(self.service_url, top_level=True)
         body = json.loads(body)
         return self.deserialize_versions(body)
@@ -53,32 +58,32 @@ class Service(object):
         return map(lambda x: x['id'], body['versions'])
 
 
-class ComputeService(Service):
+class ComputeService(VersionedService):
     def get_extensions(self):
         body = self.do_get(self.service_url + '/extensions')
         body = json.loads(body)
         return map(lambda x: x['alias'], body['extensions'])
 
 
-class ImageService(Service):
+class ImageService(VersionedService):
     pass
 
 
-class NetworkService(Service):
+class NetworkService(VersionedService):
     def get_extensions(self):
         body = self.do_get(self.service_url + 'v2.0/extensions.json')
         body = json.loads(body)
         return map(lambda x: x['alias'], body['extensions'])
 
 
-class VolumeService(Service):
+class VolumeService(VersionedService):
     def get_extensions(self):
         body = self.do_get(self.service_url + '/extensions')
         body = json.loads(body)
         return map(lambda x: x['name'], body['extensions'])
 
 
-class IdentityService(Service):
+class IdentityService(VersionedService):
     def get_extensions(self):
         body = self.do_get(self.service_url + '/extensions')
         body = json.loads(body)
@@ -96,10 +101,6 @@ class ObjectStorageService(Service):
         # Remove Swift general information from extensions list
         body.pop('swift')
         return body.keys()
-
-    def get_versions(self):
-        # swift does not return versions
-        return []
 
 
 service_dict = {'compute': ComputeService,
@@ -125,14 +126,11 @@ def discover(identity_client):
     endpoints = identity_client.service_catalog.get_endpoints()
     services = {}
     for (name, descriptor) in endpoints.iteritems():
-        if name in ['cloudformation', 'orchestration', 'metering',
-                    'ec2', 's3']:
-            continue
+        services[name] = dict()
+        services[name]['url'] = descriptor[0]['publicURL']
 
         service_class = get_service_class(name)
-        service = service_class(name, descriptor[0]['publicURL'], token)
-        extensions = service.get_extensions()
-        versions = service.get_versions()
-        services[name] = {'extensions': extensions,
-                          'versions': versions}
+        service = service_class(name, services[name]['url'], token)
+        services[name]['extensions'] = service.get_extensions()
+        services[name]['versions'] = service.get_versions()
     return services

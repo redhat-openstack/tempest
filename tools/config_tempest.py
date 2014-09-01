@@ -336,9 +336,9 @@ class TempestConf():
 
     def set_paths(self, services, query):
         if 'ec2' in services and query:
-            self.set('boto', 'ec2_url', services['ec2'][0]['publicURL'])
+            self.set('boto', 'ec2_url', services['ec2']['url'])
         if 's3' in services and query:
-            self.set('boto', 's3_url', services['s3'][0]['publicURL'])
+            self.set('boto', 's3_url', services['s3']['url'])
         if not self.is_modified('cli', 'cli_dir'):
             devnull = open(os.devnull, 'w')
             try:
