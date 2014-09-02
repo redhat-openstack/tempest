@@ -93,7 +93,7 @@ class ClientManager(object):
                  'auth_url': auth_url,
                  'insecure': insecure
                  }
-        LOG.debug(creds)
+        LOG.info(creds)
         self.identity_client = keystone_client.Client(**creds)
 
         # compute client
@@ -128,7 +128,7 @@ class ClientManager(object):
                                   insecure=self.insecure)
 
     def create_users_and_tenants(self):
-        LOG.debug("Creating users and tenants")
+        LOG.info("Creating users and tenants")
         conf = self.conf
         self.create_user_with_tenant(conf.get('identity', 'username'),
                                      conf.get('identity', 'password'),
@@ -165,8 +165,7 @@ class ClientManager(object):
             for tenant in tenant_list:
                 if tenant.name == tenant_name:
                     tenant_id = tenant.id
-                    LOG.debug("Tenant %s exists: %s" %
-                              (tenant_name, tenant_id))
+                    LOG.info("Tenant %s exists: %s" % (tenant_name, tenant_id))
                     break
 
         try:
@@ -180,13 +179,13 @@ class ClientManager(object):
             user_list = self.identity_client.users.list()
             for user in user_list:
                 if user.name == username:
-                    LOG.debug("User %s existed. Setting password to %s" %
-                              (username, password))
+                    LOG.info("User %s existed. Setting password to %s" %
+                             (username, password))
                     self.identity_client.users.update_password(user, password)
                     break
 
     def do_flavors(self, create):
-        LOG.debug("Querying flavors")
+        LOG.info("Querying flavors")
         flavor_id = None
         flavor_alt_id = None
         max_id = 1
@@ -213,7 +212,7 @@ class ClientManager(object):
             self.conf.set('compute', 'flavor_ref_alt', flavor_alt_id)
 
     def upload_image(self, name, data):
-        LOG.debug("Uploading image: %s" % name)
+        LOG.info("Uploading image: %s" % name)
         data.seek(0)
         return self.image_client.images.create(name=name,
                                                disk_format="qcow2",
@@ -222,7 +221,7 @@ class ClientManager(object):
                                                is_public="true")
 
     def do_images(self, path, create):
-        LOG.debug("Querying images")
+        LOG.info("Querying images")
         name = path[path.rfind('/') + 1:]
         name_alt = name + "_alt"
         image_id = None
@@ -239,7 +238,7 @@ class ClientManager(object):
             # Make sure image location is writable beforeuploading
             open(qcow2_img_path, "w")
             if path.startswith("http:") or path.startswith("https:"):
-                LOG.debug("Downloading image file: %s" % path)
+                LOG.info("Downloading image file: %s" % path)
                 request = urllib2.urlopen(path)
                 with tempfile.NamedTemporaryFile() as data:
                     while True:
@@ -324,9 +323,9 @@ class TempestConf(ConfigParser.SafeConfigParser):
 
     def do_resources(self, manager, image, has_neutron, create):
         if create:
-            LOG.debug("Creating resources")
+            LOG.info("Creating resources")
         else:
-            LOG.debug("Querying resources")
+            LOG.info("Querying resources")
         if create:
             manager.create_users_and_tenants()
         manager.do_flavors(create)
@@ -408,7 +407,7 @@ def configure_tempest(out=None, no_query=False, create=False,
     if not no_query:
         conf.set_service_available(services)
     conf.set_paths(services, not no_query)
-    LOG.debug("Writing conf file")
+    LOG.info("Writing conf file")
     with open(out, 'w') as f:
         conf.write(f)
 
@@ -435,7 +434,9 @@ def parse_arguments():
                                 For example: identity.username myname
                                  identity.password mypass""")
     parser.add_argument('--debug', action='store_true', default=False,
-                        help='Send log to stdout')
+                        help='Print debugging information')
+    parser.add_argument('--verbose', '-v', action='store_true', default=False,
+                        help='Print more information about the execution')
     parser.add_argument('--non-admin', action='store_true', default=False,
                         help='Run without admin creds')
     parser.add_argument('--image', default=None,
@@ -451,6 +452,8 @@ if __name__ == "__main__":
     args = parse_arguments()
     logging.basicConfig(format=LOG_FORMAT)
 
+    if args.verbose:
+        LOG.setLevel(logging.INFO)
     if args.debug:
         LOG.setLevel(logging.DEBUG)
 
