@@ -34,19 +34,19 @@ from tempest.common import api_discovery
 LOG = logging.getLogger(__name__)
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
-# translate service codenames (keys) into their normal names (values)
-CODENAMES = {
-    'ironic': 'baremetal',
-    'nova': 'compute',
-    'sahara': 'data_processing',
-    'glance': 'image',
-    'neutron': 'network',
-    'swift': 'object-storage',
-    'heat': 'orchestration',
-    'ceilometer': 'telemetry',
-    'cinder': 'volume',
-    'trove': 'database',
-    'marconi': 'queuing',
+# services and their codenames
+SERVICE_NAMES = {
+    'baremetal': 'ironic',
+    'compute': 'nova',
+    'database': 'trove',
+    'data_processing': 'sahara',
+    'image': 'glance',
+    'network': 'neutron',
+    'object-storage': 'swift',
+    'orchestration': 'heat',
+    'telemetry': 'ceilometer',
+    'volume': 'cinder',
+    'queuing': 'marconi',
 }
 
 # Keep track of where the extensions are saved for that service.
@@ -297,7 +297,7 @@ class TempestConf(ConfigParser.SafeConfigParser):
         ConfigParser.SafeConfigParser.set(self, section, key, value)
 
     def set_service_available(self, services):
-        for codename, service in CODENAMES.iteritems():
+        for service, codename in SERVICE_NAMES.iteritems():
             self.set('service_available', codename, str(service in services))
 
         for service, ext_key in SERVICE_EXTENSION_KEY.iteritems():
