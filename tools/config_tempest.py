@@ -93,7 +93,9 @@ class ClientManager(object):
                  'auth_url': auth_url,
                  'insecure': insecure
                  }
-        LOG.info(creds)
+        LOG.info("Connecting to keystone at '%s' with username '%s',"
+                 " tenant '%s', and password '%s'", auth_url, username,
+                 tenant_name, password)
         self.identity_client = keystone_client.Client(**creds)
 
         # compute client
@@ -128,7 +130,6 @@ class ClientManager(object):
                                   insecure=self.insecure)
 
     def create_users_and_tenants(self):
-        LOG.info("Creating users and tenants")
         conf = self.conf
         self.create_user_with_tenant(conf.get('identity', 'username'),
                                      conf.get('identity', 'password'),
@@ -150,6 +151,8 @@ class ClientManager(object):
 
     def create_user_with_tenant(self, username, password, tenant_name,
                                 add_admin_user=False):
+        LOG.info("Creating user '%s' with tenant '%s' and password '%s'",
+                 username, tenant_name, password)
         # Try to create the necessary tenant
         tenant_id = None
         try:
@@ -179,7 +182,7 @@ class ClientManager(object):
             user_list = self.identity_client.users.list()
             for user in user_list:
                 if user.name == username:
-                    LOG.info("User %s existed. Setting password to %s" %
+                    LOG.info("User %s exists. Setting password to %s" %
                              (username, password))
                     self.identity_client.users.update_password(user, password)
                     break
@@ -302,6 +305,7 @@ class TempestConf(ConfigParser.SafeConfigParser):
         """Same as `SafeConfigParser.set`, but create non-existant section."""
         if not self.has_section(section):
             self.add_section(section)
+        LOG.debug("Setting [%s] %s = %s", section, key, value)
         ConfigParser.SafeConfigParser.set(self, section, key, value)
 
     def set_service_available(self, services):
@@ -324,10 +328,9 @@ class TempestConf(ConfigParser.SafeConfigParser):
     def do_resources(self, manager, image, has_neutron, create):
         if create:
             LOG.info("Creating resources")
+            manager.create_users_and_tenants()
         else:
             LOG.info("Querying resources")
-        if create:
-            manager.create_users_and_tenants()
         manager.do_flavors(create)
         manager.do_images(image, create)
         manager.do_networks(has_neutron, create)
@@ -407,7 +410,7 @@ def configure_tempest(out=None, no_query=False, create=False,
     if not no_query:
         conf.set_service_available(services)
     conf.set_paths(services, not no_query)
-    LOG.info("Writing conf file")
+    LOG.info("Creating configuration file %s" % os.path.abspath(out))
     with open(out, 'w') as f:
         conf.write(f)
 
