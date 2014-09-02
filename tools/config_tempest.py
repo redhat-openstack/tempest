@@ -49,6 +49,15 @@ SERVICE_NAMES = {
     'queuing': 'marconi',
 }
 
+# what API versions could the service have and should be enabled/disabled
+# depending on whether they get discovered as supported. Services with only one
+# version don't need to be here.
+SERVICE_VERSIONS = {
+    'image': ['v1', 'v2'],
+    'identity': ['v2', 'v3'],
+    'volume': ['v1', 'v2'],
+}
+
 # Keep track of where the extensions are saved for that service.
 # This is necessary because the configuration file is inconsistent - it uses
 # different option names for service extension depending on the service.
@@ -305,23 +314,13 @@ class TempestConf(ConfigParser.SafeConfigParser):
                 extensions = ','.join(services[service]['extensions'])
                 self.set(service + '-feature-enabled', ext_key, extensions)
 
-        image_versions = services['image']['versions']
-        self.set('image-feature-enabled', 'api_v2',
-                 str('v2.0' in image_versions))
-        self.set('image-feature-enabled', 'api_v1',
-                 str('v1.1' in image_versions or 'v1.0' in image_versions))
-
-        identity_versions = services['identity']['versions']
-        self.set('identity-feature-enabled', 'api_v2',
-                 str('v2.0' in identity_versions))
-        self.set('identity-feature-enabled', 'api_v1',
-                 str('v3.0' in identity_versions))
-
-        volume_versions = services['volume']['versions']
-        self.set('volume-feature-enabled', 'api_v2',
-                 str('v2.0' in volume_versions))
-        self.set('volume-feature-enabled', 'api_v1',
-                 str('v1.0' in volume_versions))
+        for service, versions in SERVICE_VERSIONS.iteritems():
+            supported_versions = services[service]['versions']
+            section = service + '-feature-enabled'
+            for version in versions:
+                is_supported = any(version in item
+                                   for item in supported_versions)
+                self.set(section, 'api_' + version, str(is_supported))
 
     def do_resources(self, manager, image, has_neutron, create):
         if create:
