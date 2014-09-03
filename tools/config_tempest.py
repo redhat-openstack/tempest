@@ -37,6 +37,8 @@ LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 TEMPEST_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 DEFAULTS_FILE = os.path.join(TEMPEST_DIR, "etc", "default-overrides.conf")
+DEFAULT_IMAGE = "http://download.cirros-cloud.net/0.3.1/" \
+                "cirros-0.3.1-x86_64-disk.img"
 
 # services and their codenames
 SERVICE_NAMES = {
@@ -374,8 +376,6 @@ class TempestConf(ConfigParser.SafeConfigParser):
 
 def configure_tempest(out=None, no_query=False, create=False,
                       overrides=[], image=None, patch=None, non_admin=False):
-    if create and non_admin:
-        raise Exception("--create requires admin credentials")
     conf = TempestConf()
     if os.path.isfile(DEFAULTS_FILE):
         LOG.info("Reading defaults from file '%s'", DEFAULTS_FILE)
@@ -405,9 +405,6 @@ def configure_tempest(out=None, no_query=False, create=False,
     has_neutron = "network" in services
     if has_neutron:
         manager.add_neutron_client()
-    if image is None:
-        image = "http://download.cirros-cloud.net/0.3.1/" \
-                "cirros-0.3.1-x86_64-disk.img"
     conf.do_resources(manager, image, has_neutron, create)
     if not no_query:
         conf.set_service_available(services)
@@ -444,13 +441,18 @@ def parse_arguments():
                         help='Print more information about the execution')
     parser.add_argument('--non-admin', action='store_true', default=False,
                         help='Run without admin creds')
-    parser.add_argument('--image', default=None,
+    parser.add_argument('--image', default=DEFAULT_IMAGE,
                         help="""an image to be uploaded to glance. The name of
                                 the image is the leaf name of the path which
                                 can be either a filename or url. Default is
-                                http://download.cirros-cloud.net/0.3.1/
-                                cirros-0.3.1-x86_64-disk.img """)
-    return parser.parse_args()
+                                '%s'""" % DEFAULT_IMAGE)
+    args = parser.parse_args()
+
+    if args.create and args.non_admin:
+        raise Exception("Options '--create' and '--non-admin' cannot be used"
+                        " together, since creating" " resources requires"
+                        " admin rights")
+    return args
 
 
 if __name__ == "__main__":
