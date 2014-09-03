@@ -34,6 +34,10 @@ from tempest.common import api_discovery
 LOG = logging.getLogger(__name__)
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 
+TEMPEST_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+DEFAULTS_FILE = os.path.join(TEMPEST_DIR, "etc", "default-overrides.conf")
+
 # services and their codenames
 SERVICE_NAMES = {
     'baremetal': 'ironic',
@@ -372,15 +376,13 @@ def configure_tempest(out=None, no_query=False, create=False,
                       overrides=[], image=None, patch=None, non_admin=False):
     if create and non_admin:
         raise Exception("--create requires admin credentials")
-    path = os.path.join(os.path.abspath(
-                        os.path.dirname(os.path.dirname(__file__))), "etc",
-                        "default-overrides.conf")
     conf = TempestConf()
-    if os.path.isfile(path):  # if there is a site file, load it.
-        conf.read(path)
+    if os.path.isfile(DEFAULTS_FILE):
+        LOG.info("Reading defaults from file '%s'", DEFAULTS_FILE)
+        conf.read(DEFAULTS_FILE)
     if patch and os.path.isfile(patch):
-        # if there is a deploy-specific file, load it
-        conf.read(path)
+        LOG.info("Adding options from patch file '%s'", patch)
+        conf.read(patch)
 
     # Now command line overrides
     i = 0
