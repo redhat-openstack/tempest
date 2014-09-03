@@ -48,7 +48,7 @@ SERVICE_NAMES = {
     'data_processing': 'sahara',
     'image': 'glance',
     'network': 'neutron',
-    'object-storage': 'swift',
+    'object-store': 'swift',
     'orchestration': 'heat',
     'telemetry': 'ceilometer',
     'volume': 'cinder',
