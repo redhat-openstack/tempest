@@ -377,13 +377,13 @@ class TempestConf(ConfigParser.SafeConfigParser):
         self.set('cli', 'has_manage', str(nova_manage_found))
 
         uri = self.get('identity', 'uri')
-        base = uri[:uri.rfind(':')]
+        base = uri.rsplit(':', 1)[0]
         assert base.startswith('http:') or base.startswith('https:')
         if query:
             has_horizon = True
             try:
                 urllib2.urlopen(base)
-            except Exception:
+            except urllib2.URLError:
                 has_horizon = False
             self.set('service_available', 'horizon', str(has_horizon))
             self.set('dashboard', 'dashboard_url', base + '/')
