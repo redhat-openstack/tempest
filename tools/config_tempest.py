@@ -215,10 +215,8 @@ class ClientManager(object):
             flavor = self.compute_client.flavors.create("m1.micro", 128, 1, 0,
                                                         flavorid=max_id + 2)
             flavor_alt_id = flavor.id
-        if not self.conf.has_option('compute', 'flavor_ref'):
-            self.conf.set('compute', 'flavor_ref', flavor_id)
-        if not self.conf.has_option('compute', 'flavor_ref_alt'):
-            self.conf.set('compute', 'flavor_ref_alt', flavor_alt_id)
+        self.conf.set('compute', 'flavor_ref', flavor_id)
+        self.conf.set('compute', 'flavor_ref_alt', flavor_alt_id)
 
     def upload_image(self, name, data):
         LOG.info("Uploading image: %s" % name)
@@ -307,12 +305,34 @@ class TempestConf(ConfigParser.SafeConfigParser):
     # causes the config parser to preserve case of the options
     optionxform = str
 
-    def set(self, section, key, value):
-        """Same as `SafeConfigParser.set`, but create non-existant section."""
+    # set of pairs `(section, key)` which have a higher priority (are
+    # user-defined) and will usually not be overwritten by `set()`
+    priority_sectionkeys = set()
+
+    def set(self, section, key, value, priority=False):
+        """Set value in configuration, similar to `SafeConfigParser.set`
+
+        Creates non-existent sections. Keeps track of options which were
+        specified by the user and should not be normally overwritten.
+
+        :param priority: if True, always over-write the value. If False, don't
+            over-write an existing value if it was written before with a
+            priority (i.e. if it was specified by the user)
+        :returns: True if the value was written, False if not (because of
+            priority)
+        """
         if not self.has_section(section):
             self.add_section(section)
+        if not priority and (section, key) in self.priority_sectionkeys:
+            LOG.debug("Option '[%s] %s = %s' was defined by user, NOT"
+                      " overwriting into value '%s'", section, key,
+                      self.get(section, key), value)
+            return False
+        if priority:
+            self.priority_sectionkeys.add((section, key))
         LOG.debug("Setting [%s] %s = %s", section, key, value)
         ConfigParser.SafeConfigParser.set(self, section, key, value)
+        return True
 
     def set_service_available(self, services):
         for service, codename in SERVICE_NAMES.iteritems():
@@ -384,11 +404,10 @@ def configure_tempest(out=None, no_query=False, create=False,
         LOG.info("Adding options from patch file '%s'", patch)
         conf.read(patch)
     for section, key, value in overrides:
-        conf.set(section, key, value)
+        conf.set(section, key, value, priority=True)
 
-    if not conf.has_option("identity", "uri_v3"):
-        uri = conf.get("identity", "uri")
-        conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
+    uri = conf.get("identity", "uri")
+    conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
     if non_admin:
         conf.set("identity", "admin_username", "")
         conf.set("identity", "admin_tenant_name", "")
