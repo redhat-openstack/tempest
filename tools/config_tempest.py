@@ -367,19 +367,15 @@ class TempestConf(ConfigParser.SafeConfigParser):
         if 's3' in services and query:
             self.set('boto', 's3_url', services['s3']['url'])
         if not self.has_option('cli', 'cli_dir'):
-            devnull = open(os.devnull, 'w')
-            try:
-                path = subprocess.check_output(["which", "nova"],
-                                               stderr=devnull)
-                self.set('cli', 'cli_dir', os.path.dirname(path.strip()))
-            except Exception:
+            cli_dir = get_program_dir("nova")
+            if cli_dir:
+                self.set('cli', 'enabled', 'True')
+                self.set('cli', 'cli_dir', cli_dir)
+            else:
                 self.set('cli', 'enabled', 'False')
-            try:
-                subprocess.check_output(["which", "nova-manage"],
-                                        stderr=devnull)
-                self.set('cli', 'has_manage', 'True')
-            except Exception:
-                self.set('cli', 'has_manage', 'False')
+            nova_manage_found = bool(get_program_dir("nova-manage"))
+            self.set('cli', 'has_manage', str(nova_manage_found))
+
         uri = self.get('identity', 'uri')
         base = uri[:uri.rfind(':')]
         assert base.startswith('http:') or base.startswith('https:')
@@ -392,6 +388,20 @@ class TempestConf(ConfigParser.SafeConfigParser):
             self.set('service_available', 'horizon', str(has_horizon))
             self.set('dashboard', 'dashboard_url', base + '/')
             self.set('dashboard', 'login_url', base + '/auth/login/')
+
+
+def get_program_dir(program):
+    """Get directory path of the external program.
+
+    :param program: name of program, e.g. 'ls' or 'cat'
+    :returns: None if it wasn't found, '/path/to/it/' if found
+    """
+    devnull = open(os.devnull, 'w')
+    try:
+        path = subprocess.check_output(["which", program], stderr=devnull)
+        return os.path.dirname(path.strip())
+    except subprocess.CalledProcessError:
+        return None
 
 
 def configure_tempest(out=None, no_query=False, create=False,
