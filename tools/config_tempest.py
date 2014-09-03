@@ -366,15 +366,15 @@ class TempestConf(ConfigParser.SafeConfigParser):
             self.set('boto', 'ec2_url', services['ec2']['url'])
         if 's3' in services and query:
             self.set('boto', 's3_url', services['s3']['url'])
-        if not self.has_option('cli', 'cli_dir'):
-            cli_dir = get_program_dir("nova")
-            if cli_dir:
-                self.set('cli', 'enabled', 'True')
-                self.set('cli', 'cli_dir', cli_dir)
-            else:
-                self.set('cli', 'enabled', 'False')
-            nova_manage_found = bool(get_program_dir("nova-manage"))
-            self.set('cli', 'has_manage', str(nova_manage_found))
+
+        cli_dir = get_program_dir("nova")
+        if cli_dir:
+            self.set('cli', 'enabled', 'True')
+            self.set('cli', 'cli_dir', cli_dir)
+        else:
+            self.set('cli', 'enabled', 'False')
+        nova_manage_found = bool(get_program_dir("nova-manage"))
+        self.set('cli', 'has_manage', str(nova_manage_found))
 
         uri = self.get('identity', 'uri')
         base = uri[:uri.rfind(':')]
