@@ -351,10 +351,10 @@ class TempestConf(ConfigParser.SafeConfigParser):
                                    for item in supported_versions)
                 self.set(section, 'api_' + version, str(is_supported))
 
-    def set_paths(self, services, query):
-        if 'ec2' in services and query:
+    def set_paths(self, services):
+        if 'ec2' in services:
             self.set('boto', 'ec2_url', services['ec2']['url'])
-        if 's3' in services and query:
+        if 's3' in services:
             self.set('boto', 's3_url', services['s3']['url'])
 
         cli_dir = get_program_dir("nova")
@@ -369,15 +369,14 @@ class TempestConf(ConfigParser.SafeConfigParser):
         uri = self.get('identity', 'uri')
         base = uri.rsplit(':', 1)[0]
         assert base.startswith('http:') or base.startswith('https:')
-        if query:
-            has_horizon = True
-            try:
-                urllib2.urlopen(base)
-            except urllib2.URLError:
-                has_horizon = False
-            self.set('service_available', 'horizon', str(has_horizon))
-            self.set('dashboard', 'dashboard_url', base + '/')
-            self.set('dashboard', 'login_url', base + '/auth/login/')
+        has_horizon = True
+        try:
+            urllib2.urlopen(base)
+        except urllib2.URLError:
+            has_horizon = False
+        self.set('service_available', 'horizon', str(has_horizon))
+        self.set('dashboard', 'dashboard_url', base + '/')
+        self.set('dashboard', 'login_url', base + '/auth/login/')
 
 
 def get_program_dir(program):
@@ -394,7 +393,7 @@ def get_program_dir(program):
         return None
 
 
-def configure_tempest(out=None, no_query=False, create=False,
+def configure_tempest(out=None, create=False,
                       overrides=[], image=None, patch=None, non_admin=False):
     conf = TempestConf()
     if os.path.isfile(DEFAULTS_FILE):
@@ -427,9 +426,8 @@ def configure_tempest(out=None, no_query=False, create=False,
     manager.do_flavors(create)
     manager.do_images(image, create)
     manager.do_networks(has_neutron, create)
-    if not no_query:
-        conf.set_service_available(services)
-    conf.set_paths(services, not no_query)
+    conf.set_service_available(services)
+    conf.set_paths(services)
     LOG.info("Creating configuration file %s" % os.path.abspath(out))
     with open(out, 'w') as f:
         conf.write(f)
@@ -437,8 +435,6 @@ def configure_tempest(out=None, no_query=False, create=False,
 
 def parse_arguments():
     parser = argparse.ArgumentParser("Generate the tempest.conf file")
-    parser.add_argument('--no-query', action='store_true', default=False,
-                        help='Do not query the endpoint for services')
     parser.add_argument('--create', action='store_true', default=False,
                         help='create default tempest resources')
     parser.add_argument('--out', default="etc/tempest.conf",
@@ -510,7 +506,6 @@ if __name__ == "__main__":
         LOG.setLevel(logging.DEBUG)
 
     configure_tempest(out=args.out,
-                      no_query=args.no_query,
                       create=args.create,
                       overrides=args.overrides,
                       image=args.image,
