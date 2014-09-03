@@ -334,23 +334,6 @@ class TempestConf(ConfigParser.SafeConfigParser):
         ConfigParser.SafeConfigParser.set(self, section, key, value)
         return True
 
-    def set_service_available(self, services):
-        for service, codename in SERVICE_NAMES.iteritems():
-            self.set('service_available', codename, str(service in services))
-
-        for service, ext_key in SERVICE_EXTENSION_KEY.iteritems():
-            if service in services:
-                extensions = ','.join(services[service]['extensions'])
-                self.set(service + '-feature-enabled', ext_key, extensions)
-
-        for service, versions in SERVICE_VERSIONS.iteritems():
-            supported_versions = services[service]['versions']
-            section = service + '-feature-enabled'
-            for version in versions:
-                is_supported = any(version in item
-                                   for item in supported_versions)
-                self.set(section, 'api_' + version, str(is_supported))
-
     def set_paths(self, services):
         if 'ec2' in services:
             self.set('boto', 'ec2_url', services['ec2']['url'])
@@ -377,6 +360,27 @@ class TempestConf(ConfigParser.SafeConfigParser):
         self.set('service_available', 'horizon', str(has_horizon))
         self.set('dashboard', 'dashboard_url', base + '/')
         self.set('dashboard', 'login_url', base + '/auth/login/')
+
+
+def configure_discovered_services(conf, services):
+    # set service availability
+    for service, codename in SERVICE_NAMES.iteritems():
+        conf.set('service_available', codename, str(service in services))
+
+    # set service extensions
+    for service, ext_key in SERVICE_EXTENSION_KEY.iteritems():
+        if service in services:
+            extensions = ','.join(services[service]['extensions'])
+            conf.set(service + '-feature-enabled', ext_key, extensions)
+
+    # set supported API versions for services with more of them
+    for service, versions in SERVICE_VERSIONS.iteritems():
+        supported_versions = services[service]['versions']
+        section = service + '-feature-enabled'
+        for version in versions:
+            is_supported = any(version in item
+                               for item in supported_versions)
+            conf.set(section, 'api_' + version, str(is_supported))
 
 
 def get_program_dir(program):
@@ -426,7 +430,7 @@ def configure_tempest(out=None, create=False,
     manager.do_flavors(create)
     manager.do_images(image, create)
     manager.do_networks(has_neutron, create)
-    conf.set_service_available(services)
+    configure_discovered_services(conf, services)
     conf.set_paths(services)
     LOG.info("Creating configuration file %s" % os.path.abspath(out))
     with open(out, 'w') as f:
