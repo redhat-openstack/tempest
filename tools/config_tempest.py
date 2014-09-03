@@ -351,16 +351,6 @@ class TempestConf(ConfigParser.SafeConfigParser):
                                    for item in supported_versions)
                 self.set(section, 'api_' + version, str(is_supported))
 
-    def do_resources(self, manager, image, has_neutron, create):
-        if create:
-            LOG.info("Creating resources")
-            manager.create_users_and_tenants()
-        else:
-            LOG.info("Querying resources")
-        manager.do_flavors(create)
-        manager.do_images(image, create)
-        manager.do_networks(has_neutron, create)
-
     def set_paths(self, services, query):
         if 'ec2' in services and query:
             self.set('boto', 'ec2_url', services['ec2']['url'])
@@ -429,7 +419,14 @@ def configure_tempest(out=None, no_query=False, create=False,
     has_neutron = "network" in services
     if has_neutron:
         manager.add_neutron_client()
-    conf.do_resources(manager, image, has_neutron, create)
+    if create:
+        LOG.info("Creating resources")
+        manager.create_users_and_tenants()
+    else:
+        LOG.info("Querying resources")
+    manager.do_flavors(create)
+    manager.do_images(image, create)
+    manager.do_networks(has_neutron, create)
     if not no_query:
         conf.set_service_available(services)
     conf.set_paths(services, not no_query)
