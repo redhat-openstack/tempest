@@ -334,32 +334,37 @@ class TempestConf(ConfigParser.SafeConfigParser):
         ConfigParser.SafeConfigParser.set(self, section, key, value)
         return True
 
-    def set_paths(self, services):
-        if 'ec2' in services:
-            self.set('boto', 'ec2_url', services['ec2']['url'])
-        if 's3' in services:
-            self.set('boto', 's3_url', services['s3']['url'])
 
-        cli_dir = get_program_dir("nova")
-        if cli_dir:
-            self.set('cli', 'enabled', 'True')
-            self.set('cli', 'cli_dir', cli_dir)
-        else:
-            self.set('cli', 'enabled', 'False')
-        nova_manage_found = bool(get_program_dir("nova-manage"))
-        self.set('cli', 'has_manage', str(nova_manage_found))
+def configure_boto(conf, services):
+    if 'ec2' in services:
+        conf.set('boto', 'ec2_url', services['ec2']['url'])
+    if 's3' in services:
+        conf.set('boto', 's3_url', services['s3']['url'])
 
-        uri = self.get('identity', 'uri')
-        base = uri.rsplit(':', 1)[0]
-        assert base.startswith('http:') or base.startswith('https:')
-        has_horizon = True
-        try:
-            urllib2.urlopen(base)
-        except urllib2.URLError:
-            has_horizon = False
-        self.set('service_available', 'horizon', str(has_horizon))
-        self.set('dashboard', 'dashboard_url', base + '/')
-        self.set('dashboard', 'login_url', base + '/auth/login/')
+
+def configure_cli(conf):
+    cli_dir = get_program_dir("nova")
+    if cli_dir:
+        conf.set('cli', 'enabled', 'True')
+        conf.set('cli', 'cli_dir', cli_dir)
+    else:
+        conf.set('cli', 'enabled', 'False')
+    nova_manage_found = bool(get_program_dir("nova-manage"))
+    conf.set('cli', 'has_manage', str(nova_manage_found))
+
+
+def configure_horizon(conf):
+    uri = conf.get('identity', 'uri')
+    base = uri.rsplit(':', 1)[0]
+    assert base.startswith('http:') or base.startswith('https:')
+    has_horizon = True
+    try:
+        urllib2.urlopen(base)
+    except urllib2.URLError:
+        has_horizon = False
+    conf.set('service_available', 'horizon', str(has_horizon))
+    conf.set('dashboard', 'dashboard_url', base + '/')
+    conf.set('dashboard', 'login_url', base + '/auth/login/')
 
 
 def configure_discovered_services(conf, services):
@@ -431,7 +436,9 @@ def configure_tempest(out=None, create=False,
     manager.do_images(image, create)
     manager.do_networks(has_neutron, create)
     configure_discovered_services(conf, services)
-    conf.set_paths(services)
+    configure_boto(conf, services)
+    configure_cli(conf)
+    configure_horizon(conf)
     LOG.info("Creating configuration file %s" % os.path.abspath(out))
     with open(out, 'w') as f:
         conf.write(f)
