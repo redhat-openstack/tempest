@@ -57,11 +57,13 @@ SERVICE_NAMES = {
 
 # what API versions could the service have and should be enabled/disabled
 # depending on whether they get discovered as supported. Services with only one
-# version don't need to be here.
+# version don't need to be here, neither do service versions that are not
+# configurable in tempest.conf
 SERVICE_VERSIONS = {
     'image': ['v1', 'v2'],
     'identity': ['v2', 'v3'],
     'volume': ['v1', 'v2'],
+    'compute': ['v3'],
 }
 
 # Keep track of where the extensions are saved for that service.
