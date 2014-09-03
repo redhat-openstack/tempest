@@ -383,14 +383,9 @@ def configure_tempest(out=None, no_query=False, create=False,
     if patch and os.path.isfile(patch):
         LOG.info("Adding options from patch file '%s'", patch)
         conf.read(patch)
+    for section, key, value in overrides:
+        conf.set(section, key, value)
 
-    # Now command line overrides
-    i = 0
-    while i < len(overrides):
-        keyparts = overrides[i].split('.')
-        assert len(keyparts) == 2, keyparts
-        conf.set(keyparts[0], keyparts[1], overrides[i + 1])
-        i += 2
     if not conf.has_option("identity", "uri_v3"):
         uri = conf.get("identity", "uri")
         conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
@@ -452,7 +447,31 @@ def parse_arguments():
         raise Exception("Options '--create' and '--non-admin' cannot be used"
                         " together, since creating" " resources requires"
                         " admin rights")
+    args.overrides = parse_overrides(args.overrides)
     return args
+
+
+def parse_overrides(overrides):
+    """Manual parsing of positional arguments.
+
+    TODO(mkollaro) find a way to do it in argparse
+    """
+    if len(overrides) % 2 != 0:
+        raise Exception("An odd number of override options was found. The"
+                        " overrides have to be in 'section.key value' format.")
+    i = 0
+    new_overrides = []
+    while i < len(overrides):
+        section_key = overrides[i].split('.')
+        value = overrides[i + 1]
+        if len(section_key) != 2:
+            raise Exception("Missing dot. The option overrides has to come in"
+                            " the format 'section.key value', but got '%s'."
+                            % (overrides[i] + ' ' + value))
+        section, key = section_key
+        new_overrides.append((section, key, value))
+        i += 2
+    return new_overrides
 
 
 if __name__ == "__main__":
