@@ -404,45 +404,52 @@ def get_program_dir(program):
         return None
 
 
-def configure_tempest(out=None, create=False,
-                      overrides=[], image=None, patch=None, non_admin=False):
+def main():
+    args = parse_arguments()
+    logging.basicConfig(format=LOG_FORMAT)
+
+    if args.verbose:
+        LOG.setLevel(logging.INFO)
+    if args.debug:
+        LOG.setLevel(logging.DEBUG)
+
     conf = TempestConf()
     if os.path.isfile(DEFAULTS_FILE):
         LOG.info("Reading defaults from file '%s'", DEFAULTS_FILE)
         conf.read(DEFAULTS_FILE)
-    if patch and os.path.isfile(patch):
-        LOG.info("Adding options from patch file '%s'", patch)
-        conf.read(patch)
-    for section, key, value in overrides:
+    if args.patch and os.path.isfile(args.patch):
+        LOG.info("Adding options from patch file '%s'", args.patch)
+        conf.read(args.patch)
+    for section, key, value in args.overrides:
         conf.set(section, key, value, priority=True)
 
     uri = conf.get("identity", "uri")
     conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
-    if non_admin:
+    if args.non_admin:
         conf.set("identity", "admin_username", "")
         conf.set("identity", "admin_tenant_name", "")
         conf.set("identity", "admin_password", "")
         conf.set("compute", "allow_tenant_isolation", "False")
 
-    manager = ClientManager(conf, not non_admin)
+    manager = ClientManager(conf, not args.non_admin)
     services = api_discovery.discover(manager.identity_client)
     has_neutron = "network" in services
     if has_neutron:
         manager.add_neutron_client()
-    if create:
+    if args.create:
         LOG.info("Creating resources")
         manager.create_users_and_tenants()
     else:
         LOG.info("Querying resources")
-    manager.do_flavors(create)
-    manager.do_images(image, create)
-    manager.do_networks(has_neutron, create)
+    manager.do_flavors(args.create)
+    manager.do_images(args.image, args.create)
+    manager.do_networks(has_neutron, args.create)
     configure_discovered_services(conf, services)
     configure_boto(conf, services)
     configure_cli(conf)
     configure_horizon(conf)
-    LOG.info("Creating configuration file %s" % os.path.abspath(out))
-    with open(out, 'w') as f:
+    LOG.info("Creating configuration file %s" % os.path.abspath(args.out))
+    with open(args.out, 'w') as f:
         conf.write(f)
 
 
@@ -510,17 +517,4 @@ def parse_overrides(overrides):
 
 
 if __name__ == "__main__":
-    args = parse_arguments()
-    logging.basicConfig(format=LOG_FORMAT)
-
-    if args.verbose:
-        LOG.setLevel(logging.INFO)
-    if args.debug:
-        LOG.setLevel(logging.DEBUG)
-
-    configure_tempest(out=args.out,
-                      create=args.create,
-                      overrides=args.overrides,
-                      image=args.image,
-                      patch=args.patch,
-                      non_admin=args.non_admin)
+    main()
