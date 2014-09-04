@@ -103,18 +103,15 @@ def main():
         conf.set("identity", "admin_password", "")
         conf.set("compute", "allow_tenant_isolation", "False")
 
-    manager = ClientManager(conf, not args.non_admin)
-    services = api_discovery.discover(manager.identity_client)
+    clients = ClientManager(conf, not args.non_admin)
+    services = api_discovery.discover(clients.identity)
     if args.create:
-        LOG.info("Creating resources")
-        create_tempest_users(manager.identity_client, conf)
-    else:
-        LOG.info("Querying resources")
-    create_tempest_flavors(manager.compute_client, conf, args.create)
-    create_tempest_images(manager.image_client, conf,
+        create_tempest_users(clients.identity, conf)
+    create_tempest_flavors(clients.compute, conf, args.create)
+    create_tempest_images(clients.image, conf,
                           args.image, args.create)
     has_neutron = "network" in services
-    create_tempest_networks(manager, conf, has_neutron, args.create)
+    create_tempest_networks(clients, conf, has_neutron, args.create)
     configure_discovered_services(conf, services)
     configure_boto(conf, services)
     configure_cli(conf)
@@ -212,7 +209,7 @@ class ClientManager(object):
             self.tenant_name = conf.get('identity', 'tenant_name', 'demo')
 
     @property
-    def identity_client(self):
+    def identity(self):
         if self._identity:
             return self._identity
         LOG.info("Connecting to Keystone at '%s' with username '%s',"
@@ -226,7 +223,7 @@ class ClientManager(object):
         return self._identity
 
     @property
-    def compute_client(self):
+    def compute(self):
         if self._compute:
             return self._compute
         LOG.debug("Connecting to Nova")
@@ -237,11 +234,11 @@ class ClientManager(object):
         return self._compute
 
     @property
-    def image_client(self):
+    def image(self):
         if not self._image:
             LOG.debug("Connecting to Glance")
-            token = self.identity_client.auth_token
-            catalog = self.identity_client.service_catalog
+            token = self.identity.auth_token
+            catalog = self.identity.service_catalog
             endpoint = catalog.url_for(service_type='image',
                                        endpoint_type='publicURL')
             self._image = glance_client.Client("1", endpoint=endpoint,
@@ -250,7 +247,7 @@ class ClientManager(object):
         return self._image
 
     @property
-    def network_client(self):
+    def network(self):
         if self._network:
             return self._network
         LOG.debug("Connecting to Neutron")
@@ -467,18 +464,18 @@ def find_or_upload_image(image_client, image_id, image_name, allow_creation,
 def create_tempest_networks(clients, conf, has_neutron, allow_creation):
     label = None
     if has_neutron:
-        for router in clients.network_client.list_routers()['routers']:
+        for router in clients.network.list_routers()['routers']:
             net_id = router['external_gateway_info']['network_id']
             if ('external_gateway_info' in router and net_id is not None):
                 conf.set('network', 'public_network_id', net_id)
                 conf.set('network', 'public_router_id', router['id'])
                 break
-        for network in clients.compute_client.networks.list():
+        for network in clients.compute.networks.list():
             if network.id != net_id:
                 label = network.label
                 break
     else:
-        networks = clients.compute_client.networks.list()
+        networks = clients.compute.networks.list()
         if networks:
             label = networks[0].label
     if label:
