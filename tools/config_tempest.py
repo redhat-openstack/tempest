@@ -367,6 +367,7 @@ class TempestConf(ConfigParser.SafeConfigParser):
 
 
 def create_tempest_users(identity_client, conf):
+    """Create users necessary for Tempest if they don't exist already."""
     create_user_with_tenant(identity_client,
                             conf.get('identity', 'username'),
                             conf.get('identity', 'password'),
@@ -396,6 +397,10 @@ def add_admin_to_tenant(identity_client, admin_user, tenant_name):
 
 
 def create_user_with_tenant(identity_client, username, password, tenant_name):
+    """Create user and tenant if he doesn't exist.
+
+    Sets password even for existing user.
+    """
     LOG.info("Creating user '%s' with tenant '%s' and password '%s'",
              username, tenant_name, password)
     tenant_description = "Tenant for Tempest %s user" % username
@@ -419,6 +424,14 @@ def create_user_with_tenant(identity_client, username, password, tenant_name):
 
 
 def create_tempest_flavors(compute_client, conf, allow_creation):
+    """Find or create flavors 'm1.nano' and 'm1.micro' and set them in conf.
+
+    If 'flavor_ref' and 'flavor_ref_alt' are specified in conf, it will first
+    try to find those - otherwise it will try finding or creating 'm1.nano' and
+    'm1.micro' and overwrite those options in conf.
+
+    :param allow_creation: if False, fail if flavors were not found
+    """
     # m1.nano flavor
     flavor_id = None
     if conf.has_option('compute', 'flavor_ref'):
@@ -440,6 +453,16 @@ def create_tempest_flavors(compute_client, conf, allow_creation):
 
 def find_or_create_flavor(compute_client, flavor_id, flavor_name,
                           allow_creation, ram=64, vcpus=1, disk=0):
+    """Try finding flavor by ID or name, create if not found.
+
+    :param flavor_id: first try finding the flavor by this
+    :param flavor_name: find by this if it was not found by ID, create new
+        flavor with this name if not found at all
+    :param allow_creation: if False, fail if flavors were not found
+    :param ram: memory of created flavor in MB
+    :param vcpus: number of VCPUs for the flavor
+    :param disk: size of disk for flavor in GB
+    """
     flavor = None
     # try finding it by the ID first
     if flavor_id:
@@ -467,6 +490,7 @@ def find_or_create_flavor(compute_client, flavor_id, flavor_name,
 
 
 def configure_boto(conf, services):
+    """Set boto URLs based on discovered APIs."""
     if 'ec2' in services:
         conf.set('boto', 'ec2_url', services['ec2']['url'])
     if 's3' in services:
@@ -474,6 +498,11 @@ def configure_boto(conf, services):
 
 
 def configure_cli(conf):
+    """Set cli_dir and others for Tempest CLI tests.
+
+    Find locally installed "nova" and "nova-manage" commands and configure CLI
+    based on their availability and paths.
+    """
     cli_dir = get_program_dir("nova")
     if cli_dir:
         conf.set('cli', 'enabled', 'True')
@@ -485,6 +514,7 @@ def configure_cli(conf):
 
 
 def configure_horizon(conf):
+    """Derive the horizon URIs from the identity's URI."""
     uri = conf.get('identity', 'uri')
     base = uri.rsplit(':', 1)[0]
     assert base.startswith('http:') or base.startswith('https:')
@@ -499,6 +529,16 @@ def configure_horizon(conf):
 
 
 def configure_discovered_services(conf, services):
+    """Set service availability and supported extensions and versions.
+
+    Set True/False per service in the [service_available] section of `conf`
+    depending of wheter it is in services. In the [<service>-feature-enabled]
+    section, set extensions and versions found in `services`.
+
+    :param conf: ConfigParser configuration
+    :param services: dictionary of discovered services - expects each service
+        to have a dictionary containing 'extensions' and 'versions' keys
+    """
     # set service availability
     for service, codename in SERVICE_NAMES.iteritems():
         conf.set('service_available', codename, str(service in services))
