@@ -77,6 +77,118 @@ SERVICE_EXTENSION_KEY = {
 }
 
 
+def main():
+    args = parse_arguments()
+    logging.basicConfig(format=LOG_FORMAT)
+
+    if args.verbose:
+        LOG.setLevel(logging.INFO)
+    if args.debug:
+        LOG.setLevel(logging.DEBUG)
+
+    conf = TempestConf()
+    if os.path.isfile(DEFAULTS_FILE):
+        LOG.info("Reading defaults from file '%s'", DEFAULTS_FILE)
+        conf.read(DEFAULTS_FILE)
+    if args.patch and os.path.isfile(args.patch):
+        LOG.info("Adding options from patch file '%s'", args.patch)
+        conf.read(args.patch)
+    for section, key, value in args.overrides:
+        conf.set(section, key, value, priority=True)
+
+    uri = conf.get("identity", "uri")
+    conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
+    if args.non_admin:
+        conf.set("identity", "admin_username", "")
+        conf.set("identity", "admin_tenant_name", "")
+        conf.set("identity", "admin_password", "")
+        conf.set("compute", "allow_tenant_isolation", "False")
+
+    manager = ClientManager(conf, not args.non_admin)
+    services = api_discovery.discover(manager.identity_client)
+    has_neutron = "network" in services
+    if has_neutron:
+        manager.add_neutron_client()
+    if args.create:
+        LOG.info("Creating resources")
+        manager.create_users_and_tenants()
+    else:
+        LOG.info("Querying resources")
+    manager.do_flavors(args.create)
+    manager.do_images(args.image, args.create)
+    manager.do_networks(has_neutron, args.create)
+    configure_discovered_services(conf, services)
+    configure_boto(conf, services)
+    configure_cli(conf)
+    configure_horizon(conf)
+    LOG.info("Creating configuration file %s" % os.path.abspath(args.out))
+    with open(args.out, 'w') as f:
+        conf.write(f)
+
+
+def parse_arguments():
+    parser = argparse.ArgumentParser("Generate the tempest.conf file")
+    parser.add_argument('--create', action='store_true', default=False,
+                        help='create default tempest resources')
+    parser.add_argument('--out', default="etc/tempest.conf",
+                        help='the tempest.conf file to write')
+    parser.add_argument('--patch', default=None,
+                        help="""A file in the format of tempest.conf that will
+                                override the default values. The
+                                patch file is an alternative to providing
+                                key/value pairs. If there are also key/value
+                                pairs they will be applied after the patch
+                                file""")
+    parser.add_argument('overrides', nargs='*', default=[],
+                        help="""key value pairs to modify. The key is
+                                section.key where section is a section header
+                                in the conf file.
+                                For example: identity.username myname
+                                 identity.password mypass""")
+    parser.add_argument('--debug', action='store_true', default=False,
+                        help='Print debugging information')
+    parser.add_argument('--verbose', '-v', action='store_true', default=False,
+                        help='Print more information about the execution')
+    parser.add_argument('--non-admin', action='store_true', default=False,
+                        help='Run without admin creds')
+    parser.add_argument('--image', default=DEFAULT_IMAGE,
+                        help="""an image to be uploaded to glance. The name of
+                                the image is the leaf name of the path which
+                                can be either a filename or url. Default is
+                                '%s'""" % DEFAULT_IMAGE)
+    args = parser.parse_args()
+
+    if args.create and args.non_admin:
+        raise Exception("Options '--create' and '--non-admin' cannot be used"
+                        " together, since creating" " resources requires"
+                        " admin rights")
+    args.overrides = parse_overrides(args.overrides)
+    return args
+
+
+def parse_overrides(overrides):
+    """Manual parsing of positional arguments.
+
+    TODO(mkollaro) find a way to do it in argparse
+    """
+    if len(overrides) % 2 != 0:
+        raise Exception("An odd number of override options was found. The"
+                        " overrides have to be in 'section.key value' format.")
+    i = 0
+    new_overrides = []
+    while i < len(overrides):
+        section_key = overrides[i].split('.')
+        value = overrides[i + 1]
+        if len(section_key) != 2:
+            raise Exception("Missing dot. The option overrides has to come in"
+                            " the format 'section.key value', but got '%s'."
+                            % (overrides[i] + ' ' + value))
+        section, key = section_key
+        new_overrides.append((section, key, value))
+        i += 2
+    return new_overrides
+
+
 class ClientManager(object):
     """
     Manager that provides access to the official python clients for
@@ -402,118 +514,6 @@ def get_program_dir(program):
         return os.path.dirname(path.strip())
     except subprocess.CalledProcessError:
         return None
-
-
-def main():
-    args = parse_arguments()
-    logging.basicConfig(format=LOG_FORMAT)
-
-    if args.verbose:
-        LOG.setLevel(logging.INFO)
-    if args.debug:
-        LOG.setLevel(logging.DEBUG)
-
-    conf = TempestConf()
-    if os.path.isfile(DEFAULTS_FILE):
-        LOG.info("Reading defaults from file '%s'", DEFAULTS_FILE)
-        conf.read(DEFAULTS_FILE)
-    if args.patch and os.path.isfile(args.patch):
-        LOG.info("Adding options from patch file '%s'", args.patch)
-        conf.read(args.patch)
-    for section, key, value in args.overrides:
-        conf.set(section, key, value, priority=True)
-
-    uri = conf.get("identity", "uri")
-    conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
-    if args.non_admin:
-        conf.set("identity", "admin_username", "")
-        conf.set("identity", "admin_tenant_name", "")
-        conf.set("identity", "admin_password", "")
-        conf.set("compute", "allow_tenant_isolation", "False")
-
-    manager = ClientManager(conf, not args.non_admin)
-    services = api_discovery.discover(manager.identity_client)
-    has_neutron = "network" in services
-    if has_neutron:
-        manager.add_neutron_client()
-    if args.create:
-        LOG.info("Creating resources")
-        manager.create_users_and_tenants()
-    else:
-        LOG.info("Querying resources")
-    manager.do_flavors(args.create)
-    manager.do_images(args.image, args.create)
-    manager.do_networks(has_neutron, args.create)
-    configure_discovered_services(conf, services)
-    configure_boto(conf, services)
-    configure_cli(conf)
-    configure_horizon(conf)
-    LOG.info("Creating configuration file %s" % os.path.abspath(args.out))
-    with open(args.out, 'w') as f:
-        conf.write(f)
-
-
-def parse_arguments():
-    parser = argparse.ArgumentParser("Generate the tempest.conf file")
-    parser.add_argument('--create', action='store_true', default=False,
-                        help='create default tempest resources')
-    parser.add_argument('--out', default="etc/tempest.conf",
-                        help='the tempest.conf file to write')
-    parser.add_argument('--patch', default=None,
-                        help="""A file in the format of tempest.conf that will
-                                override the default values. The
-                                patch file is an alternative to providing
-                                key/value pairs. If there are also key/value
-                                pairs they will be applied after the patch
-                                file""")
-    parser.add_argument('overrides', nargs='*', default=[],
-                        help="""key value pairs to modify. The key is
-                                section.key where section is a section header
-                                in the conf file.
-                                For example: identity.username myname
-                                 identity.password mypass""")
-    parser.add_argument('--debug', action='store_true', default=False,
-                        help='Print debugging information')
-    parser.add_argument('--verbose', '-v', action='store_true', default=False,
-                        help='Print more information about the execution')
-    parser.add_argument('--non-admin', action='store_true', default=False,
-                        help='Run without admin creds')
-    parser.add_argument('--image', default=DEFAULT_IMAGE,
-                        help="""an image to be uploaded to glance. The name of
-                                the image is the leaf name of the path which
-                                can be either a filename or url. Default is
-                                '%s'""" % DEFAULT_IMAGE)
-    args = parser.parse_args()
-
-    if args.create and args.non_admin:
-        raise Exception("Options '--create' and '--non-admin' cannot be used"
-                        " together, since creating" " resources requires"
-                        " admin rights")
-    args.overrides = parse_overrides(args.overrides)
-    return args
-
-
-def parse_overrides(overrides):
-    """Manual parsing of positional arguments.
-
-    TODO(mkollaro) find a way to do it in argparse
-    """
-    if len(overrides) % 2 != 0:
-        raise Exception("An odd number of override options was found. The"
-                        " overrides have to be in 'section.key value' format.")
-    i = 0
-    new_overrides = []
-    while i < len(overrides):
-        section_key = overrides[i].split('.')
-        value = overrides[i + 1]
-        if len(section_key) != 2:
-            raise Exception("Missing dot. The option overrides has to come in"
-                            " the format 'section.key value', but got '%s'."
-                            % (overrides[i] + ' ' + value))
-        section, key = section_key
-        new_overrides.append((section, key, value))
-        i += 2
-    return new_overrides
 
 
 if __name__ == "__main__":
