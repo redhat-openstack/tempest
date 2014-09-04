@@ -26,7 +26,6 @@ import novaclient.client as nova_client
 import os
 import shutil
 import subprocess
-import tempfile
 import urllib2
 
 from tempest.common import api_discovery
@@ -115,7 +114,7 @@ def main():
     else:
         LOG.info("Querying resources")
     create_tempest_flavors(manager.compute_client, conf, args.create)
-    manager.do_images(args.image, args.create)
+    manager.create_tempest_images(args.image, args.create)
     manager.do_networks(has_neutron, args.create)
     configure_discovered_services(conf, services)
     configure_boto(conf, services)
@@ -249,64 +248,68 @@ class ClientManager(object):
                                   auth_url=self.auth_url,
                                   insecure=self.insecure)
 
-    def upload_image(self, name, data):
-        LOG.info("Uploading image: %s" % name)
-        data.seek(0)
-        return self.image_client.images.create(name=name,
-                                               disk_format="qcow2",
-                                               container_format="bare",
-                                               data=data,
-                                               is_public="true")
+    def upload_image(self, name, path):
+        LOG.info("Uploading image '%s' from '%s'", name, os.path.abspath(path))
+        with open(path) as data:
+            return self.image_client.images.create(name=name,
+                                                   disk_format="qcow2",
+                                                   container_format="bare",
+                                                   data=data,
+                                                   is_public="true")
 
-    def do_images(self, path, create):
-        LOG.info("Querying images")
-        name = path[path.rfind('/') + 1:]
-        name_alt = name + "_alt"
-        image_id = None
-        image_alt_id = None
-        for image in self.image_client.images.list():
-            if image.name == name:
-                image_id = image.id
-            if image.name == name_alt:
-                image_alt_id = image.id
+    def create_tempest_images(self, image_path, allow_creation):
         qcow2_img_path = os.path.join(self.conf.get("scenario", "img_dir"),
                                       self.conf.get("scenario",
                                                     "qcow2_img_file"))
-        if create and not (image_id and image_alt_id):
-            # Make sure image location is writable beforeuploading
-            open(qcow2_img_path, "w")
-            if path.startswith("http:") or path.startswith("https:"):
-                LOG.info("Downloading image file: %s" % path)
-                request = urllib2.urlopen(path)
-                with tempfile.NamedTemporaryFile() as data:
-                    while True:
-                        chunk = request.read(64 * 1024)
-                        if not chunk:
-                            break
-                        data.write(chunk)
-
-                    data.flush()
-                    if not image_id:
-                        image_id = self.upload_image(name, data).id
-                    if not image_alt_id:
-                        image_alt_id = self.upload_image(name_alt, data).id
-                    shutil.copyfile(data.name, qcow2_img_path)
-            else:
-                with open(path) as data:
-                    if not image_id:
-                        image_id = self.upload_image(name, data).id
-                    if not image_alt_id:
-                        image_alt_id = self.upload_image(name_alt, data).id
-                shutil.copyfile(path, qcow2_img_path)
-
-        if not (create or os.path.exists(qcow2_img_path)):
-            # Make sure the image file exists.
-            with open(qcow2_img_path, "w") as image:
-                for chunk in self.image_client.images.data(image_id):
-                    image.write(chunk)
+        name = image_path[image_path.rfind('/') + 1:]
+        alt_name = name + "_alt"
+        image_id = None
+        if self.conf.has_option('compute', 'image_ref'):
+            image_id = self.conf.get('compute', 'image_ref')
+        image_id = self.find_or_upload_image(image_id, name, allow_creation,
+                                             image_source=image_path,
+                                             image_dest=qcow2_img_path)
+        alt_image_id = None
+        if self.conf.has_option('compute', 'image_ref_alt'):
+            alt_image_id = self.conf.get('compute', 'image_ref_alt')
+        alt_image_id = self.find_or_upload_image(alt_image_id, alt_name,
+                                                 allow_creation,
+                                                 image_source=image_path,
+                                                 image_dest=qcow2_img_path)
 
         self.conf.set('compute', 'image_ref', image_id)
-        self.conf.set('compute', 'image_ref_alt', image_alt_id or image_id)
+        self.conf.set('compute', 'image_ref_alt', alt_image_id)
+
+    def find_or_upload_image(self, image_id, image_name, allow_creation,
+                             image_source='', image_dest=''):
+        image = None
+        # try finding it by the ID first
+        if image_id:
+            found = self.compute_client.images.findall(id=image_id)
+            if found:
+                image = found[0]
+        # if not found previously, try finding it by name
+        if image_name and not image:
+            found = self.compute_client.images.findall(name=image_name)
+            if found:
+                image = found[0]
+
+        if not image and not allow_creation:
+            raise Exception("Image '%s' not found, but resource creation"
+                            " isn't allowed. Either use '--create' or provide"
+                            " an existing image_ref" % image_name)
+
+        if image:
+            LOG.info("(no change) Found image '%s'", image.name)
+        else:
+            LOG.info("Creating image '%s'", image_name)
+            if image_source.startswith("http:") or \
+               image_source.startswith("https:"):
+                    _download_file(image_source, image_dest)
+            else:
+                shutil.copyfile(image_source, image_dest)
+            image = self.upload_image(image_name, image_dest)
+        return image.id
 
     def do_networks(self, has_neutron, create):
         label = None
@@ -571,6 +574,14 @@ def get_program_dir(program):
         return os.path.dirname(path.strip())
     except subprocess.CalledProcessError:
         return None
+
+
+def _download_file(url, destination):
+    LOG.info("Downloading '%s' and saving as '%s'", url, destination)
+    f = urllib2.urlopen(url)
+    data = f.read()
+    with open(destination, "wb") as dest:
+        dest.write(data)
 
 
 if __name__ == "__main__":
