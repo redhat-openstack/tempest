@@ -114,7 +114,7 @@ def main():
         create_tempest_users(manager.identity_client, conf)
     else:
         LOG.info("Querying resources")
-    manager.do_flavors(args.create)
+    manager.create_tempest_flavors(args.create)
     manager.do_images(args.image, args.create)
     manager.do_networks(has_neutron, args.create)
     configure_discovered_services(conf, services)
@@ -249,30 +249,50 @@ class ClientManager(object):
                                   auth_url=self.auth_url,
                                   insecure=self.insecure)
 
-    def do_flavors(self, create):
-        LOG.info("Querying flavors")
+    def create_tempest_flavors(self, allow_creation):
+        # m1.nano flavor
         flavor_id = None
-        flavor_alt_id = None
-        max_id = 1
-        for flavor in self.compute_client.flavors.list():
-            if flavor.name == "m1.nano":
-                flavor_id = flavor.id
-            if flavor.name == "m1.micro":
-                flavor_alt_id = flavor.id
-            try:
-                max_id = max(max_id, int(flavor.id))
-            except ValueError:
-                pass
-        if create and not flavor_id:
-            flavor = self.compute_client.flavors.create("m1.nano", 64, 1, 0,
-                                                        flavorid=max_id + 1)
-            flavor_id = flavor.id
-        if create and not flavor_alt_id:
-            flavor = self.compute_client.flavors.create("m1.micro", 128, 1, 0,
-                                                        flavorid=max_id + 2)
-            flavor_alt_id = flavor.id
+        if self.conf.has_option('compute', 'flavor_ref'):
+            flavor_id = self.conf.get('compute', 'flavor_ref')
+        flavor_id = self.find_or_create_flavor(flavor_id, 'm1.nano',
+                                               allow_creation, ram=64)
         self.conf.set('compute', 'flavor_ref', flavor_id)
-        self.conf.set('compute', 'flavor_ref_alt', flavor_alt_id)
+
+        # m1.micro flavor
+        alt_flavor_id = None
+        if self.conf.has_option('compute', 'flavor_ref_alt'):
+            alt_flavor_id = self.conf.get('compute', 'flavor_ref_alt')
+        alt_flavor_id = self.find_or_create_flavor(alt_flavor_id, 'm1.micro',
+                                                   allow_creation, ram=128)
+        self.conf.set('compute', 'flavor_ref_alt', alt_flavor_id)
+
+    def find_or_create_flavor(self, flavor_id, flavor_name, allow_creation,
+                              ram=64, vcpus=1, disk=0):
+        flavor = None
+        # try finding it by the ID first
+        if flavor_id:
+            found = self.compute_client.flavors.findall(id=flavor_id)
+            if found:
+                flavor = found[0]
+        # if not found previously, try finding it by name
+        if flavor_name and not flavor:
+            found = self.compute_client.flavors.findall(name=flavor_name)
+            if found:
+                flavor = found[0]
+
+        if not flavor and not allow_creation:
+            raise Exception("Flavor '%s' not found, but resource creation"
+                            " isn't allowed. Either use '--create' or provide"
+                            " an existing flavor" % flavor_name)
+
+        if not flavor:
+            LOG.info("Creating flavor '%s'", flavor_name)
+            flavor = self.compute_client.flavors.create(flavor_name, ram,
+                                                        vcpus, disk)
+        else:
+            LOG.info("(no change) Found flavor '%s'", flavor.name)
+
+        return flavor.id
 
     def upload_image(self, name, data):
         LOG.info("Uploading image: %s" % name)
