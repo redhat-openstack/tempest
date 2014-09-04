@@ -278,36 +278,27 @@ class ClientManager(object):
     def create_user_with_tenant(self, username, password, tenant_name):
         LOG.info("Creating user '%s' with tenant '%s' and password '%s'",
                  username, tenant_name, password)
-        # Try to create the necessary tenant
-        tenant_id = None
+        tenant_description = "Tenant for Tempest %s user" % username
+        email = "%s@test.com" % username
+        # create tenant
         try:
-            tenant_description = "Tenant for Tempest %s user" % username
-            tenant = self.identity_client.tenants.create(tenant_name,
-                                                         tenant_description)
+            self.identity_client.tenants.create(tenant_name,
+                                                tenant_description)
         except keystone_exception.Conflict:
-            # if already exist, use existing tenant
-            tenant_list = self.identity_client.tenants.list()
-            for tenant in tenant_list:
-                if tenant.name == tenant_name:
-                    tenant_id = tenant.id
-                    LOG.info("Tenant %s exists: %s" % (tenant_name, tenant_id))
-                    break
+            LOG.info("(no change) Tenant '%s' already exists", tenant_name)
 
+        tenant = self.identity_client.tenants.find(name=tenant_name)
+        # create user
         try:
-            email = "%s@test.com" % username
             self.identity_client.users.create(name=username,
                                               password=password,
                                               email=email,
-                                              tenant_id=tenant_id)
+                                              tenant_id=tenant.id)
         except keystone_exception.Conflict:
-            # if already exist, use existing user but set password
-            user_list = self.identity_client.users.list()
-            for user in user_list:
-                if user.name == username:
-                    LOG.info("User %s exists. Setting password to %s" %
-                             (username, password))
-                    self.identity_client.users.update_password(user, password)
-                    break
+            LOG.info("User '%s' already exists. Setting password to '%s'",
+                     username, password)
+            user = self.identity_client.users.find(name=username)
+            self.identity_client.users.update_password(user.id, password)
 
     def do_flavors(self, create):
         LOG.info("Querying flavors")
