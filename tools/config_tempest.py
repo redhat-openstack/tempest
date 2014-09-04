@@ -111,7 +111,7 @@ def main():
         manager.add_neutron_client()
     if args.create:
         LOG.info("Creating resources")
-        manager.create_users_and_tenants()
+        create_tempest_users(manager.identity_client, conf)
     else:
         LOG.info("Querying resources")
     manager.do_flavors(args.create)
@@ -248,57 +248,6 @@ class ClientManager(object):
                                   tenant_name=self.tenant_name,
                                   auth_url=self.auth_url,
                                   insecure=self.insecure)
-
-    def create_users_and_tenants(self):
-        conf = self.conf
-        self.create_user_with_tenant(conf.get('identity', 'username'),
-                                     conf.get('identity', 'password'),
-                                     conf.get('identity', 'tenant_name'))
-        self.add_admin_to_tenant(conf.get('identity', 'tenant_name'))
-
-        self.create_user_with_tenant(conf.get('identity', 'alt_username'),
-                                     conf.get('identity', 'alt_password'),
-                                     conf.get('identity', 'alt_tenant_name'))
-
-    def add_admin_to_tenant(self, tenant_name):
-        """Add the admin user to the specified tenant with the admin role."""
-        client = self.identity_client
-        tenant_id = client.tenants.find(name=tenant_name)
-        admin_user = self.conf.get('identity', 'admin_username')
-        admin_user_id = client.users.find(name=admin_user)
-        admin_role_id = client.roles.find(name='admin')
-        try:
-            client.tenants.add_user(tenant_id, admin_user_id, admin_role_id)
-            LOG.info("Added user '%s' with the admin role to tenant '%s'",
-                     admin_user, tenant_name)
-        except keystone_exception.Conflict:
-            LOG.info("(no change) User '%s' already has the admin role in"
-                     " tenant '%s'", admin_user, tenant_name)
-
-    def create_user_with_tenant(self, username, password, tenant_name):
-        LOG.info("Creating user '%s' with tenant '%s' and password '%s'",
-                 username, tenant_name, password)
-        tenant_description = "Tenant for Tempest %s user" % username
-        email = "%s@test.com" % username
-        # create tenant
-        try:
-            self.identity_client.tenants.create(tenant_name,
-                                                tenant_description)
-        except keystone_exception.Conflict:
-            LOG.info("(no change) Tenant '%s' already exists", tenant_name)
-
-        tenant = self.identity_client.tenants.find(name=tenant_name)
-        # create user
-        try:
-            self.identity_client.users.create(name=username,
-                                              password=password,
-                                              email=email,
-                                              tenant_id=tenant.id)
-        except keystone_exception.Conflict:
-            LOG.info("User '%s' already exists. Setting password to '%s'",
-                     username, password)
-            user = self.identity_client.users.find(name=username)
-            self.identity_client.users.update_password(user.id, password)
 
     def do_flavors(self, create):
         LOG.info("Querying flavors")
@@ -440,6 +389,58 @@ class TempestConf(ConfigParser.SafeConfigParser):
         LOG.debug("Setting [%s] %s = %s", section, key, value)
         ConfigParser.SafeConfigParser.set(self, section, key, value)
         return True
+
+
+def create_tempest_users(identity_client, conf):
+    create_user_with_tenant(identity_client,
+                            conf.get('identity', 'username'),
+                            conf.get('identity', 'password'),
+                            conf.get('identity', 'tenant_name'))
+    add_admin_to_tenant(identity_client,
+                        conf.get('identity', 'admin_username'),
+                        conf.get('identity', 'tenant_name'))
+
+    create_user_with_tenant(identity_client,
+                            conf.get('identity', 'alt_username'),
+                            conf.get('identity', 'alt_password'),
+                            conf.get('identity', 'alt_tenant_name'))
+
+
+def add_admin_to_tenant(identity_client, admin_user, tenant_name):
+    """Add the admin user to the specified tenant with the admin role."""
+    tenant_id = identity_client.tenants.find(name=tenant_name)
+    user_id = identity_client.users.find(name=admin_user)
+    role_id = identity_client.roles.find(name='admin')
+    try:
+        identity_client.tenants.add_user(tenant_id, user_id, role_id)
+        LOG.info("Added user '%s' with the admin role to tenant '%s'",
+                 admin_user, tenant_name)
+    except keystone_exception.Conflict:
+        LOG.info("(no change) User '%s' already has the admin role in"
+                 " tenant '%s'", admin_user, tenant_name)
+
+
+def create_user_with_tenant(identity_client, username, password, tenant_name):
+    LOG.info("Creating user '%s' with tenant '%s' and password '%s'",
+             username, tenant_name, password)
+    tenant_description = "Tenant for Tempest %s user" % username
+    email = "%s@test.com" % username
+    # create tenant
+    try:
+        identity_client.tenants.create(tenant_name, tenant_description)
+    except keystone_exception.Conflict:
+        LOG.info("(no change) Tenant '%s' already exists", tenant_name)
+
+    tenant = identity_client.tenants.find(name=tenant_name)
+    # create user
+    try:
+        identity_client.users.create(name=username, password=password,
+                                     email=email, tenant_id=tenant.id)
+    except keystone_exception.Conflict:
+        LOG.info("User '%s' already exists. Setting password to '%s'",
+                 username, password)
+        user = identity_client.users.find(name=username)
+        identity_client.users.update_password(user.id, password)
 
 
 def configure_boto(conf, services):
