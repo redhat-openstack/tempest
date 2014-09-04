@@ -105,9 +105,6 @@ def main():
 
     manager = ClientManager(conf, not args.non_admin)
     services = api_discovery.discover(manager.identity_client)
-    has_neutron = "network" in services
-    if has_neutron:
-        manager.add_neutron_client()
     if args.create:
         LOG.info("Creating resources")
         create_tempest_users(manager.identity_client, conf)
@@ -116,6 +113,7 @@ def main():
     create_tempest_flavors(manager.compute_client, conf, args.create)
     create_tempest_images(manager.image_client, conf,
                           args.image, args.create)
+    has_neutron = "network" in services
     create_tempest_networks(manager, conf, has_neutron, args.create)
     configure_discovered_services(conf, services)
     configure_boto(conf, services)
@@ -190,64 +188,78 @@ def parse_overrides(overrides):
 
 
 class ClientManager(object):
+    """Manager of various OpenStack API clients.
+
+    Connections to clients are created on-demand, i.e. the client tries to
+    connect to the server only when it's being requested.
     """
-    Manager that provides access to the official python clients for
-    calling various OpenStack APIs.
-    """
+    _identity = None
+    _compute = None
+    _image = None
+    _network = None
+
     def __init__(self, conf, admin):
-        self.conf = conf
-        insecure = conf.get('identity', 'disable_ssl_certificate_validation')
-        auth_url = conf.get('identity', 'uri')
+        self.insecure = \
+            conf.get('identity', 'disable_ssl_certificate_validation')
+        self.auth_url = conf.get('identity', 'uri')
         if admin:
-            username = conf.get('identity', 'admin_username')
-            password = conf.get('identity', 'admin_password')
-            tenant_name = conf.get('identity', 'admin_tenant_name')
+            self.username = conf.get('identity', 'admin_username')
+            self.password = conf.get('identity', 'admin_password')
+            self.tenant_name = conf.get('identity', 'admin_tenant_name')
         else:
-            username = conf.get('identity', 'username', 'demo')
-            password = conf.get('identity', 'password', 'secret')
-            tenant_name = conf.get('identity', 'tenant_name', 'demo')
-        # identity client
-        creds = {'username': username,
-                 'password': password,
-                 'tenant_name': tenant_name,
-                 'auth_url': auth_url,
-                 'insecure': insecure
-                 }
-        LOG.info("Connecting to keystone at '%s' with username '%s',"
-                 " tenant '%s', and password '%s'", auth_url, username,
-                 tenant_name, password)
-        self.identity_client = keystone_client.Client(**creds)
+            self.username = conf.get('identity', 'username', 'demo')
+            self.password = conf.get('identity', 'password', 'secret')
+            self.tenant_name = conf.get('identity', 'tenant_name', 'demo')
 
-        # compute client
-        kwargs = {'insecure': insecure,
-                  'no_cache': True}
-        self.compute_client = nova_client.Client('2', username, password,
-                                                 tenant_name, auth_url,
-                                                 **kwargs)
+    @property
+    def identity_client(self):
+        if self._identity:
+            return self._identity
+        LOG.info("Connecting to Keystone at '%s' with username '%s',"
+                 " tenant '%s', and password '%s'", self.auth_url,
+                 self.username, self.tenant_name, self.password)
+        self._identity = keystone_client.Client(username=self.username,
+                                                password=self.password,
+                                                tenant_name=self.tenant_name,
+                                                auth_url=self.auth_url,
+                                                insecure=self.insecure)
+        return self._identity
 
-        # image client
-        token = self.identity_client.auth_token
-        catalog = self.identity_client.service_catalog
-        endpoint = catalog.url_for(service_type='image',
-                                   endpoint_type='publicURL')
-        creds = {'endpoint': endpoint,
-                 'token': token,
-                 'insecure': insecure}
-        self.image_client = glance_client.Client("1", **creds)
+    @property
+    def compute_client(self):
+        if self._compute:
+            return self._compute
+        LOG.debug("Connecting to Nova")
+        self._compute = nova_client.Client('2', self.username, self.password,
+                                           self.tenant_name, self.auth_url,
+                                           insecure=self.insecure,
+                                           no_cache=True)
+        return self._compute
 
-        self.username = username
-        self.password = password
-        self.tenant_name = tenant_name
-        self.insecure = insecure
-        self.auth_url = auth_url
+    @property
+    def image_client(self):
+        if not self._image:
+            LOG.debug("Connecting to Glance")
+            token = self.identity_client.auth_token
+            catalog = self.identity_client.service_catalog
+            endpoint = catalog.url_for(service_type='image',
+                                       endpoint_type='publicURL')
+            self._image = glance_client.Client("1", endpoint=endpoint,
+                                               token=token,
+                                               insecure=self.insecure)
+        return self._image
 
-    def add_neutron_client(self):
-        self.network_client = \
-            neutron_client.Client(username=self.username,
-                                  password=self.password,
-                                  tenant_name=self.tenant_name,
-                                  auth_url=self.auth_url,
-                                  insecure=self.insecure)
+    @property
+    def network_client(self):
+        if self._network:
+            return self._network
+        LOG.debug("Connecting to Neutron")
+        self._network = neutron_client.Client(username=self.username,
+                                              password=self.password,
+                                              tenant_name=self.tenant_name,
+                                              auth_url=self.auth_url,
+                                              insecure=self.insecure)
+        return self._network
 
 
 class TempestConf(ConfigParser.SafeConfigParser):
