@@ -116,7 +116,7 @@ def main():
     create_tempest_flavors(manager.compute_client, conf, args.create)
     create_tempest_images(manager.image_client, conf,
                           args.image, args.create)
-    manager.do_networks(has_neutron, args.create)
+    create_tempest_networks(manager, conf, has_neutron, args.create)
     configure_discovered_services(conf, services)
     configure_boto(conf, services)
     configure_cli(conf)
@@ -248,29 +248,6 @@ class ClientManager(object):
                                   tenant_name=self.tenant_name,
                                   auth_url=self.auth_url,
                                   insecure=self.insecure)
-
-    def do_networks(self, has_neutron, create):
-        label = None
-        if has_neutron:
-            for router in self.network_client.list_routers()['routers']:
-                net_id = router['external_gateway_info']['network_id']
-                if ('external_gateway_info' in router and net_id is not None):
-                    self.conf.set('network', 'public_network_id', net_id)
-                    self.conf.set('network', 'public_router_id', router['id'])
-                    break
-            for network in self.compute_client.networks.list():
-                if network.id != net_id:
-                    label = network.label
-                    break
-        else:
-            networks = self.compute_client.networks.list()
-            if networks:
-                label = networks[0].label
-        if label:
-            self.conf.set('compute', 'fixed_network_name', label)
-        else:
-            raise Exception('fixed_network_name could not be discovered and'
-                            ' must be specified')
 
 
 class TempestConf(ConfigParser.SafeConfigParser):
@@ -473,6 +450,30 @@ def find_or_upload_image(image_client, image_id, image_name, allow_creation,
             shutil.copyfile(image_source, image_dest)
         image = _upload_image(image_client, image_name, image_dest)
     return image.id
+
+
+def create_tempest_networks(clients, conf, has_neutron, allow_creation):
+    label = None
+    if has_neutron:
+        for router in clients.network_client.list_routers()['routers']:
+            net_id = router['external_gateway_info']['network_id']
+            if ('external_gateway_info' in router and net_id is not None):
+                conf.set('network', 'public_network_id', net_id)
+                conf.set('network', 'public_router_id', router['id'])
+                break
+        for network in clients.compute_client.networks.list():
+            if network.id != net_id:
+                label = network.label
+                break
+    else:
+        networks = clients.compute_client.networks.list()
+        if networks:
+            label = networks[0].label
+    if label:
+        conf.set('compute', 'fixed_network_name', label)
+    else:
+        raise Exception('fixed_network_name could not be discovered and'
+                        ' must be specified')
 
 
 def configure_boto(conf, services):
