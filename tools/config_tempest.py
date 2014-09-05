@@ -537,6 +537,9 @@ def configure_discovered_services(conf, services):
     """
     # set service availability
     for service, codename in SERVICE_NAMES.iteritems():
+        # ceilometer is still transitioning from metering to telemetry
+        if service == 'telemetry' and 'metering' in services:
+            service = 'metering'
         conf.set('service_available', codename, str(service in services))
 
     # set service extensions
