@@ -299,9 +299,11 @@ def create_tempest_users(identity_client, conf):
                             conf.get('identity', 'username'),
                             conf.get('identity', 'password'),
                             conf.get('identity', 'tenant_name'))
-    add_admin_to_tenant(identity_client,
-                        conf.get('identity', 'admin_username'),
-                        conf.get('identity', 'tenant_name'))
+
+    give_role_to_user(identity_client,
+                      conf.get('identity', 'admin_username'),
+                      conf.get('identity', 'tenant_name'),
+                      role_name='admin')
 
     create_user_with_tenant(identity_client,
                             conf.get('identity', 'alt_username'),
@@ -309,18 +311,18 @@ def create_tempest_users(identity_client, conf):
                             conf.get('identity', 'alt_tenant_name'))
 
 
-def add_admin_to_tenant(identity_client, admin_user, tenant_name):
-    """Add the admin user to the specified tenant with the admin role."""
+def give_role_to_user(identity_client, username, tenant_name, role_name):
+    """Give the user a role in the project (tenant)."""
+    user_id = identity_client.users.find(name=username)
     tenant_id = identity_client.tenants.find(name=tenant_name)
-    user_id = identity_client.users.find(name=admin_user)
-    role_id = identity_client.roles.find(name='admin')
+    role_id = identity_client.roles.find(name=role_name)
     try:
         identity_client.tenants.add_user(tenant_id, user_id, role_id)
-        LOG.info("Added user '%s' with the admin role to tenant '%s'",
-                 admin_user, tenant_name)
+        LOG.info("User '%s' was given the '%s' role in project '%s'",
+                 username, role_name, tenant_name)
     except keystone_exception.Conflict:
-        LOG.info("(no change) User '%s' already has the admin role in"
-                 " tenant '%s'", admin_user, tenant_name)
+        LOG.info("(no change) User '%s' already has the '%s' role in"
+                 " project '%s'", username, role_name, tenant_name)
 
 
 def create_user_with_tenant(identity_client, username, password, tenant_name):
