@@ -14,6 +14,24 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+"""
+This script will generate the etc/tempest.conf file by applying a series of
+specified options in the following order:
+
+1. Values from etc/default-overrides.conf, if present. This file will be
+provided by the distributor of the tempest code, a distro for example, to
+specify defaults that are different than the generic defaults for tempest.
+
+2. Values using the file provided by the --patch argument to the script.
+Some required options differ among deployed clouds but the right values cannot
+be discovered by the user. The file used here could be created by an installer,
+or manually if necessary.
+
+3. Values provided on the command line. These override all other values.
+
+4. Discovery. Values that have not been provided in steps [1-3] will be
+obtained by querying the cloud.
+"""
 
 import argparse
 import ConfigParser
@@ -26,7 +44,12 @@ import novaclient.client as nova_client
 import os
 import shutil
 import subprocess
+import sys
 import urllib2
+
+# Since tempest can be configured in different directories, we need to use
+# the path starting at cwd.
+sys.path.insert(0, os.getcwd())
 
 from tempest.common import api_discovery
 
@@ -123,7 +146,7 @@ def main():
 
 
 def parse_arguments():
-    parser = argparse.ArgumentParser("Generate the tempest.conf file")
+    parser = argparse.ArgumentParser(__doc__)
     parser.add_argument('--create', action='store_true', default=False,
                         help='create default tempest resources')
     parser.add_argument('--out', default="etc/tempest.conf",
