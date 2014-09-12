@@ -14,8 +14,27 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+"""
+This script will generate the etc/tempest.conf file by applying a series of
+specified options in the following order:
+
+1. Values from etc/default-overrides.conf, if present. This file will be
+provided by the distributor of the tempest code, a distro for example, to
+specify defaults that are different than the generic defaults for tempest.
+
+2. Values using the file provided by the --patch argument to the script.
+Some required options differ among deployed clouds but the right values cannot
+be discovered by the user. The file used here could be created by an installer,
+or manually if necessary.
+
+3. Values provided on the command line. These override all other values.
+
+4. Discovery. Values that have not been provided in steps [1-3] will be
+obtained by querying the cloud.
+"""
 
 import argparse
+import ConfigParser
 import glanceclient as glance_client
 import keystoneclient.exceptions as keystone_exception
 import keystoneclient.v2_0.client as keystone_client
@@ -26,449 +45,115 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 import urllib2
-import urlparse
+
+# Since tempest can be configured in different directories, we need to use
+# the path starting at cwd.
+sys.path.insert(0, os.getcwd())
+
+from tempest.common import api_discovery
 
 LOG = logging.getLogger(__name__)
+LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+
+TEMPEST_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+
+DEFAULTS_FILE = os.path.join(TEMPEST_DIR, "etc", "default-overrides.conf")
+DEFAULT_IMAGE = "http://download.cirros-cloud.net/0.3.1/" \
+                "cirros-0.3.1-x86_64-disk.img"
+
+# services and their codenames
+SERVICE_NAMES = {
+    'baremetal': 'ironic',
+    'compute': 'nova',
+    'database': 'trove',
+    'data_processing': 'sahara',
+    'image': 'glance',
+    'network': 'neutron',
+    'object-store': 'swift',
+    'orchestration': 'heat',
+    'telemetry': 'ceilometer',
+    'volume': 'cinder',
+    'queuing': 'marconi',
+}
+
+# what API versions could the service have and should be enabled/disabled
+# depending on whether they get discovered as supported. Services with only one
+# version don't need to be here, neither do service versions that are not
+# configurable in tempest.conf
+SERVICE_VERSIONS = {
+    'image': ['v1', 'v2'],
+    'identity': ['v2', 'v3'],
+    'volume': ['v1', 'v2'],
+    'compute': ['v3'],
+}
+
+# Keep track of where the extensions are saved for that service.
+# This is necessary because the configuration file is inconsistent - it uses
+# different option names for service extension depending on the service.
+SERVICE_EXTENSION_KEY = {
+    'compute': 'discoverable_apis',
+    'object-storage': 'discoverable_apis',
+    'network': 'api_extensions',
+    'volume': 'api_extensions',
+}
 
 
-class ClientManager(object):
-    """
-    Manager that provides access to the official python clients for
-    calling various OpenStack APIs.
-    """
-    def __init__(self, conf, admin):
-        self.conf = conf
-        insecure = conf.get('identity', 'disable_ssl_certificate_validation')
-        auth_url = conf.get('identity', 'uri')
-        if admin:
-            username = conf.get('identity', 'admin_username')
-            password = conf.get('identity', 'admin_password')
-            tenant_name = conf.get('identity', 'admin_tenant_name')
-        else:
-            username = conf.get('identity', 'username', 'demo')
-            password = conf.get('identity', 'password', 'secret')
-            tenant_name = conf.get('identity', 'tenant_name', 'demo')
-        # identity client
-        creds = {'username': username,
-                 'password': password,
-                 'tenant_name': tenant_name,
-                 'auth_url': auth_url,
-                 'insecure': insecure
-                 }
-        LOG.debug(creds)
-        self.identity_client = keystone_client.Client(**creds)
+def main():
+    args = parse_arguments()
+    logging.basicConfig(format=LOG_FORMAT)
 
-        # compute client
-        kwargs = {'insecure': insecure,
-                  'no_cache': True}
-        self.compute_client = nova_client.Client('2', username, password,
-                                                 tenant_name, auth_url,
-                                                 **kwargs)
+    if args.verbose:
+        LOG.setLevel(logging.INFO)
+    if args.debug:
+        LOG.setLevel(logging.DEBUG)
 
-        # image client
-        token = self.identity_client.auth_token
-        endpoint = self.identity_client.\
-        service_catalog.url_for(service_type='image',
-                                endpoint_type='publicURL'
-                            )
-        creds = {'endpoint': endpoint,
-                 'token': token,
-                 'insecure': insecure}
-        self.image_client = glance_client.Client("1", **creds)
+    conf = TempestConf()
+    if os.path.isfile(DEFAULTS_FILE):
+        LOG.info("Reading defaults from file '%s'", DEFAULTS_FILE)
+        conf.read(DEFAULTS_FILE)
+    if args.patch and os.path.isfile(args.patch):
+        LOG.info("Adding options from patch file '%s'", args.patch)
+        conf.read(args.patch)
+    for section, key, value in args.overrides:
+        conf.set(section, key, value, priority=True)
 
-        self.username = username
-        self.password = password
-        self.tenant_name = tenant_name
-        self.insecure = insecure
-        self.auth_url = auth_url
-
-    def add_neutron_client(self):
-        self.network_client = \
-        neutron_client.Client(username=self.username,
-                              password=self.password,
-                              tenant_name=self.tenant_name,
-                              auth_url=self.auth_url,
-                              insecure=self.insecure)
-
-    def create_users_and_tenants(self):
-        LOG.debug("Creating users and tenants")
-        conf = self.conf
-        self.create_user_with_tenant(conf.get('identity', 'username'),
-                                     conf.get('identity', 'password'),
-                                     conf.get('identity', 'tenant_name'),
-                                     add_admin_user=True)
-
-        self.create_user_with_tenant(conf.get('identity', 'alt_username'),
-                                     conf.get('identity', 'alt_password'),
-                                     conf.get('identity', 'alt_tenant_name'))
-
-    def add_admin_user(self, tenant_id):
-        client = self.identity_client
-        admin_user = self.conf.get('identity', 'admin_username')
-        admin_role_id = [role.id for role in client.roles.list()
-                         if role.name == 'admin'][0]
-        admin_user_id = [user.id for user in client.users.list()
-                         if user.name == admin_user][0]
-        client.tenants.add_user(tenant_id, admin_user_id, admin_role_id)
-
-    def create_user_with_tenant(self, username, password, tenant_name,
-                                add_admin_user=False):
-        # Try to create the necessary tenant
-        tenant_id = None
-        try:
-            tenant_description = "Tenant for Tempest %s user" % username
-            tenant = self.identity_client.tenants.create(tenant_name,
-                                                         tenant_description)
-            tenant_id = tenant.id
-            if add_admin_user:
-                self.add_admin_user(tenant_id)
-        except keystone_exception.Conflict:
-            # if already exist, use existing tenant
-            tenant_list = self.identity_client.tenants.list()
-            for tenant in tenant_list:
-                if tenant.name == tenant_name:
-                    tenant_id = tenant.id
-                    LOG.debug("Tenant %s exists: %s" % \
-                              (tenant_name, tenant_id))
-                    break
-
-        try:
-            email = "%s@test.com" % username
-            self.identity_client.users.create(name=username,
-                                              password=password,
-                                              email=email,
-                                              tenant_id=tenant_id)
-        except keystone_exception.Conflict:
-            # if already exist, use existing user but set password
-            user_list = self.identity_client.users.list()
-            for user in user_list:
-                if user.name == username:
-                    LOG.debug("User %s existed. Setting password to %s" %
-                              (username, password))
-                    self.identity_client.users.update_password(user, password)
-                    break
-
-    def do_flavors(self, create):
-        LOG.debug("Querying flavors")
-        flavor_id = None
-        flavor_alt_id = None
-        max_id = 1
-        for flavor in self.compute_client.flavors.list():
-            if flavor.name == "m1.nano":
-                flavor_id = flavor.id
-            if flavor.name == "m1.micro":
-                flavor_alt_id = flavor.id
-            try:
-                max_id = max(max_id, int(flavor.id))
-            except ValueError:
-                pass
-        if create and not flavor_id:
-            flavor = self.compute_client.flavors.create("m1.nano", 64, 1, 0,
-                                                        flavorid=max_id + 1)
-            flavor_id = flavor.id
-        if create and not flavor_alt_id:
-            flavor = self.compute_client.flavors.create("m1.micro", 128, 1, 0,
-                                                        flavorid=max_id + 2)
-            flavor_alt_id = flavor.id
-        if not self.conf.is_modified('compute', 'flavor_ref'):
-            self.conf.set('compute', 'flavor_ref', flavor_id)
-        if not self.conf.is_modified('compute', 'flavor_ref_alt'):
-            self.conf.set('compute', 'flavor_ref_alt', flavor_alt_id)
-
-    def upload_image(self, name, data):
-        LOG.debug("Uploading image: %s" % name)
-        data.seek(0)
-        return self.image_client.images.create(name=name,
-                                               disk_format="qcow2",
-                                               container_format="bare",
-                                               data=data,
-                                               is_public="true")
-
-    def do_images(self, path, create):
-        LOG.debug("Querying images")
-        name = path[path.rfind('/') + 1:]
-        name_alt = name + "_alt"
-        image_id = None
-        image_alt_id = None
-        for image in self.image_client.images.list():
-            if image.name == name:
-                image_id = image.id
-            if image.name == name_alt:
-                image_alt_id = image.id
-        qcow2_img_path = os.path.join(self.conf.get("scenario", "img_dir"),
-                                      self.conf.get("scenario",
-                                                    "qcow2_img_file"))
-        if create and not (image_id and image_alt_id):
-            # Make sure image location is writable beforeuploading
-            open(qcow2_img_path, "w")
-            if path.startswith("http:") or path.startswith("https:"):
-                LOG.debug("Downloading image file: %s" % path)
-                request = urllib2.urlopen(path)
-                with tempfile.NamedTemporaryFile() as data:
-                    while True:
-                        chunk = request.read(64 * 1024)
-                        if not chunk:
-                            break
-                        data.write(chunk)
-
-                    data.flush()
-                    if not image_id:
-                        image_id = self.upload_image(name, data).id
-                    if not image_alt_id:
-                        image_alt_id = self.upload_image(name_alt, data).id
-                    shutil.copyfile(data.name, qcow2_img_path)
-            else:
-                with open(path) as data:
-                    if not image_id:
-                        image_id = self.upload_image(name, data).id
-                    if not image_alt_id:
-                        image_alt_id = self.upload_image(name_alt, data).id
-                shutil.copyfile(path, qcow2_img_path)
-
-        if not os.path.exists(qcow2_img_path):
-            # Make sure the image file exists.
-            with open(qcow2_img_path, "w") as image:
-                for chunk in self.image_client.images.data(image_id):
-                    image.write(chunk)
-
-        self.conf.set('compute', 'image_ref', image_id)
-        self.conf.set('compute', 'image_ref_alt', image_alt_id or image_id)
-
-    def do_networks(self, has_neutron, create):
-        label = None
-        if has_neutron:
-            for router in self.network_client.list_routers()['routers']:
-                if ('external_gateway_info' in router and
-                    router['external_gateway_info']['network_id'] is not None):
-                    net_id = router['external_gateway_info']['network_id']
-                    self.conf.set('network', 'public_network_id', net_id)
-                    self.conf.set('network', 'public_router_id', router['id'])
-                    break
-            for network in self.compute_client.networks.list():
-                if network.id != net_id:
-                    label = network.label
-                    break
-        else:
-            networks = self.compute_client.networks.list()
-            if networks:
-                label = networks[0].label
-        if label:
-            self.conf.set('compute', 'fixed_network_name', label)
-        else:
-            raise Exception('fixed_network_name could not be discovered and' \
-                            'and must be specified')
-
-
-class TempestConf():
-    def __init__(self, tempest_conf):
-        self.lines = []
-        self.sections = {}
-        self.modified = {}
-        section = None
-        index = -1
-        for line in open(tempest_conf):
-            index += 1
-            self.lines.append(line)
-            if line.startswith('# '):
-                continue
-            stripped = line.strip()
-            if stripped.startswith('['):
-                name = stripped[1:stripped.find(']')]
-                section = {}
-                self.sections[name] = section
-                self.modified[name] = {}
-                continue
-            if not stripped:
-                continue
-            if stripped.startswith('#'):
-                stripped = stripped[1:]
-            equal = stripped.find('=')
-            key = stripped[:equal].strip()
-            value = stripped[equal + 1:].strip()
-            if (value and
-                value[0] == value[-1] and
-                value.startswith(("\"", "'"))
-                ):
-                value = value[1:-1]
-            section[key] = (value, index)
-
-    def validate_and_write(self, conf_file):
-        for section in self.modified.values():
-            for (key, (value, index)) in section.iteritems():
-                if value.strip() != value:
-                    value = '"%s"' % value
-                self.lines[index] = "%s=%s\n" % (key, value)
-        with tempfile.NamedTemporaryFile() as out:
-            for line in self.lines:
-                out.write(line)
-            out.flush()
-            shutil.copyfile(out.name, conf_file)
-
-    def get(self, section, key):
-        if key in self.modified[section]:
-            return self.modified[section][key][0]
-        return self.sections[section][key][0]
-
-    def set(self, section, key, value):
-        assert isinstance(value, str) or isinstance(value, unicode),\
-         "Section: %s Key: %s Value: %s" % (section, key, value)
-        (_, index) = self.sections[section][key]
-        self.modified[section][key] = (str(value), index)
-
-    def is_modified(self, section, key):
-        return key in self.modified[section]
-
-    def set_defaults(self):
-        def set_it(name, value):
-            if not self.is_modified('DEFAULT', name):
-                self.set('DEFAULT', name, value)
-
-        set_it("lock_path", "/tmp")
-        set_it("debug", "True")
-        set_it("log_file", "tempest.log")
-        set_it("use_stderr", "False")
-
-    def set_identities(self):
-        def set_it(name, value):
-            if self.get('identity', name) in ["", "<None>"]:
-                self.set('identity', name, value)
-
-        set_it("username", "demo")
-        set_it("tenant_name", "demo")
-        set_it("password", "secrete")
-        set_it("alt_username", "alt_demo")
-        set_it("alt_tenant_name", "alt_demo")
-        set_it("alt_password", "secrete")
-        set_it("admin_username", "admin")
-        set_it("admin_tenant_name", "admin")
-        set_it("admin_password", "secrete")
-
-    def set_service(self, name, section, services):
-        if section not in self.sections:
-            return
-        catalog_type = self.get(section, 'catalog_type')
-        old = self.get('service_available', name)
-        new = str(catalog_type in services)
-        if old.lower() != new.lower():
-            self.set('service_available', name, str(new))
-
-    def set_service_available(self, services):
-        self.set_service('ironic', 'baremetal', services)
-        self.set_service('nova', 'compute', services)
-        self.set_service('sahara', 'data_processing', services)
-        self.set_service('glance', 'image', services)
-        self.set_service('neutron', 'network', services)
-        self.set_service('swift', 'object-storage', services)
-        self.set_service('heat', 'orchestration', services)
-        self.set_service('ceilometer', 'telemetry', services)
-        self.set_service('cinder', 'volume', services)
-        self.set_service('trove', 'database', services)
-        self.set_service('marconi', 'queuing', services)
-
-    def do_resources(self, manager, image, has_neutron, create):
-        if create:
-            LOG.debug("Creating resources")
-        else:
-            LOG.debug("Querying resources")
-        if create:
-            manager.create_users_and_tenants()
-        manager.do_flavors(create)
-        manager.do_images(image, create)
-        manager.do_networks(has_neutron, create)
-
-    def set_paths(self, services, query):
-        if 'ec2' in services and query:
-            self.set('boto', 'ec2_url', services['ec2'][0]['publicURL'])
-        if 's3' in services and query:
-            self.set('boto', 's3_url', services['s3'][0]['publicURL'])
-        if not self.is_modified('cli', 'cli_dir'):
-            devnull = open(os.devnull, 'w')
-            try:
-                path = subprocess.check_output(["which", "nova"],
-                                               stderr=devnull)
-                self.set('cli', 'cli_dir', os.path.dirname(path.strip()))
-            except:
-                self.set('cli', 'enabled', 'False')
-            try:
-                subprocess.check_output(["which", "nova-manage"],
-                                        stderr=devnull)
-                self.set('cli', 'has_manage', 'True')
-            except:
-                self.set('cli', 'has_manage', 'False')
-        uri = self.get('identity', 'uri')
-        base = uri[:uri.rfind(':')]
-        assert base.startswith('http:') or base.startswith('https:')
-        if query:
-            has_horizon = True
-            try:
-                urllib2.urlopen(base)
-            except:
-                has_horizon = False
-            self.set('service_available', 'horizon', str(has_horizon))
-            self.set('dashboard', 'dashboard_url', base + '/')
-            self.set('dashboard', 'login_url', base + '/auth/login/')
-
-
-def configure_tempest(sample=None, out=None, no_query=False, create=False,
-                      overrides=[], image=None, patch=None, non_admin=False):
-    if create and non_admin:
-        raise Exception("--create requires admin credentials")
-    LOG.debug("Configuring from %s to %s" % (sample, out))
-    conf = TempestConf(sample)
-    if patch:
-        for (section, values) in TempestConf(patch).sections.iteritems():
-            for (key, (value, _index)) in values.iteritems():
-                conf.set(section, key, value)
-    i = 0
-    while i < len(overrides):
-        keyparts = overrides[i].split('.')
-        assert len(keyparts) == 2, keyparts
-        conf.set(keyparts[0], keyparts[1], overrides[i + 1])
-        i += 2
-    conf.set_defaults()
-    conf.set_identities()
-    if not conf.is_modified("identity", "uri_v3"):
-        uri = conf.get("identity", "uri")
-        conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
-    conf.set_identities()
-    if non_admin:
+    uri = conf.get("identity", "uri")
+    conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
+    if args.non_admin:
         conf.set("identity", "admin_username", "")
         conf.set("identity", "admin_tenant_name", "")
         conf.set("identity", "admin_password", "")
         conf.set("compute", "allow_tenant_isolation", "False")
-        conf.set("compute", "allow_tenant_reuse", "False")
 
-    manager = ClientManager(conf, not non_admin)
-    services = manager.identity_client.service_catalog.get_endpoints()
+    clients = ClientManager(conf, not args.non_admin)
+    services = api_discovery.discover(clients.identity)
+    if args.create:
+        create_tempest_users(clients.identity, conf)
+        workaround_heat_role(clients.identity, conf)
+    create_tempest_flavors(clients.compute, conf, args.create)
+    create_tempest_images(clients.image, conf,
+                          args.image, args.create)
     has_neutron = "network" in services
-    if has_neutron:
-        manager.add_neutron_client()
-    if image is None:
-        image = "http://download.cirros-cloud.net/0.3.1/" \
-                "cirros-0.3.1-x86_64-disk.img"
-    conf.do_resources(manager, image, has_neutron, create)
-    if not no_query:
-        conf.set_service_available(services)
-    conf.set_paths(services, not no_query)
-    LOG.debug("Writing conf file")
-    conf.validate_and_write(out)
+    create_tempest_networks(clients, conf, has_neutron, args.create)
+    configure_discovered_services(conf, services)
+    configure_boto(conf, services)
+    configure_cli(conf)
+    configure_horizon(conf)
+    LOG.info("Creating configuration file %s" % os.path.abspath(args.out))
+    with open(args.out, 'w') as f:
+        conf.write(f)
 
-if __name__ == "__main__":
 
-    parser = argparse.ArgumentParser("Generate the tempest.conf file")
-    parser.add_argument('--no-query', action='store_true', default=False,
-                        help='Do not query the endpoint for services')
+def parse_arguments():
+    parser = argparse.ArgumentParser(__doc__)
     parser.add_argument('--create', action='store_true', default=False,
                         help='create default tempest resources')
-    parser.add_argument('--sample', default="etc/tempest.conf.sample",
-                        help='the sample tempest.conf file to read')
     parser.add_argument('--out', default="etc/tempest.conf",
                         help='the tempest.conf file to write')
     parser.add_argument('--patch', default=None,
                         help="""A file in the format of tempest.conf that will
-                                override the values in the sample input. The
+                                override the default values. The
                                 patch file is an alternative to providing
                                 key/value pairs. If there are also key/value
                                 pairs they will be applied after the patch
@@ -480,27 +165,490 @@ if __name__ == "__main__":
                                 For example: identity.username myname
                                  identity.password mypass""")
     parser.add_argument('--debug', action='store_true', default=False,
-                        help='Send log to stdout')
+                        help='Print debugging information')
+    parser.add_argument('--verbose', '-v', action='store_true', default=False,
+                        help='Print more information about the execution')
     parser.add_argument('--non-admin', action='store_true', default=False,
                         help='Run without admin creds')
-    parser.add_argument('--image', default=None,
+    parser.add_argument('--image', default=DEFAULT_IMAGE,
                         help="""an image to be uploaded to glance. The name of
                                 the image is the leaf name of the path which
                                 can be either a filename or url. Default is
-                                http://download.cirros-cloud.net/0.3.1/
-                                cirros-0.3.1-x86_64-disk.img """)
+                                '%s'""" % DEFAULT_IMAGE)
+    args = parser.parse_args()
 
-    ns = parser.parse_args()
+    if args.create and args.non_admin:
+        raise Exception("Options '--create' and '--non-admin' cannot be used"
+                        " together, since creating" " resources requires"
+                        " admin rights")
+    args.overrides = parse_overrides(args.overrides)
+    return args
 
-    if ns.debug:
-        ch = logging.StreamHandler(sys.stdout)
-        ch.setLevel(logging.DEBUG)
-        fmt = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        formatter = logging.Formatter(fmt)
-        ch.setFormatter(formatter)
-        LOG.setLevel(logging.DEBUG)
-        LOG.addHandler(ch)
 
-    configure_tempest(sample=ns.sample, out=ns.out, no_query=ns.no_query,
-                      create=ns.create, overrides=ns.overrides, image=ns.image,
-                      patch=ns.patch, non_admin=ns.non_admin)
+def parse_overrides(overrides):
+    """Manual parsing of positional arguments.
+
+    TODO(mkollaro) find a way to do it in argparse
+    """
+    if len(overrides) % 2 != 0:
+        raise Exception("An odd number of override options was found. The"
+                        " overrides have to be in 'section.key value' format.")
+    i = 0
+    new_overrides = []
+    while i < len(overrides):
+        section_key = overrides[i].split('.')
+        value = overrides[i + 1]
+        if len(section_key) != 2:
+            raise Exception("Missing dot. The option overrides has to come in"
+                            " the format 'section.key value', but got '%s'."
+                            % (overrides[i] + ' ' + value))
+        section, key = section_key
+        new_overrides.append((section, key, value))
+        i += 2
+    return new_overrides
+
+
+class ClientManager(object):
+    """Manager of various OpenStack API clients.
+
+    Connections to clients are created on-demand, i.e. the client tries to
+    connect to the server only when it's being requested.
+    """
+    _identity = None
+    _compute = None
+    _image = None
+    _network = None
+
+    def __init__(self, conf, admin):
+        self.insecure = \
+            conf.get('identity', 'disable_ssl_certificate_validation')
+        self.auth_url = conf.get('identity', 'uri')
+        if admin:
+            self.username = conf.get('identity', 'admin_username')
+            self.password = conf.get('identity', 'admin_password')
+            self.tenant_name = conf.get('identity', 'admin_tenant_name')
+        else:
+            self.username = conf.get('identity', 'username', 'demo')
+            self.password = conf.get('identity', 'password', 'secret')
+            self.tenant_name = conf.get('identity', 'tenant_name', 'demo')
+
+    @property
+    def identity(self):
+        if self._identity:
+            return self._identity
+        LOG.info("Connecting to Keystone at '%s' with username '%s',"
+                 " tenant '%s', and password '%s'", self.auth_url,
+                 self.username, self.tenant_name, self.password)
+        self._identity = keystone_client.Client(username=self.username,
+                                                password=self.password,
+                                                tenant_name=self.tenant_name,
+                                                auth_url=self.auth_url,
+                                                insecure=self.insecure)
+        return self._identity
+
+    @property
+    def compute(self):
+        if self._compute:
+            return self._compute
+        LOG.debug("Connecting to Nova")
+        self._compute = nova_client.Client('2', self.username, self.password,
+                                           self.tenant_name, self.auth_url,
+                                           insecure=self.insecure,
+                                           no_cache=True)
+        return self._compute
+
+    @property
+    def image(self):
+        if not self._image:
+            LOG.debug("Connecting to Glance")
+            token = self.identity.auth_token
+            catalog = self.identity.service_catalog
+            endpoint = catalog.url_for(service_type='image',
+                                       endpoint_type='publicURL')
+            self._image = glance_client.Client("1", endpoint=endpoint,
+                                               token=token,
+                                               insecure=self.insecure)
+        return self._image
+
+    @property
+    def network(self):
+        if self._network:
+            return self._network
+        LOG.debug("Connecting to Neutron")
+        self._network = neutron_client.Client(username=self.username,
+                                              password=self.password,
+                                              tenant_name=self.tenant_name,
+                                              auth_url=self.auth_url,
+                                              insecure=self.insecure)
+        return self._network
+
+
+class TempestConf(ConfigParser.SafeConfigParser):
+    # causes the config parser to preserve case of the options
+    optionxform = str
+
+    # set of pairs `(section, key)` which have a higher priority (are
+    # user-defined) and will usually not be overwritten by `set()`
+    priority_sectionkeys = set()
+
+    def set(self, section, key, value, priority=False):
+        """Set value in configuration, similar to `SafeConfigParser.set`
+
+        Creates non-existent sections. Keeps track of options which were
+        specified by the user and should not be normally overwritten.
+
+        :param priority: if True, always over-write the value. If False, don't
+            over-write an existing value if it was written before with a
+            priority (i.e. if it was specified by the user)
+        :returns: True if the value was written, False if not (because of
+            priority)
+        """
+        if not self.has_section(section):
+            self.add_section(section)
+        if not priority and (section, key) in self.priority_sectionkeys:
+            LOG.debug("Option '[%s] %s = %s' was defined by user, NOT"
+                      " overwriting into value '%s'", section, key,
+                      self.get(section, key), value)
+            return False
+        if priority:
+            self.priority_sectionkeys.add((section, key))
+        LOG.debug("Setting [%s] %s = %s", section, key, value)
+        ConfigParser.SafeConfigParser.set(self, section, key, value)
+        return True
+
+
+def create_tempest_users(identity_client, conf):
+    """Create users necessary for Tempest if they don't exist already."""
+    create_user_with_tenant(identity_client,
+                            conf.get('identity', 'username'),
+                            conf.get('identity', 'password'),
+                            conf.get('identity', 'tenant_name'))
+
+    give_role_to_user(identity_client,
+                      conf.get('identity', 'admin_username'),
+                      conf.get('identity', 'tenant_name'),
+                      role_name='admin')
+
+    create_user_with_tenant(identity_client,
+                            conf.get('identity', 'alt_username'),
+                            conf.get('identity', 'alt_password'),
+                            conf.get('identity', 'alt_tenant_name'))
+
+
+def give_role_to_user(identity_client, username, tenant_name, role_name):
+    """Give the user a role in the project (tenant)."""
+    user_id = identity_client.users.find(name=username)
+    tenant_id = identity_client.tenants.find(name=tenant_name)
+    role_id = identity_client.roles.find(name=role_name)
+    try:
+        identity_client.tenants.add_user(tenant_id, user_id, role_id)
+        LOG.info("User '%s' was given the '%s' role in project '%s'",
+                 username, role_name, tenant_name)
+    except keystone_exception.Conflict:
+        LOG.info("(no change) User '%s' already has the '%s' role in"
+                 " project '%s'", username, role_name, tenant_name)
+
+
+def create_user_with_tenant(identity_client, username, password, tenant_name):
+    """Create user and tenant if he doesn't exist.
+
+    Sets password even for existing user.
+    """
+    LOG.info("Creating user '%s' with tenant '%s' and password '%s'",
+             username, tenant_name, password)
+    tenant_description = "Tenant for Tempest %s user" % username
+    email = "%s@test.com" % username
+    # create tenant
+    try:
+        identity_client.tenants.create(tenant_name, tenant_description)
+    except keystone_exception.Conflict:
+        LOG.info("(no change) Tenant '%s' already exists", tenant_name)
+
+    tenant = identity_client.tenants.find(name=tenant_name)
+    # create user
+    try:
+        identity_client.users.create(name=username, password=password,
+                                     email=email, tenant_id=tenant.id)
+    except keystone_exception.Conflict:
+        LOG.info("User '%s' already exists. Setting password to '%s'",
+                 username, password)
+        user = identity_client.users.find(name=username)
+        identity_client.users.update_password(user.id, password)
+
+
+def create_tempest_flavors(compute_client, conf, allow_creation):
+    """Find or create flavors 'm1.nano' and 'm1.micro' and set them in conf.
+
+    If 'flavor_ref' and 'flavor_ref_alt' are specified in conf, it will first
+    try to find those - otherwise it will try finding or creating 'm1.nano' and
+    'm1.micro' and overwrite those options in conf.
+
+    :param allow_creation: if False, fail if flavors were not found
+    """
+    # m1.nano flavor
+    flavor_id = None
+    if conf.has_option('compute', 'flavor_ref'):
+        flavor_id = conf.get('compute', 'flavor_ref')
+    flavor_id = find_or_create_flavor(compute_client,
+                                      flavor_id, 'm1.nano',
+                                      allow_creation, ram=64)
+    conf.set('compute', 'flavor_ref', flavor_id)
+
+    # m1.micro flavor
+    alt_flavor_id = None
+    if conf.has_option('compute', 'flavor_ref_alt'):
+        alt_flavor_id = conf.get('compute', 'flavor_ref_alt')
+    alt_flavor_id = find_or_create_flavor(compute_client,
+                                          alt_flavor_id, 'm1.micro',
+                                          allow_creation, ram=128)
+    conf.set('compute', 'flavor_ref_alt', alt_flavor_id)
+
+
+def find_or_create_flavor(compute_client, flavor_id, flavor_name,
+                          allow_creation, ram=64, vcpus=1, disk=0):
+    """Try finding flavor by ID or name, create if not found.
+
+    :param flavor_id: first try finding the flavor by this
+    :param flavor_name: find by this if it was not found by ID, create new
+        flavor with this name if not found at all
+    :param allow_creation: if False, fail if flavors were not found
+    :param ram: memory of created flavor in MB
+    :param vcpus: number of VCPUs for the flavor
+    :param disk: size of disk for flavor in GB
+    """
+    flavor = None
+    # try finding it by the ID first
+    if flavor_id:
+        found = compute_client.flavors.findall(id=flavor_id)
+        if found:
+            flavor = found[0]
+    # if not found previously, try finding it by name
+    if flavor_name and not flavor:
+        found = compute_client.flavors.findall(name=flavor_name)
+        if found:
+            flavor = found[0]
+
+    if not flavor and not allow_creation:
+        raise Exception("Flavor '%s' not found, but resource creation"
+                        " isn't allowed. Either use '--create' or provide"
+                        " an existing flavor" % flavor_name)
+
+    if not flavor:
+        LOG.info("Creating flavor '%s'", flavor_name)
+        flavor = compute_client.flavors.create(flavor_name, ram, vcpus, disk)
+    else:
+        LOG.info("(no change) Found flavor '%s'", flavor.name)
+
+    return flavor.id
+
+
+def create_tempest_images(image_client, conf, image_path, allow_creation):
+    qcow2_img_path = os.path.join(conf.get("scenario", "img_dir"),
+                                  conf.get("scenario", "qcow2_img_file"))
+    name = image_path[image_path.rfind('/') + 1:]
+    alt_name = name + "_alt"
+    image_id = None
+    if conf.has_option('compute', 'image_ref'):
+        image_id = conf.get('compute', 'image_ref')
+    image_id = find_or_upload_image(image_client,
+                                    image_id, name, allow_creation,
+                                    image_source=image_path,
+                                    image_dest=qcow2_img_path)
+    alt_image_id = None
+    if conf.has_option('compute', 'image_ref_alt'):
+        alt_image_id = conf.get('compute', 'image_ref_alt')
+    alt_image_id = find_or_upload_image(image_client,
+                                        alt_image_id, alt_name, allow_creation,
+                                        image_source=image_path,
+                                        image_dest=qcow2_img_path)
+
+    conf.set('compute', 'image_ref', image_id)
+    conf.set('compute', 'image_ref_alt', alt_image_id)
+
+
+def find_or_upload_image(image_client, image_id, image_name, allow_creation,
+                         image_source='', image_dest=''):
+    image = _find_image(image_client, image_id, image_name)
+    if not image and not allow_creation:
+        raise Exception("Image '%s' not found, but resource creation"
+                        " isn't allowed. Either use '--create' or provide"
+                        " an existing image_ref" % image_name)
+
+    if image:
+        LOG.info("(no change) Found image '%s'", image.name)
+    else:
+        LOG.info("Creating image '%s'", image_name)
+        if image_source.startswith("http:") or \
+           image_source.startswith("https:"):
+                _download_file(image_source, image_dest)
+        else:
+            shutil.copyfile(image_source, image_dest)
+        image = _upload_image(image_client, image_name, image_dest)
+    return image.id
+
+
+def create_tempest_networks(clients, conf, has_neutron, allow_creation):
+    label = None
+    if has_neutron:
+        for router in clients.network.list_routers()['routers']:
+            net_id = router['external_gateway_info']['network_id']
+            if ('external_gateway_info' in router and net_id is not None):
+                conf.set('network', 'public_network_id', net_id)
+                conf.set('network', 'public_router_id', router['id'])
+                break
+        for network in clients.compute.networks.list():
+            if network.id != net_id:
+                label = network.label
+                break
+    else:
+        networks = clients.compute.networks.list()
+        if networks:
+            label = networks[0].label
+    if label:
+        conf.set('compute', 'fixed_network_name', label)
+    else:
+        raise Exception('fixed_network_name could not be discovered and'
+                        ' must be specified')
+
+
+def configure_boto(conf, services):
+    """Set boto URLs based on discovered APIs."""
+    if 'ec2' in services:
+        conf.set('boto', 'ec2_url', services['ec2']['url'])
+    if 's3' in services:
+        conf.set('boto', 's3_url', services['s3']['url'])
+
+
+def configure_cli(conf):
+    """Set cli_dir and others for Tempest CLI tests.
+
+    Find locally installed "nova" and "nova-manage" commands and configure CLI
+    based on their availability and paths.
+    """
+    cli_dir = get_program_dir("nova")
+    if cli_dir:
+        conf.set('cli', 'enabled', 'True')
+        conf.set('cli', 'cli_dir', cli_dir)
+    else:
+        conf.set('cli', 'enabled', 'False')
+    nova_manage_found = bool(get_program_dir("nova-manage"))
+    conf.set('cli', 'has_manage', str(nova_manage_found))
+
+
+def configure_horizon(conf):
+    """Derive the horizon URIs from the identity's URI."""
+    uri = conf.get('identity', 'uri')
+    base = uri.rsplit(':', 1)[0]
+    assert base.startswith('http:') or base.startswith('https:')
+    has_horizon = True
+    try:
+        urllib2.urlopen(base)
+    except urllib2.URLError:
+        has_horizon = False
+    conf.set('service_available', 'horizon', str(has_horizon))
+    conf.set('dashboard', 'dashboard_url', base + '/')
+    conf.set('dashboard', 'login_url', base + '/auth/login/')
+
+
+def configure_discovered_services(conf, services):
+    """Set service availability and supported extensions and versions.
+
+    Set True/False per service in the [service_available] section of `conf`
+    depending of wheter it is in services. In the [<service>-feature-enabled]
+    section, set extensions and versions found in `services`.
+
+    :param conf: ConfigParser configuration
+    :param services: dictionary of discovered services - expects each service
+        to have a dictionary containing 'extensions' and 'versions' keys
+    """
+    # set service availability
+    for service, codename in SERVICE_NAMES.iteritems():
+        # ceilometer is still transitioning from metering to telemetry
+        if service == 'telemetry' and 'metering' in services:
+            service = 'metering'
+        conf.set('service_available', codename, str(service in services))
+
+    # set service extensions
+    for service, ext_key in SERVICE_EXTENSION_KEY.iteritems():
+        if service in services:
+            extensions = ','.join(services[service]['extensions'])
+            conf.set(service + '-feature-enabled', ext_key, extensions)
+
+    # set supported API versions for services with more of them
+    for service, versions in SERVICE_VERSIONS.iteritems():
+        supported_versions = services[service]['versions']
+        section = service + '-feature-enabled'
+        for version in versions:
+            is_supported = any(version in item
+                               for item in supported_versions)
+            conf.set(section, 'api_' + version, str(is_supported))
+
+
+def get_program_dir(program):
+    """Get directory path of the external program.
+
+    :param program: name of program, e.g. 'ls' or 'cat'
+    :returns: None if it wasn't found, '/path/to/it/' if found
+    """
+    devnull = open(os.devnull, 'w')
+    try:
+        path = subprocess.check_output(["which", program], stderr=devnull)
+        return os.path.dirname(path.strip())
+    except subprocess.CalledProcessError:
+        return None
+
+
+def workaround_heat_role(identity_client, conf):
+    """Work around Packstack bug #1139330.
+
+    Give the admin user a role called 'heat_stack_owner' so he can use Heat.
+    Ignore errors - e.g. if the role doesn't exist or if admin already has it,
+    so it doesn't cause problems on system with a different configuration.
+    """
+    role = 'heat_stack_owner'
+    try:
+        identity_client.roles.find(name=role)  # check if it exists
+        give_role_to_user(identity_client,
+                          conf.get('identity', 'admin_username'),
+                          conf.get('identity', 'tenant_name'),
+                          role)
+        LOG.info("Applied workaround for Packstack bug #1139330 - the admin"
+                 " user was given the '%s' role", role)
+    except keystone_client.exceptions.HTTPClientError as e:
+        LOG.info("(no change) Workaround for bug #1139330 was not applied: %s",
+                 str(e))
+
+
+def _download_file(url, destination):
+    LOG.info("Downloading '%s' and saving as '%s'", url, destination)
+    f = urllib2.urlopen(url)
+    data = f.read()
+    with open(destination, "wb") as dest:
+        dest.write(data)
+
+
+def _upload_image(image_client, name, path):
+    """Upload qcow2 image file from `path` into Glance with `name."""
+    LOG.info("Uploading image '%s' from '%s'", name, os.path.abspath(path))
+    with open(path) as data:
+        return image_client.images.create(name=name, disk_format="qcow2",
+                                          container_format="bare",
+                                          data=data, is_public="true")
+
+
+def _find_image(image_client, image_id, image_name):
+    """Find image by ID or name (the image client doesn't have this)."""
+    if image_id:
+        try:
+            return image_client.images.get(image_id)
+        except glance_client.exc.HTTPNotFound:
+            pass
+    found = filter(lambda x: x.name == image_name, image_client.images.list())
+    if found:
+        return found[0]
+    else:
+        return None
+
+
+if __name__ == "__main__":
+    main()

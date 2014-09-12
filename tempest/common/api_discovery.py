@@ -14,31 +14,41 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import httplib2
 import json
 import urlparse
 
-import httplib2
 
-import keystoneclient.v2_0.client as keystone_client
+class ServiceError(Exception):
+    pass
 
 
 class Service(object):
-    def __init__(self, service_url, token):
+    def __init__(self, name, service_url, token):
+        self.name = name
         self.service_url = service_url
         self.headers = {'Accept': 'application/json', 'X-Auth-Token': token}
 
-    def do_get(self, url, top_level=False):
+    def do_get(self, url, top_level=False, top_level_path=""):
         if top_level:
             parts = urlparse.urlparse(url)
             if parts.path != '':
-                url = url.replace(parts.path, '/')
+                url = url.replace(parts.path, '/') + top_level_path
+
         r, body = httplib2.Http().request(url, 'GET', headers=self.headers)
-        assert r.status <= 400, r
+        if r.status >= 400:
+            raise ServiceError("Requst on service '%s' with url '%s' failed"
+                               " with code %d" % (self.name, url, r.status))
         return body
 
     def get_extensions(self):
         return []
 
+    def get_versions(self):
+        return []
+
+
+class VersionedService(Service):
     def get_versions(self):
         body = self.do_get(self.service_url, top_level=True)
         body = json.loads(body)
@@ -48,45 +58,32 @@ class Service(object):
         return map(lambda x: x['id'], body['versions'])
 
 
-class ComputeService(Service):
-    def __init__(self, service_url, token):
-        super(ComputeService, self).__init__(service_url, token)
-
+class ComputeService(VersionedService):
     def get_extensions(self):
         body = self.do_get(self.service_url + '/extensions')
         body = json.loads(body)
         return map(lambda x: x['alias'], body['extensions'])
 
 
-class ImageService(Service):
-    def __init__(self, service_url, token):
-        super(ImageService, self).__init__(service_url, token)
+class ImageService(VersionedService):
+    pass
 
 
-class NetworkService(Service):
-    def __init__(self, service_url, token):
-        super(NetworkService, self).__init__(service_url, token)
-
+class NetworkService(VersionedService):
     def get_extensions(self):
         body = self.do_get(self.service_url + 'v2.0/extensions.json')
         body = json.loads(body)
         return map(lambda x: x['alias'], body['extensions'])
 
 
-class VolumeService(Service):
-    def __init__(self, service_url, token):
-        super(VolumeService, self).__init__(service_url, token)
-
+class VolumeService(VersionedService):
     def get_extensions(self):
         body = self.do_get(self.service_url + '/extensions')
         body = json.loads(body)
         return map(lambda x: x['name'], body['extensions'])
 
 
-class IdentityService(Service):
-    def __init__(self, service_url, token):
-        super(IdentityService, self).__init__(service_url, token)
-
+class IdentityService(VersionedService):
     def get_extensions(self):
         body = self.do_get(self.service_url + '/extensions')
         body = json.loads(body)
@@ -97,22 +94,25 @@ class IdentityService(Service):
 
 
 class ObjectStorageService(Service):
-    def __init__(self, service_url, token):
-        super(VolumeService, self).__init__(service_url, token)
-
     def get_extensions(self):
-        body = self.do_get(self.service_url + '/info')
+        body = self.do_get(self.service_url, top_level=True,
+                           top_level_path="info")
         body = json.loads(body)
         # Remove Swift general information from extensions list
         body.pop('swift')
         return body.keys()
 
+
 service_dict = {'compute': ComputeService,
                 'image': ImageService,
                 'network': NetworkService,
-                'object_storage': ObjectStorageService,
+                'object-store': ObjectStorageService,
                 'volume': VolumeService,
                 'identity': IdentityService}
+
+
+def get_service_class(service_name):
+    return service_dict.get(service_name, Service)
 
 
 def discover(identity_client):
@@ -126,22 +126,11 @@ def discover(identity_client):
     endpoints = identity_client.service_catalog.get_endpoints()
     services = {}
     for (name, descriptor) in endpoints.iteritems():
-        if (name in ['ec2', 's3'] or
-            name in ['cloudformation', 'orchestration']):
-            continue
-        if name in service_dict:
-            service_class = service_dict[name]
-        else:
-            service_class = Service
-        service = service_class(descriptor[0]['publicURL'], token)
-        extensions = service.get_extensions()
-        versions = service.get_versions()
-        services[name] = {'extensions': extensions,
-                             'versions': versions}
+        services[name] = dict()
+        services[name]['url'] = descriptor[0]['publicURL']
+
+        service_class = get_service_class(name)
+        service = service_class(name, services[name]['url'], token)
+        services[name]['extensions'] = service.get_extensions()
+        services[name]['versions'] = service.get_versions()
     return services
-
-
-# creds = {"username": "admin", "tenant_name": "admin", "password": "secrete",
-#          "auth_url": "http://devstack-neutron:5000/v2.0/"}
-# kc = keystone_client.Client(**creds)
-# print discover(kc)
