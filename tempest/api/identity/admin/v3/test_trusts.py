@@ -166,7 +166,10 @@ class BaseTrustsV3Test(base.BaseIdentityV3AdminTest):
 
         resp, role_get = self.trustor_client.check_trust_role(
             self.trust_id, self.delegated_role_id)
-        self.assertEqual('204', resp['status'])
+        # An incompatible change was made on stable/icehouse from 204 to 200.
+        # Check for both to not break older installs.
+        # See https://bugs.launchpad.net/keystone/+bug/1334368
+        self.assertIn(resp['status'], ['200', '204'])
 
         # And that we don't find not_delegated_role
         self.assertRaises(exceptions.NotFound,
