@@ -1,4 +1,4 @@
-Tempest - The OpenStack Integration Test Suite
+Tempest - The OpenStack Integration Test Suite.
 ==============================================
 
 This is a set of integration tests to be run against a live OpenStack
