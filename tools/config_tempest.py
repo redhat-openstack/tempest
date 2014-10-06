@@ -130,7 +130,6 @@ def main():
     services = api_discovery.discover(clients.identity)
     if args.create:
         create_tempest_users(clients.identity, conf)
-        workaround_heat_role(clients.identity, conf)
     create_tempest_flavors(clients.compute, conf, args.create)
     create_tempest_images(clients.image, conf,
                           args.image, args.create)
@@ -329,6 +328,11 @@ def create_tempest_users(identity_client, conf):
                       conf.get('identity', 'tenant_name'),
                       role_name='admin')
 
+    give_role_to_user(identity_client,
+                      conf.get('identity', 'username'),
+                      conf.get('identity', 'tenant_name'),
+                      role_name='heat_stack_owner')
+
     create_user_with_tenant(identity_client,
                             conf.get('identity', 'alt_username'),
                             conf.get('identity', 'alt_password'),
@@ -342,11 +346,11 @@ def give_role_to_user(identity_client, username, tenant_name, role_name):
     role_id = identity_client.roles.find(name=role_name)
     try:
         identity_client.tenants.add_user(tenant_id, user_id, role_id)
-        LOG.info("User '%s' was given the '%s' role in project '%s'",
-                 username, role_name, tenant_name)
+        LOG.debug("User '%s' was given the '%s' role in project '%s'",
+                  username, role_name, tenant_name)
     except keystone_exception.Conflict:
-        LOG.info("(no change) User '%s' already has the '%s' role in"
-                 " project '%s'", username, role_name, tenant_name)
+        LOG.debug("(no change) User '%s' already has the '%s' role in"
+                  " project '%s'", username, role_name, tenant_name)
 
 
 def create_user_with_tenant(identity_client, username, password, tenant_name):
@@ -596,27 +600,6 @@ def get_program_dir(program):
         return os.path.dirname(path.strip())
     except subprocess.CalledProcessError:
         return None
-
-
-def workaround_heat_role(identity_client, conf):
-    """Work around Packstack bug #1139330.
-
-    Give the admin user a role called 'heat_stack_owner' so he can use Heat.
-    Ignore errors - e.g. if the role doesn't exist or if admin already has it,
-    so it doesn't cause problems on system with a different configuration.
-    """
-    role = 'heat_stack_owner'
-    try:
-        identity_client.roles.find(name=role)  # check if it exists
-        give_role_to_user(identity_client,
-                          conf.get('identity', 'admin_username'),
-                          conf.get('identity', 'tenant_name'),
-                          role)
-        LOG.info("Applied workaround for Packstack bug #1139330 - the admin"
-                 " user was given the '%s' role", role)
-    except keystone_client.exceptions.HTTPClientError as e:
-        LOG.info("(no change) Workaround for bug #1139330 was not applied: %s",
-                 str(e))
 
 
 def _download_file(url, destination):
