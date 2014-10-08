@@ -18,6 +18,10 @@ import httplib2
 import json
 import urlparse
 
+from tempest.openstack.common import log as logging
+
+LOG = logging.getLogger(__name__)
+
 
 class ServiceError(Exception):
     pass
@@ -35,9 +39,14 @@ class Service(object):
             if parts.path != '':
                 url = url.replace(parts.path, '/') + top_level_path
 
-        r, body = httplib2.Http().request(url, 'GET', headers=self.headers)
+        try:
+            r, body = httplib2.Http().request(url, 'GET', headers=self.headers)
+        except Exception as e:
+            LOG.error("Request on service '%s' with url '%s' failed" %
+                      (self.name, url))
+            raise e
         if r.status >= 400:
-            raise ServiceError("Requst on service '%s' with url '%s' failed"
+            raise ServiceError("Request on service '%s' with url '%s' failed"
                                " with code %d" % (self.name, url, r.status))
         return body
 
