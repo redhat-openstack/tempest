@@ -544,7 +544,7 @@ def configure_cli(conf):
 def configure_horizon(conf):
     """Derive the horizon URIs from the identity's URI."""
     uri = conf.get('identity', 'uri')
-    base = uri.rsplit(':', 1)[0]
+    base = uri.rsplit(':', 1)[0] + '/dashboard'
     assert base.startswith('http:') or base.startswith('https:')
     has_horizon = True
     try:
