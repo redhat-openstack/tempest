@@ -495,7 +495,9 @@ def create_tempest_networks(clients, conf, has_neutron, allow_creation):
     label = None
     if has_neutron:
         for router in clients.network.list_routers()['routers']:
-            net_id = router['external_gateway_info']['network_id']
+            net_id = router['external_gateway_info']['network_id'] \
+                if router['external_gateway_info'] \
+                is not None else None
             if ('external_gateway_info' in router and net_id is not None):
                 conf.set('network', 'public_network_id', net_id)
                 conf.set('network', 'public_router_id', router['id'])
