@@ -18,6 +18,8 @@ Created on Sep 3, 2014
 
 @author: David_Paterson
 '''
+
+from tempest import clients
 from tempest import config
 from tempest.openstack.common import log as logging
 from tempest import test
@@ -25,13 +27,14 @@ from tempest import test
 LOG = logging.getLogger(__name__)
 CONF = config.CONF
 
-CONF_USERS = None
-CONF_TENANTS = None
-CONF_PUB_NETWORK = None
-CONF_PRIV_NETWORK_NAME = None
-CONF_PUB_ROUTER = None
 CONF_FLAVORS = None
 CONF_IMAGES = None
+CONF_NETWORKS = None
+CONF_PRIV_NETWORK_NAME = None
+CONF_PUB_NETWORK = None
+CONF_PUB_ROUTER = None
+CONF_TENANTS = None
+CONF_USERS = None
 
 IS_CEILOMETER = None
 IS_CINDER = None
@@ -42,14 +45,15 @@ IS_NOVA = None
 
 
 def init_conf():
-    global CONF_USERS
-    global CONF_TENANTS
-    global CONF_PUB_NETWORK
-    global CONF_PRIV_NETWORK_NAME
-    global CONF_PUB_ROUTER
     global CONF_FLAVORS
     global CONF_IMAGES
-
+    global CONF_NETWORKS
+    global CONF_PRIV_NETWORK
+    global CONF_PRIV_NETWORK_NAME
+    global CONF_PUB_NETWORK
+    global CONF_PUB_ROUTER
+    global CONF_TENANTS
+    global CONF_USERS
     global IS_CEILOMETER
     global IS_CINDER
     global IS_GLANCE
@@ -57,16 +61,19 @@ def init_conf():
     global IS_NEUTRON
     global IS_NOVA
 
-    CONF_USERS = [CONF.identity.admin_username, CONF.identity.username,
-                  CONF.identity.alt_username]
+    CONF_FLAVORS = [CONF.compute.flavor_ref, CONF.compute.flavor_ref_alt]
+    CONF_IMAGES = [CONF.compute.image_ref, CONF.compute.image_ref_alt]
+    CONF_PRIV_NETWORK = _get_priv_net_id(CONF.compute.fixed_network_name,
+                                         CONF.identity.tenant_name)
+    CONF_PRIV_NETWORK_NAME = CONF.compute.fixed_network_name
+    CONF_PUB_NETWORK = CONF.network.public_network_id
+    CONF_NETWORKS = [CONF_PUB_NETWORK, CONF_PRIV_NETWORK]
+    CONF_PUB_ROUTER = CONF.network.public_router_id
     CONF_TENANTS = [CONF.identity.admin_tenant_name,
                     CONF.identity.tenant_name,
                     CONF.identity.alt_tenant_name]
-    CONF_PUB_NETWORK = CONF.network.public_network_id
-    CONF_PRIV_NETWORK_NAME = CONF.compute.fixed_network_name
-    CONF_PUB_ROUTER = CONF.network.public_router_id
-    CONF_FLAVORS = [CONF.compute.flavor_ref, CONF.compute.flavor_ref_alt]
-    CONF_IMAGES = [CONF.compute.image_ref, CONF.compute.image_ref_alt]
+    CONF_USERS = [CONF.identity.admin_username, CONF.identity.username,
+                  CONF.identity.alt_username]
 
     IS_CEILOMETER = CONF.service_available.ceilometer
     IS_CINDER = CONF.service_available.cinder
@@ -74,6 +81,22 @@ def init_conf():
     IS_HEAT = CONF.service_available.heat
     IS_NEUTRON = CONF.service_available.neutron
     IS_NOVA = CONF.service_available.nova
+
+
+def _get_priv_net_id(prv_net_name, tenant_name):
+    am = clients.AdminManager()
+    net_cl = am.network_client
+    id_cl = am.identity_client
+
+    _, networks = net_cl.list_networks()
+    tenant = id_cl.get_tenant_by_name(tenant_name)
+    t_id = tenant['id']
+    n_id = None
+    for net in networks['networks']:
+        if (net['tenant_id'] == t_id and net['name'] == prv_net_name):
+            n_id = net['id']
+            break
+    return n_id
 
 
 class BaseService(object):
@@ -90,11 +113,11 @@ class BaseService(object):
                 or 'tenant_id' not in item_list[0]):
             return item_list
 
-        _filtered_list = []
+        filtered_list = []
         for item in item_list:
             if item['tenant_id'] == self.tenant_id:
-                _filtered_list.append(item)
-        return _filtered_list
+                filtered_list.append(item)
+        return filtered_list
 
     def list(self):
         pass
@@ -331,6 +354,18 @@ class NetworkService(BaseService):
         super(NetworkService, self).__init__(kwargs)
         self.client = manager.network_client
 
+    def _filter_by_conf_networks(self, item_list):
+        if (item_list is None
+                or len(item_list) == 0
+                or 'network_id' not in item_list[0]):
+            return item_list
+
+        filtered_list = []
+        for item in item_list:
+            if item['network_id'] not in CONF_NETWORKS:
+                filtered_list.append(item)
+        return filtered_list
+
     def list(self):
         client = self.client
         _, networks = client.list_networks()
@@ -338,8 +373,7 @@ class NetworkService(BaseService):
         # filter out networks declared in tempest.conf
         if self.is_preserve:
             networks = [network for network in networks
-                        if (network['name'] != CONF_PRIV_NETWORK_NAME
-                            and network['id'] != CONF_PUB_NETWORK)]
+                        if network['id'] not in CONF_NETWORKS]
         LOG.debug("List count, %s Networks" % networks)
         return networks
 
@@ -700,6 +734,8 @@ class NetworkPortService(NetworkService):
         _, ports = client.list_ports()
         ports = ports['ports']
         ports = self._filter_by_tenant_id(ports)
+        if self.is_preserve:
+            ports = self._filter_by_conf_networks(ports)
         LOG.debug("List count, %s Ports" % len(ports))
         return ports
 
@@ -725,6 +761,8 @@ class NetworkSubnetService(NetworkService):
         _, subnets = client.list_subnets()
         subnets = subnets['subnets']
         subnets = self._filter_by_tenant_id(subnets)
+        if self.is_preserve:
+            subnets = self._filter_by_conf_networks(subnets)
         LOG.debug("List count, %s Subnets" % len(subnets))
         return subnets
 
