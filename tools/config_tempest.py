@@ -22,14 +22,15 @@ specified options in the following order:
 provided by the distributor of the tempest code, a distro for example, to
 specify defaults that are different than the generic defaults for tempest.
 
-2. Values using the file provided by the --patch argument to the script.
+2. Values using the file provided by the --deployer-input argument to the
+script.
 Some required options differ among deployed clouds but the right values cannot
 be discovered by the user. The file used here could be created by an installer,
 or manually if necessary.
 
 3. Values provided on the command line. These override all other values.
 
-4. Discovery. Values that have not been provided in steps [1-3] will be
+4. Discovery. Values that have not been provided in steps [2-3] will be
 obtained by querying the cloud.
 """
 
@@ -112,9 +113,15 @@ def main():
     if os.path.isfile(DEFAULTS_FILE):
         LOG.info("Reading defaults from file '%s'", DEFAULTS_FILE)
         conf.read(DEFAULTS_FILE)
-    if args.patch and os.path.isfile(args.patch):
-        LOG.info("Adding options from patch file '%s'", args.patch)
-        conf.read(args.patch)
+    if args.deployer_input and os.path.isfile(args.deployer_input):
+        LOG.info("Adding options from deployer-input file '%s'",
+                 args.deployer_input)
+        deployer_input = ConfigParser.SafeConfigParser()
+        deployer_input.read(args.deployer_input)
+        for section in deployer_input.sections():
+            # There are no deployer input options in DEFAULT
+            for (key, value) in deployer_input.items(section):
+                conf.set(section, key, value, priority=True)
     for section, key, value in args.overrides:
         conf.set(section, key, value, priority=True)
 
@@ -150,13 +157,14 @@ def parse_arguments():
                         help='create default tempest resources')
     parser.add_argument('--out', default="etc/tempest.conf",
                         help='the tempest.conf file to write')
-    parser.add_argument('--patch', default=None,
+    parser.add_argument('--deployer-input', default=None,
                         help="""A file in the format of tempest.conf that will
                                 override the default values. The
-                                patch file is an alternative to providing
-                                key/value pairs. If there are also key/value
-                                pairs they will be applied after the patch
-                                file""")
+                                deployer-input file is an alternative to
+                                providing key/value pairs. If there are also
+                                key/value pairs they will be applied after the
+                                deployer-input file.
+                        """)
     parser.add_argument('overrides', nargs='*', default=[],
                         help="""key value pairs to modify. The key is
                                 section.key where section is a section header
