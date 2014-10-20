@@ -130,7 +130,8 @@ def main():
     services = api_discovery.discover(clients.identity)
     if args.create:
         create_tempest_users(clients.identity, conf)
-        workaround_heat_role(clients.identity, conf)
+        if 'orchestration' in services:
+            workaround_heat_role(clients.identity, conf)
     create_tempest_flavors(clients.compute, conf, args.create)
     create_tempest_images(clients.image, conf,
                           args.image, args.create)
