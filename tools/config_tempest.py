@@ -141,7 +141,7 @@ def main():
     create_tempest_images(clients.image, conf,
                           args.image, args.create)
     has_neutron = "network" in services
-    create_tempest_networks(clients, conf, has_neutron, args.create)
+    check_and_set_tempest_network(clients, conf, has_neutron)
     configure_discovered_services(conf, services)
     configure_boto(conf, services)
     configure_cli(conf)
@@ -500,11 +500,13 @@ def find_or_upload_image(image_client, image_id, image_name, allow_creation,
     return image.id
 
 
-def create_tempest_networks(clients, conf, has_neutron, allow_creation):
+def check_and_set_tempest_network(clients, conf, has_neutron):
+    # TODO: This is supposed to return a bool value if was able
+    # to set or not the network
     label = None
     if has_neutron:
         for router in clients.network.list_routers()['routers']:
-            net_id = router['external_gateway_info']['network_id'] \
+            net_id = router['external_gateway_info']['network_id']  \
                 if router['external_gateway_info'] \
                 is not None else None
             if ('external_gateway_info' in router and net_id is not None):
@@ -524,6 +526,72 @@ def create_tempest_networks(clients, conf, has_neutron, allow_creation):
     else:
         raise Exception('fixed_network_name could not be discovered and'
                         ' must be specified')
+
+
+def create_tempest_networks(clients, conf, has_neutron, allow_creation,
+                            tenant_name=['demo']):
+
+    for t_name in tenant_name:
+        tenant = clients.identity.tenants.find(name=t_name)
+        router = None
+        private_network = None
+        public_network = None
+        private_subnet = None
+        public_subnet = None
+
+        # TODO: Delete everything if something goes wrong
+        if has_neutron:
+            if allow_creation:
+
+                router = clients.network.create_router({'router': {
+                    'name': 'router-' + t_name,
+                    'tenant_id': tenant.id
+                }})
+
+                if router:
+                    # Create private network
+                    private_network = clients.network.create_network(
+                        {'network': {
+                            'name': 'private-' + t_name,
+                            'tenant_id': tenant.id
+                        }})
+
+                    public_network = clients.network.create_network(
+                        {'network': {
+                            'name': 'public-' + t_name,
+                            'tenant_id': tenant.id,
+                            'router:external': True
+                        }})
+
+                if private_network:
+                    private_subnet = clients.network.create_subnet({'subnet': {
+                        'network_id': private_network['network']['id'],
+                        'ip_version': 4,
+                        'cidr': '192.168.20.0/24'  # Need to check this!
+                    }})
+
+                if public_network:
+                    public_subnet = clients.network.create_subnet({'subnet': {
+                        'network_id': public_network['network']['id'],
+                        'ip_version': 4,
+                        'cidr': '192.168.1.0/24',
+                    }})
+
+                if private_subnet:
+                    clients.network.add_interface_router(
+                        router['router']['id'],
+                        {'subnet_id': private_subnet['subnet']['id']})
+
+                if public_subnet:
+                    clients.network.add_gateway_router(
+                        router['router']['id'],
+                        {'network_id': public_network['network']['id']})
+
+            else:
+                raise Exception("Network creation isn't allowed. Use"
+                                " '--create'"
+                                " to enable creation or provide"
+                                " an existing network.")
 
 
 def configure_boto(conf, services):
