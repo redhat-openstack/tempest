@@ -136,7 +136,7 @@ def main():
     clients = ClientManager(conf, not args.non_admin)
     services = api_discovery.discover(clients.identity)
     if args.create:
-        create_tempest_users(clients.identity, conf)
+        create_tempest_users(clients.identity, conf, services)
     create_tempest_flavors(clients.compute, conf, args.create)
     create_tempest_images(clients.image, conf,
                           args.image, args.create)
@@ -324,7 +324,7 @@ class TempestConf(ConfigParser.SafeConfigParser):
         return True
 
 
-def create_tempest_users(identity_client, conf):
+def create_tempest_users(identity_client, conf, services):
     """Create users necessary for Tempest if they don't exist already."""
     create_user_with_tenant(identity_client,
                             conf.get('identity', 'username'),
@@ -336,10 +336,11 @@ def create_tempest_users(identity_client, conf):
                       conf.get('identity', 'tenant_name'),
                       role_name='admin')
 
-    give_role_to_user(identity_client,
-                      conf.get('identity', 'username'),
-                      conf.get('identity', 'tenant_name'),
-                      role_name='heat_stack_owner')
+    if 'orchestration' in services:
+        give_role_to_user(identity_client,
+                          conf.get('identity', 'username'),
+                          conf.get('identity', 'tenant_name'),
+                          role_name='heat_stack_owner')
 
     create_user_with_tenant(identity_client,
                             conf.get('identity', 'alt_username'),
