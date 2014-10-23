@@ -104,10 +104,10 @@ def main():
     args = parse_arguments()
     logging.basicConfig(format=LOG_FORMAT)
 
-    if args.verbose:
-        LOG.setLevel(logging.INFO)
     if args.debug:
         LOG.setLevel(logging.DEBUG)
+    elif args.verbose:
+        LOG.setLevel(logging.INFO)
 
     conf = TempestConf()
     if os.path.isfile(DEFAULTS_FILE):
