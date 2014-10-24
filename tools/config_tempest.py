@@ -141,7 +141,19 @@ def main():
     create_tempest_images(clients.image, conf,
                           args.image, args.create)
     has_neutron = "network" in services
-    check_and_set_tempest_network(clients, conf, has_neutron)
+
+    LOG.info("Setting up network")
+    LOG.debug("Is neutron present: {0}".format(has_neutron))
+    create_tempest_networks(clients, conf, has_neutron,
+                            args.create,
+                            args.network_id,
+                            args.network_name,
+                            args.network_type,
+                            args.network_physical_label,
+                            args.network_segmentation_id,
+                            args.subnet_cidr,
+                            args.subnet_gateway,
+                            args.subnet_allocation_pool)
     configure_discovered_services(conf, services)
     configure_boto(conf, services)
     configure_cli(conf)
@@ -152,6 +164,7 @@ def main():
 
 
 def parse_arguments():
+    #TODO(tkammer): add mutual exclusion groups
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument('--create', action='store_true', default=False,
                         help='create default tempest resources')
@@ -182,6 +195,31 @@ def parse_arguments():
                                 the image is the leaf name of the path which
                                 can be either a filename or url. Default is
                                 '%s'""" % DEFAULT_IMAGE)
+    parser.add_argument('--network-id',
+                        help="""The ID of an existing network in our openstack
+                                instance with external connectivity""")
+    parser.add_argument('--network-name', default="public",
+                        help="""The network name to create""")
+    parser.add_argument('--network-type', choices=['vlan', 'flat'],
+                        help="""The type of our network""")
+    parser.add_argument('--network-physical-label',
+                        help="""The label to supply to provider:physical_network
+                        """)
+    parser.add_argument('--network-segmentation-id',
+                        help="""If type is VLAN, The VLAN number to be used""")
+    parser.add_argument('--subnet-cidr',
+                        help="""The CIDR to be used to create a subnet for our
+                                public network with external connectivity.
+                                this CIDR should represent an actual subnet
+                                to be mapped to for external connectivity and
+                                floating IP usage""")
+    parser.add_argument('--subnet-gateway',
+                        help="""The gateway to be used, defaults to subnet-cidr
+                                lowest IP""")
+    parser.add_argument('--subnet-allocation-pool', nargs=2,
+                        help="""<start> <end> of the floating IPs allocation.
+                                defaults to full CIDR range""")
+
     args = parser.parse_args()
 
     if args.create and args.non_admin:
@@ -500,98 +538,113 @@ def find_or_upload_image(image_client, image_id, image_name, allow_creation,
     return image.id
 
 
-def check_and_set_tempest_network(clients, conf, has_neutron):
-    # TODO: This is supposed to return a bool value if was able
-    # to set or not the network
+def create_tempest_networks(clients, conf, has_neutron,
+                            create_network,
+                            public_network_id,
+                            network_name,
+                            network_type,
+                            network_physical_label,
+                            network_vlan_number,
+                            subnet_cidr,
+                            subnet_gateway,
+                            subnet_allocation_pool):
+    #TODO(tkammer): break this function into smaller pieces
     label = None
+    #TODO(tkammer): separate logic to different func of Nova network vs Neutron
     if has_neutron:
-        for router in clients.network.list_routers()['routers']:
-            net_id = router['external_gateway_info']['network_id']  \
-                if router['external_gateway_info'] \
-                is not None else None
-            if ('external_gateway_info' in router and net_id is not None):
-                conf.set('network', 'public_network_id', net_id)
-                conf.set('network', 'public_router_id', router['id'])
-                break
-        for network in clients.compute.networks.list():
-            if network.id != net_id:
-                label = network.label
-                break
+
+        # if user supplied the network we should use
+        if public_network_id:
+            LOG.info("Looking for existing network id: {0}"
+                     "".format(public_network_id))
+
+            # check if network exists
+            network_list = clients.network.list_networks()
+            for network in network_list['networks']:
+                if network['id'] == public_network_id:
+                    label = network['name']
+                    break
+            else:
+                raise ValueError('provided network id: {0} was not found.'
+                                 ''.format(public_network_id))
+
+        # no network id provided, try to auto discover a public network
+        else:
+            LOG.info("No network supplied, trying auto discover for network")
+            network_list = clients.network.list_networks()
+            for network in network_list['networks']:
+                if network['router:external'] and network['subnets']:
+                    LOG.info("Found network, using: {0}".format(network['id']))
+                    public_network_id = network['id']
+                    label = network['name']
+                    break
+            else:
+                # if user specified that we should create the network
+                if create_network:
+                    #TODO(tkammer): add check for given params
+                    LOG.info("Creating a new external network")
+                    LOG.debug("""With the following params:
+                                 name: {0}
+                                 network type: {1}
+                                 physical_network: {2}
+                                 vlan number: {3}""".format(network_name,
+                                                            network_type,
+                                                            network_physical_label,
+                                                            network_vlan_number))
+                    network_body = {'network': {
+                        'name': network_name,
+                        'admin_state_up': True,
+                        'router:external': True,
+                        'provider:network_type': network_type,
+                        'provider:physical_network': network_physical_label,
+                    }}
+
+                    if network_vlan_number:
+                        network_body['network']['provider:segmentation_id'] = \
+                            network_vlan_number
+
+                    network = clients.network.create_network(network_body)
+
+                    # Creating the subnet to associate with the network
+                    LOG.info("Creating a subnet with cidr {0}".format(subnet_cidr))
+                    subnet_body = {'subnet': {
+                        'network_id': network['id'],
+                        'ip_version': 4,
+                        'cidr': subnet_cidr,
+                        'enable_dhcp': False,
+                    }}
+
+                    if subnet_gateway:
+                        subnet_body['subnet']['gateway_ip'] = subnet_gateway
+
+                    #TODO(tkammer): add allocation pool range
+                    if subnet_allocation_pool:
+                        pass
+
+                    #TODO(tkammer): validate subnet creation
+                    subnet = clients.network.create_subnet(subnet_body)
+                    public_network_id = network['id']
+                    label = network['name']
+
+                # Couldn't auto discover and no create flag
+                else:
+                    raise RuntimeError("No network available. "
+                                       "please use --create")
+
+        conf.set('network', 'public_network_id', public_network_id)
+
     else:
         networks = clients.compute.networks.list()
         if networks:
             label = networks[0].label
+
     if label:
         conf.set('compute', 'fixed_network_name', label)
+    #TODO(tkammer): refactor / remove this section
+    #need to think if this is a necessary input variable or not.
     else:
         raise Exception('fixed_network_name could not be discovered and'
                         ' must be specified')
-
-
-def create_tempest_networks(clients, conf, has_neutron, allow_creation,
-                            tenant_name=['demo']):
-
-    for t_name in tenant_name:
-        tenant = clients.identity.tenants.find(name=t_name)
-        router = None
-        private_network = None
-        public_network = None
-        private_subnet = None
-        public_subnet = None
-
-        # TODO: Delete everything if something goes wrong
-        if has_neutron:
-            if allow_creation:
-
-                router = clients.network.create_router({'router': {
-                    'name': 'router-' + t_name,
-                    'tenant_id': tenant.id
-                }})
-
-                if router:
-                    # Create private network
-                    private_network = clients.network.create_network(
-                        {'network': {
-                            'name': 'private-' + t_name,
-                            'tenant_id': tenant.id
-                        }})
-
-                    public_network = clients.network.create_network(
-                        {'network': {
-                            'name': 'public-' + t_name,
-                            'tenant_id': tenant.id,
-                            'router:external': True
-                        }})
-
-                if private_network:
-                    private_subnet = clients.network.create_subnet({'subnet': {
-                        'network_id': private_network['network']['id'],
-                        'ip_version': 4,
-                        'cidr': '192.168.20.0/24'  # Need to check this!
-                    }})
-
-                if public_network:
-                    public_subnet = clients.network.create_subnet({'subnet': {
-                        'network_id': public_network['network']['id'],
-                        'ip_version': 4,
-                        'cidr': '192.168.1.0/24',
-                    }})
-
-                if private_subnet:
-                    clients.network.add_interface_router(
-                        router['router']['id'],
-                        {'subnet_id': private_subnet['subnet']['id']})
-
-                if public_subnet:
-                    clients.network.add_gateway_router(
-                        router['router']['id'],
-                        {'network_id': public_network['network']['id']})
-
-            else:
-                raise Exception("Network creation isn't allowed. Use"
-                                " '--create'"
-                                " to enable creation or provide"
-                                " an existing network.")
 
 
 def configure_boto(conf, services):
