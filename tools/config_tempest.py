@@ -603,7 +603,8 @@ def create_tempest_networks(clients, conf, has_neutron,
                         network_body['network']['provider:segmentation_id'] = \
                             network_vlan_number
 
-                    network = clients.network.create_network(network_body)
+                    network = clients.network.create_network(network_body) \
+                              ['network']
 
                     # Creating the subnet to associate with the network
                     LOG.info("Creating a subnet with cidr {0}".format(subnet_cidr))
