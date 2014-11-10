@@ -164,7 +164,7 @@ def main():
 
 
 def parse_arguments():
-    #TODO(tkammer): add mutual exclusion groups
+    # TODO(tkammer): add mutual exclusion groups
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument('--create', action='store_true', default=False,
                         help='create default tempest resources')
@@ -203,7 +203,8 @@ def parse_arguments():
     parser.add_argument('--network-type', choices=['vlan', 'flat'],
                         help="""The type of our network""")
     parser.add_argument('--network-physical-label',
-                        help="""The label to supply to provider:physical_network
+                        help="""The label to supply to
+                        provider:physical_network
                         """)
     parser.add_argument('--network-segmentation-id',
                         help="""If type is VLAN, The VLAN number to be used""")
@@ -548,10 +549,12 @@ def create_tempest_networks(clients, conf, has_neutron,
                             subnet_cidr,
                             subnet_gateway,
                             subnet_allocation_pool):
-    #TODO(tkammer): break this function into smaller pieces
+    # TODO(tkammer): break this function into smaller pieces
     label = None
-    #TODO(tkammer): separate logic to different func of Nova network vs Neutron
+    # TODO(tkammer): separate logic to different func of Nova network
+    # vs Neutron
     if has_neutron:
+        client = clients.network
 
         # if user supplied the network we should use
         if public_network_id:
@@ -559,7 +562,7 @@ def create_tempest_networks(clients, conf, has_neutron,
                      "".format(public_network_id))
 
             # check if network exists
-            network_list = clients.network.list_networks()
+            network_list = client.list_networks()
             for network in network_list['networks']:
                 if network['id'] == public_network_id:
                     label = network['name']
@@ -571,7 +574,7 @@ def create_tempest_networks(clients, conf, has_neutron,
         # no network id provided, try to auto discover a public network
         else:
             LOG.info("No network supplied, trying auto discover for network")
-            network_list = clients.network.list_networks()
+            network_list = client.list_networks()
             for network in network_list['networks']:
                 if network['router:external'] and network['subnets']:
                     LOG.info("Found network, using: {0}".format(network['id']))
@@ -581,16 +584,17 @@ def create_tempest_networks(clients, conf, has_neutron,
             else:
                 # if user specified that we should create the network
                 if create_network:
-                    #TODO(tkammer): add check for given params
+                    # TODO(tkammer): add check for given params
                     LOG.info("Creating a new external network")
                     LOG.debug("""With the following params:
                                  name: {0}
                                  network type: {1}
                                  physical_network: {2}
-                                 vlan number: {3}""".format(network_name,
-                                                            network_type,
-                                                            network_physical_label,
-                                                            network_vlan_number))
+                                 vlan number: {3}
+                                 """.format(network_name,
+                                            network_type,
+                                            network_physical_label,
+                                            network_vlan_number))
                     network_body = {'network': {
                         'name': network_name,
                         'admin_state_up': True,
@@ -603,11 +607,11 @@ def create_tempest_networks(clients, conf, has_neutron,
                         network_body['network']['provider:segmentation_id'] = \
                             network_vlan_number
 
-                    network = clients.network.create_network(network_body) \
-                              ['network']
+                    network = client.create_network(network_body)['network']
 
                     # Creating the subnet to associate with the network
-                    LOG.info("Creating a subnet with cidr {0}".format(subnet_cidr))
+                    LOG.info("Creating subnet with cidr {0}".
+                             format(subnet_cidr))
                     subnet_body = {'subnet': {
                         'network_id': network['id'],
                         'ip_version': 4,
@@ -618,12 +622,12 @@ def create_tempest_networks(clients, conf, has_neutron,
                     if subnet_gateway:
                         subnet_body['subnet']['gateway_ip'] = subnet_gateway
 
-                    #TODO(tkammer): add allocation pool range
+                    # TODO(tkammer): add allocation pool range
                     if subnet_allocation_pool:
                         pass
 
-                    #TODO(tkammer): validate subnet creation
-                    subnet = clients.network.create_subnet(subnet_body)
+                    # TODO(tkammer): validate subnet creation
+                    client.create_subnet(subnet_body)
                     public_network_id = network['id']
                     label = network['name']
 
@@ -641,8 +645,8 @@ def create_tempest_networks(clients, conf, has_neutron,
 
     if label:
         conf.set('compute', 'fixed_network_name', label)
-    #TODO(tkammer): refactor / remove this section
-    #need to think if this is a necessary input variable or not.
+    # TODO(tkammer): refactor / remove this section
+    # need to think if this is a necessary input variable or not.
     else:
         raise Exception('fixed_network_name could not be discovered and'
                         ' must be specified')
