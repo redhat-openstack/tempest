@@ -138,7 +138,7 @@ def main():
     if args.create:
         create_tempest_users(clients.identity, conf, services)
     create_tempest_flavors(clients.compute, conf, args.create)
-    create_tempest_images(clients.image, conf,
+    create_tempest_images(clients, conf,
                           args.image, args.create)
     has_neutron = "network" in services
 
@@ -494,7 +494,7 @@ def find_or_create_flavor(compute_client, flavor_id, flavor_name,
     return flavor.id
 
 
-def create_tempest_images(image_client, conf, image_path, allow_creation):
+def create_tempest_images(clients, conf, image_path, allow_creation):
     qcow2_img_path = os.path.join(conf.get("scenario", "img_dir"),
                                   conf.get("scenario", "qcow2_img_file"))
     name = image_path[image_path.rfind('/') + 1:]
@@ -502,14 +502,14 @@ def create_tempest_images(image_client, conf, image_path, allow_creation):
     image_id = None
     if conf.has_option('compute', 'image_ref'):
         image_id = conf.get('compute', 'image_ref')
-    image_id = find_or_upload_image(image_client,
+    image_id = find_or_upload_image(clients,
                                     image_id, name, allow_creation,
                                     image_source=image_path,
                                     image_dest=qcow2_img_path)
     alt_image_id = None
     if conf.has_option('compute', 'image_ref_alt'):
         alt_image_id = conf.get('compute', 'image_ref_alt')
-    alt_image_id = find_or_upload_image(image_client,
+    alt_image_id = find_or_upload_image(clients,
                                         alt_image_id, alt_name, allow_creation,
                                         image_source=image_path,
                                         image_dest=qcow2_img_path)
@@ -518,9 +518,9 @@ def create_tempest_images(image_client, conf, image_path, allow_creation):
     conf.set('compute', 'image_ref_alt', alt_image_id)
 
 
-def find_or_upload_image(image_client, image_id, image_name, allow_creation,
+def find_or_upload_image(clients, image_id, image_name, allow_creation,
                          image_source='', image_dest=''):
-    image = _find_image(image_client, image_id, image_name)
+    image = _find_image(clients.image, image_id, image_name)
     if not image and not allow_creation:
         raise Exception("Image '%s' not found, but resource creation"
                         " isn't allowed. Either use '--create' or provide"
@@ -535,7 +535,10 @@ def find_or_upload_image(image_client, image_id, image_name, allow_creation,
                 _download_file(image_source, image_dest)
         else:
             shutil.copyfile(image_source, image_dest)
-        image = _upload_image(image_client, image_name, image_dest)
+        image = _upload_image(clients.image, image_name, image_dest)
+        # Work-around for glance client bug after create. Force reconnect.
+        # https://bugs.launchpad.net/python-glanceclient/+bug/1392853
+        clients._image = None
     return image.id
 
 
