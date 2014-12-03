@@ -625,9 +625,14 @@ def create_tempest_networks(clients, conf, has_neutron,
                     if subnet_gateway:
                         subnet_body['subnet']['gateway_ip'] = subnet_gateway
 
-                    # TODO(tkammer): add allocation pool range
                     if subnet_allocation_pool:
-                        pass
+                        start, end = subnet_allocation_pool
+                        LOG.info("Creating allocation pool {0}-{1}".
+                                 format(start, end))
+                        allocation_pool = [{"start": start,
+                                           "end": end}]
+                        subnet_body['subnet']['allocation_pools'] = \
+                            allocation_pool
 
                     # TODO(tkammer): validate subnet creation
                     client.create_subnet(subnet_body)
