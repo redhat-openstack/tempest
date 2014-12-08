@@ -89,14 +89,14 @@ class VolumeService(VersionedService):
     def get_extensions(self):
         body = self.do_get(self.service_url + '/extensions')
         body = json.loads(body)
-        return map(lambda x: x['name'], body['extensions'])
+        return map(lambda x: x['alias'], body['extensions'])
 
 
 class IdentityService(VersionedService):
     def get_extensions(self):
         body = self.do_get(self.service_url + '/extensions')
         body = json.loads(body)
-        return map(lambda x: x['name'], body['extensions']['values'])
+        return map(lambda x: x['alias'], body['extensions']['values'])
 
     def deserialize_versions(self, body):
         return map(lambda x: x['id'], body['versions']['values'])
