@@ -143,16 +143,8 @@ def main():
 
     LOG.info("Setting up network")
     LOG.debug("Is neutron present: {0}".format(has_neutron))
-    create_tempest_networks(clients, conf, has_neutron,
-                            args.create,
-                            args.network_id,
-                            args.network_name,
-                            args.network_type,
-                            args.network_physical_label,
-                            args.network_segmentation_id,
-                            args.subnet_cidr,
-                            args.subnet_gateway,
-                            args.subnet_allocation_pool)
+    create_tempest_networks(clients, conf, has_neutron, args.network_id)
+
     configure_discovered_services(conf, services)
     configure_boto(conf, services)
     configure_cli(conf)
@@ -197,28 +189,6 @@ def parse_arguments():
     parser.add_argument('--network-id',
                         help="""The ID of an existing network in our openstack
                                 instance with external connectivity""")
-    parser.add_argument('--network-name', default="public",
-                        help="""The network name to create""")
-    parser.add_argument('--network-type', choices=['vlan', 'flat'],
-                        help="""The type of our network""")
-    parser.add_argument('--network-physical-label',
-                        help="""The label to supply to
-                        provider:physical_network
-                        """)
-    parser.add_argument('--network-segmentation-id',
-                        help="""If type is VLAN, The VLAN number to be used""")
-    parser.add_argument('--subnet-cidr',
-                        help="""The CIDR to be used to create a subnet for our
-                                public network with external connectivity.
-                                this CIDR should represent an actual subnet
-                                to be mapped to for external connectivity and
-                                floating IP usage""")
-    parser.add_argument('--subnet-gateway',
-                        help="""The gateway to be used, defaults to subnet-cidr
-                                lowest IP""")
-    parser.add_argument('--subnet-allocation-pool', nargs=2,
-                        help="""<start> <end> of the floating IPs allocation.
-                                defaults to full CIDR range""")
 
     args = parser.parse_args()
 
@@ -552,17 +522,7 @@ def find_or_upload_image(clients, image_id, image_name, allow_creation,
     return image.id
 
 
-def create_tempest_networks(clients, conf, has_neutron,
-                            create_network,
-                            public_network_id,
-                            network_name,
-                            network_type,
-                            network_physical_label,
-                            network_vlan_number,
-                            subnet_cidr,
-                            subnet_gateway,
-                            subnet_allocation_pool):
-    # TODO(tkammer): break this function into smaller pieces
+def create_tempest_networks(clients, conf, has_neutron, public_network_id):
     label = None
     # TODO(tkammer): separate logic to different func of Nova network
     # vs Neutron
@@ -594,65 +554,12 @@ def create_tempest_networks(clients, conf, has_neutron,
                     public_network_id = network['id']
                     label = network['name']
                     break
+
+            # Couldn't find an existing external network
             else:
-                # if user specified that we should create the network
-                if create_network:
-                    # TODO(tkammer): add check for given params
-                    LOG.info("Creating a new external network")
-                    LOG.debug("""With the following params:
-                                 name: {0}
-                                 network type: {1}
-                                 physical_network: {2}
-                                 vlan number: {3}
-                                 """.format(network_name,
-                                            network_type,
-                                            network_physical_label,
-                                            network_vlan_number))
-                    network_body = {'network': {
-                        'name': network_name,
-                        'admin_state_up': True,
-                        'router:external': True,
-                        'provider:network_type': network_type,
-                        'provider:physical_network': network_physical_label,
-                    }}
-
-                    if network_vlan_number:
-                        network_body['network']['provider:segmentation_id'] = \
-                            network_vlan_number
-
-                    network = client.create_network(network_body)['network']
-
-                    # Creating the subnet to associate with the network
-                    LOG.info("Creating subnet with cidr {0}".
-                             format(subnet_cidr))
-                    subnet_body = {'subnet': {
-                        'network_id': network['id'],
-                        'ip_version': 4,
-                        'cidr': subnet_cidr,
-                        'enable_dhcp': False,
-                    }}
-
-                    if subnet_gateway:
-                        subnet_body['subnet']['gateway_ip'] = subnet_gateway
-
-                    if subnet_allocation_pool:
-                        start, end = subnet_allocation_pool
-                        LOG.info("Creating allocation pool {0}-{1}".
-                                 format(start, end))
-                        allocation_pool = [{"start": start,
-                                           "end": end}]
-                        subnet_body['subnet']['allocation_pools'] = \
-                            allocation_pool
-
-                    # TODO(tkammer): validate subnet creation
-                    client.create_subnet(subnet_body)
-                    public_network_id = network['id']
-                    label = network['name']
-
-                # Couldn't auto discover and no create flag
-                else:
-                    raise RuntimeError("No network available. "
-                                       "please use --create")
+                LOG.error("No external networks found. "
+                          "Please note that any test that relies on external "
+                          "connectivity would most likely fail.")
 
         conf.set('network', 'public_network_id', public_network_id)
 
@@ -663,8 +570,6 @@ def create_tempest_networks(clients, conf, has_neutron,
 
     if label:
         conf.set('compute', 'fixed_network_name', label)
-    # TODO(tkammer): refactor / remove this section
-    # need to think if this is a necessary input variable or not.
     else:
         raise Exception('fixed_network_name could not be discovered and'
                         ' must be specified')
