@@ -375,11 +375,15 @@ def create_tempest_users(identity_client, conf, services):
                       conf.get('identity', 'tenant_name'),
                       role_name='admin')
 
+    # Prior to juno, and with earlier juno defaults, users needed to have
+    # the heat_stack_owner role to use heat stack apis. We assign that role
+    # to the user if the role is present.
     if 'orchestration' in services:
         give_role_to_user(identity_client,
                           conf.get('identity', 'username'),
                           conf.get('identity', 'tenant_name'),
-                          role_name='heat_stack_owner')
+                          role_name='heat_stack_owner',
+                          role_required=False)
 
     create_user_with_tenant(identity_client,
                             conf.get('identity', 'alt_username'),
@@ -387,11 +391,18 @@ def create_tempest_users(identity_client, conf, services):
                             conf.get('identity', 'alt_tenant_name'))
 
 
-def give_role_to_user(identity_client, username, tenant_name, role_name):
+def give_role_to_user(identity_client, username, tenant_name, role_name,
+                      role_required=True):
     """Give the user a role in the project (tenant)."""
     user_id = identity_client.users.find(name=username)
     tenant_id = identity_client.tenants.find(name=tenant_name)
-    role_id = identity_client.roles.find(name=role_name)
+    try:
+        role_id = identity_client.roles.find(name=role_name)
+    except keystone_exception.NotFound:
+        if role_required:
+            raise
+        LOG.debug("%s role not required" % role_name)
+        return
     try:
         identity_client.tenants.add_user(tenant_id, user_id, role_id)
         LOG.debug("User '%s' was given the '%s' role in project '%s'",
