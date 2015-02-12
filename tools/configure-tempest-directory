@@ -1,0 +1,10 @@
+#!/usr/bin/env bash                                                             
+
+tempest_dir=$(dirname $(dirname $0))
+cp $tempest_dir/.* $tempest_dir/* . >&/dev/null
+ln -s $tempest_dir/tempest
+cp -r $tempest_dir/tools .
+cp -r $tempest_dir/etc .
+cp -r $tempest_dir/doc .
+
+
