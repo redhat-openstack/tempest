@@ -75,7 +75,7 @@ SERVICE_NAMES = {
     'orchestration': 'heat',
     'telemetry': 'ceilometer',
     'volume': 'cinder',
-    'queuing': 'marconi',
+    'messaging': 'zaqar',
 }
 
 # what API versions could the service have and should be enabled/disabled
@@ -85,8 +85,7 @@ SERVICE_NAMES = {
 SERVICE_VERSIONS = {
     'image': ['v1', 'v2'],
     'identity': ['v2', 'v3'],
-    'volume': ['v1', 'v2'],
-    'compute': ['v3'],
+    'volume': ['v1', 'v2']
 }
 
 # Keep track of where the extensions are saved for that service.
@@ -131,7 +130,7 @@ def main():
         conf.set("identity", "admin_username", "")
         conf.set("identity", "admin_tenant_name", "")
         conf.set("identity", "admin_password", "")
-        conf.set("compute", "allow_tenant_isolation", "False")
+        conf.set("auth", "allow_tenant_isolation", "False")
 
     clients = ClientManager(conf, not args.non_admin)
     services = api_discovery.discover(clients.identity)
