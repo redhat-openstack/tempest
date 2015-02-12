@@ -35,7 +35,7 @@ class TestCrossHost(base.TestSecurityGroupsBasicOps):
     @classmethod
     def resource_setup(cls):
         super(TestCrossHost, cls).resource_setup()
-        _, hypervisor_list = \
+        hypervisor_list = \
             cls.admin_manager.hypervisor_client.get_hypervisor_list()
         if len(hypervisor_list) < 2:
             raise cls.skipException("Need at least 2 compute nodes to run")
