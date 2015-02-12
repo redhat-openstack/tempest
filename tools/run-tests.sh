@@ -44,6 +44,6 @@ if [[ $1 == '--skip-file' ]]; then
     shift
 fi
 
-testr run --parallel --subunit $($(dirname $0)/tests2skip.py $skip_file $@) | tee >( subunit2junitxml --output-to=tempest.xml ) | $(dirname $0)/subunit-trace.py --no-failure-debug -f
+testr run --parallel --subunit $($(dirname $0)/tests2skip.py $skip_file $@) | tee >( subunit2junitxml --output-to=tempest.xml ) | subunit-trace --no-failure-debug -f
 
 
