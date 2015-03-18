@@ -291,10 +291,12 @@ class ClientManager(object):
         if self._network:
             return self._network
         LOG.debug("Connecting to Neutron")
-        self._network = neutron_client.Client(username=self.username,
-                                              password=self.password,
-                                              tenant_name=self.tenant_name,
-                                              auth_url=self.auth_url,
+        token = self.identity.auth_token
+        catalog = self.identity.service_catalog
+        endpoint = catalog.url_for(service_type='network',
+                                   endpoint_type='publicURL')
+        self._network = neutron_client.Client(endpoint_url=endpoint,
+                                              token=token,
                                               insecure=self.insecure)
         return self._network
 
