@@ -65,6 +65,7 @@ TEMPEST_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 DEFAULTS_FILE = os.path.join(TEMPEST_DIR, "etc", "default-overrides.conf")
 DEFAULT_IMAGE = "http://download.cirros-cloud.net/0.3.1/" \
                 "cirros-0.3.1-x86_64-disk.img"
+DEFAULT_IMAGE_FORMAT = 'qcow2'
 
 VALID_RELEASES = ["rhelosp7", "rhelosp6", "rhelosp5", "icehouse",
                   "juno", "kilo"]
@@ -144,8 +145,8 @@ def main():
     if args.create:
         create_tempest_users(clients.identity, conf, services)
     create_tempest_flavors(clients.flavors, conf, args.create)
-    create_tempest_images(clients.images, conf,
-                          args.image, args.create)
+    create_tempest_images(clients.images, conf, args.image, args.create,
+                          args.image_disk_format)
     has_neutron = "network" in services
 
     LOG.info("Setting up network")
@@ -193,6 +194,9 @@ def parse_arguments():
                         help='Print more information about the execution')
     parser.add_argument('--non-admin', action='store_true', default=False,
                         help='Run without admin creds')
+    parser.add_argument('--image-disk-format', default=DEFAULT_IMAGE_FORMAT,
+                        help="""a format of an image to be uploaded to glance.
+                                Default is '%s'""" % DEFAULT_IMAGE_FORMAT)
     parser.add_argument('--image', default=DEFAULT_IMAGE,
                         help="""an image to be uploaded to glance. The name of
                                 the image is the leaf name of the path which
@@ -511,9 +515,10 @@ def find_or_create_flavor(client, flavor_id, flavor_name,
     return flavor['id']
 
 
-def create_tempest_images(client, conf, image_path, allow_creation):
-    qcow2_img_path = os.path.join(conf.get("scenario", "img_dir"),
-                                  conf.get("scenario", "qcow2_img_file"))
+def create_tempest_images(client, conf, image_path, allow_creation,
+                          disk_format):
+    img_path = os.path.join(conf.get("scenario", "img_dir"),
+                            conf.get_defaulted("scenario", "img_file"))
     name = image_path[image_path.rfind('/') + 1:]
     alt_name = name + "_alt"
     image_id = None
@@ -522,21 +527,23 @@ def create_tempest_images(client, conf, image_path, allow_creation):
     image_id = find_or_upload_image(client,
                                     image_id, name, allow_creation,
                                     image_source=image_path,
-                                    image_dest=qcow2_img_path)
+                                    image_dest=img_path,
+                                    disk_format=disk_format)
     alt_image_id = None
     if conf.has_option('compute', 'image_ref_alt'):
         alt_image_id = conf.get('compute', 'image_ref_alt')
     alt_image_id = find_or_upload_image(client,
                                         alt_image_id, alt_name, allow_creation,
                                         image_source=image_path,
-                                        image_dest=qcow2_img_path)
+                                        image_dest=img_path,
+                                        disk_format=disk_format)
 
     conf.set('compute', 'image_ref', image_id)
     conf.set('compute', 'image_ref_alt', alt_image_id)
 
 
 def find_or_upload_image(client, image_id, image_name, allow_creation,
-                         image_source='', image_dest=''):
+                         image_source='', image_dest='', disk_format=''):
     image = _find_image(client, image_id, image_name)
     if not image and not allow_creation:
         raise Exception("Image '%s' not found, but resource creation"
@@ -552,7 +559,7 @@ def find_or_upload_image(client, image_id, image_name, allow_creation,
                 _download_file(image_source, image_dest)
         else:
             shutil.copyfile(image_source, image_dest)
-        image = _upload_image(client, image_name, image_dest)
+        image = _upload_image(client, image_name, image_dest, disk_format)
     return image['id']
 
 
@@ -705,14 +712,24 @@ def _download_file(url, destination):
         dest.write(data)
 
 
-def _upload_image(client, name, path):
-    """Upload qcow2 image file from `path` into Glance with `name."""
+def _upload_image(client, name, path, disk_format):
+    """Upload image file from `path` into Glance with `name."""
     LOG.info("Uploading image '%s' from '%s'", name, os.path.abspath(path))
+
+    properties = {}
+    if disk_format == 'vmdk':
+        # We are gonna be uploading mostly Cirros, which is Ubuntu based.
+        # The vmware_ostype probably doesn't affect anything too much anyway.
+        properties = dict(vmware_disktype='sparse',
+                          vmware_adaptertype="paraVirtual",
+                          vmware_ostype='ubuntu64Guest')
+
     with open(path) as data:
         image = client.create_image(name=name,
-                                    disk_format="qcow2",
-                                    container_format="bare",
-                                    visibility='public')
+                                    disk_format=disk_format,
+                                    container_format='bare',
+                                    visibility="public",
+                                    properties=properties)
         client.store_image(image['id'], data)
         return image
 
