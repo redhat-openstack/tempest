@@ -13,11 +13,7 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-'''
-Created on Sep 3, 2014
-
-@author: David_Paterson
-'''
+from tempest import clients
 from tempest import config
 from tempest.openstack.common import log as logging
 from tempest import test
@@ -25,13 +21,14 @@ from tempest import test
 LOG = logging.getLogger(__name__)
 CONF = config.CONF
 
-CONF_USERS = None
-CONF_TENANTS = None
-CONF_PUB_NETWORK = None
-CONF_PRIV_NETWORK_NAME = None
-CONF_PUB_ROUTER = None
 CONF_FLAVORS = None
 CONF_IMAGES = None
+CONF_NETWORKS = []
+CONF_PRIV_NETWORK_NAME = None
+CONF_PUB_NETWORK = None
+CONF_PUB_ROUTER = None
+CONF_TENANTS = None
+CONF_USERS = None
 
 IS_CEILOMETER = None
 IS_CINDER = None
@@ -42,14 +39,15 @@ IS_NOVA = None
 
 
 def init_conf():
-    global CONF_USERS
-    global CONF_TENANTS
-    global CONF_PUB_NETWORK
-    global CONF_PRIV_NETWORK_NAME
-    global CONF_PUB_ROUTER
     global CONF_FLAVORS
     global CONF_IMAGES
-
+    global CONF_NETWORKS
+    global CONF_PRIV_NETWORK
+    global CONF_PRIV_NETWORK_NAME
+    global CONF_PUB_NETWORK
+    global CONF_PUB_ROUTER
+    global CONF_TENANTS
+    global CONF_USERS
     global IS_CEILOMETER
     global IS_CINDER
     global IS_GLANCE
@@ -57,23 +55,44 @@ def init_conf():
     global IS_NEUTRON
     global IS_NOVA
 
-    CONF_USERS = [CONF.identity.admin_username, CONF.identity.username,
-                  CONF.identity.alt_username]
-    CONF_TENANTS = [CONF.identity.admin_tenant_name,
-                    CONF.identity.tenant_name,
-                    CONF.identity.alt_tenant_name]
-    CONF_PUB_NETWORK = CONF.network.public_network_id
-    CONF_PRIV_NETWORK_NAME = CONF.compute.fixed_network_name
-    CONF_PUB_ROUTER = CONF.network.public_router_id
-    CONF_FLAVORS = [CONF.compute.flavor_ref, CONF.compute.flavor_ref_alt]
-    CONF_IMAGES = [CONF.compute.image_ref, CONF.compute.image_ref_alt]
-
     IS_CEILOMETER = CONF.service_available.ceilometer
     IS_CINDER = CONF.service_available.cinder
     IS_GLANCE = CONF.service_available.glance
     IS_HEAT = CONF.service_available.heat
     IS_NEUTRON = CONF.service_available.neutron
     IS_NOVA = CONF.service_available.nova
+
+    CONF_FLAVORS = [CONF.compute.flavor_ref, CONF.compute.flavor_ref_alt]
+    CONF_IMAGES = [CONF.compute.image_ref, CONF.compute.image_ref_alt]
+    CONF_PRIV_NETWORK_NAME = CONF.compute.fixed_network_name
+    CONF_PUB_NETWORK = CONF.network.public_network_id
+    CONF_PUB_ROUTER = CONF.network.public_router_id
+    CONF_TENANTS = [CONF.identity.admin_tenant_name,
+                    CONF.identity.tenant_name,
+                    CONF.identity.alt_tenant_name]
+    CONF_USERS = [CONF.identity.admin_username, CONF.identity.username,
+                  CONF.identity.alt_username]
+
+    if IS_NEUTRON:
+        CONF_PRIV_NETWORK = _get_priv_net_id(CONF.compute.fixed_network_name,
+                                             CONF.identity.tenant_name)
+        CONF_NETWORKS = [CONF_PUB_NETWORK, CONF_PRIV_NETWORK]
+
+
+def _get_priv_net_id(prv_net_name, tenant_name):
+    am = clients.AdminManager()
+    net_cl = am.network_client
+    id_cl = am.identity_client
+
+    _, networks = net_cl.list_networks()
+    tenant = id_cl.get_tenant_by_name(tenant_name)
+    t_id = tenant['id']
+    n_id = None
+    for net in networks['networks']:
+        if (net['tenant_id'] == t_id and net['name'] == prv_net_name):
+            n_id = net['id']
+            break
+    return n_id
 
 
 class BaseService(object):
@@ -90,11 +109,8 @@ class BaseService(object):
                 or 'tenant_id' not in item_list[0]):
             return item_list
 
-        _filtered_list = []
-        for item in item_list:
-            if item['tenant_id'] == self.tenant_id:
-                _filtered_list.append(item)
-        return _filtered_list
+        return [item for item in item_list
+                if item['tenant_id'] == self.tenant_id]
 
     def list(self):
         pass
@@ -331,6 +347,13 @@ class NetworkService(BaseService):
         super(NetworkService, self).__init__(kwargs)
         self.client = manager.network_client
 
+    def _filter_by_conf_networks(self, item_list):
+        if not item_list or not all(('network_id' in i for i in item_list)):
+            return item_list
+
+        return [item for item in item_list if item['network_id']
+                not in CONF_NETWORKS]
+
     def list(self):
         client = self.client
         _, networks = client.list_networks()
@@ -338,8 +361,7 @@ class NetworkService(BaseService):
         # filter out networks declared in tempest.conf
         if self.is_preserve:
             networks = [network for network in networks
-                        if (network['name'] != CONF_PRIV_NETWORK_NAME
-                            and network['id'] != CONF_PUB_NETWORK)]
+                        if network['id'] not in CONF_NETWORKS]
         LOG.debug("List count, %s Networks" % networks)
         return networks
 
@@ -533,7 +555,7 @@ class NetworkRouterService(NetworkService):
                 for port in ports:
                     subid = port['fixed_ips'][0]['subnet_id']
                     client.remove_router_interface_with_subnet_id(rid, subid)
-                    client.delete_router(rid)
+                client.delete_router(rid)
             except Exception as e:
                 LOG.exception("Delete Router exception: %s" % e)
                 pass
@@ -700,6 +722,8 @@ class NetworkPortService(NetworkService):
         _, ports = client.list_ports()
         ports = ports['ports']
         ports = self._filter_by_tenant_id(ports)
+        if self.is_preserve:
+            ports = self._filter_by_conf_networks(ports)
         LOG.debug("List count, %s Ports" % len(ports))
         return ports
 
@@ -725,6 +749,8 @@ class NetworkSubnetService(NetworkService):
         _, subnets = client.list_subnets()
         subnets = subnets['subnets']
         subnets = self._filter_by_tenant_id(subnets)
+        if self.is_preserve:
+            subnets = self._filter_by_conf_networks(subnets)
         LOG.debug("List count, %s Subnets" % len(subnets))
         return subnets
 
@@ -806,9 +832,9 @@ class FlavorService(BaseService):
 
     def save_state(self):
         flavors = self.list()
-        flavor_data = self.data['flavors'] = {}
+        self.data['flavors'] = {}
         for flavor in flavors:
-            flavor_data[flavor['id']] = flavor['name']
+            self.data['flavors'][flavor['id']] = flavor['name']
 
 
 class ImageService(BaseService):
@@ -844,9 +870,9 @@ class ImageService(BaseService):
 
     def save_state(self):
         images = self.list()
-        image_data = self.data['images'] = {}
+        self.data['images'] = {}
         for image in images:
-            image_data[image['id']] = image['name']
+            self.data['images'][image['id']] = image['name']
 
 
 class IdentityService(BaseService):
@@ -892,9 +918,9 @@ class UserService(IdentityService):
 
     def save_state(self):
         users = self.list()
-        user_data = self.data['users'] = {}
+        self.data['users'] = {}
         for user in users:
-            user_data[user['id']] = user['name']
+            self.data['users'][user['id']] = user['name']
 
 
 class RoleService(IdentityService):
@@ -931,9 +957,9 @@ class RoleService(IdentityService):
 
     def save_state(self):
         roles = self.list()
-        role_data = self.data['roles'] = {}
+        self.data['roles'] = {}
         for role in roles:
-            role_data[role['id']] = role['name']
+            self.data['roles'][role['id']] = role['name']
 
 
 class TenantService(IdentityService):
@@ -969,9 +995,9 @@ class TenantService(IdentityService):
 
     def save_state(self):
         tenants = self.list()
-        tenant_data = self.data['tenants'] = {}
+        self.data['tenants'] = {}
         for tenant in tenants:
-            tenant_data[tenant['id']] = tenant['name']
+            self.data['tenants'][tenant['id']] = tenant['name']
 
 
 class DomainService(BaseService):
@@ -1007,9 +1033,9 @@ class DomainService(BaseService):
 
     def save_state(self):
         domains = self.list()
-        domain_data = self.data['domains'] = {}
+        self.data['domains'] = {}
         for domain in domains:
-            domain_data[domain['id']] = domain['name']
+            self.data['domains'][domain['id']] = domain['name']
 
 
 def get_tenant_cleanup_services():

@@ -85,7 +85,6 @@ class Cleanup(object):
         # available services
         self.tenant_services = cleanup_service.get_tenant_cleanup_services()
         self.global_services = cleanup_service.get_global_cleanup_services()
-        cleanup_service.init_conf()
 
     def run(self):
         opts = self.options
@@ -292,6 +291,7 @@ class Cleanup(object):
 
 
 def main():
+    cleanup_service.init_conf()
     cleanup = Cleanup()
     cleanup.run()
     LOG.info('Cleanup finished!')
