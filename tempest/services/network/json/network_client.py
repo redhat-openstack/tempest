@@ -14,10 +14,10 @@ import json
 import time
 import urllib
 
+from tempest_lib.common.utils import misc
 from tempest_lib import exceptions as lib_exc
 
 from tempest.common import service_client
-from tempest.common.utils import misc
 from tempest import exceptions
 
 
@@ -262,9 +262,8 @@ class NetworkClientJSON(service_client.ServiceClient):
         # expecting response in form
         # {'resources': [ res1, res2] } => when pagination disabled
         # {'resources': [..], 'resources_links': {}} => if pagination enabled
-        pagination_suffix = "_links"
         for k in res.keys():
-            if k[-len(pagination_suffix):] == pagination_suffix:
+            if k.endswith("_links"):
                 continue
             return res[k]
 
@@ -320,6 +319,8 @@ class NetworkClientJSON(service_client.ServiceClient):
                 cur_gw_info.pop('enable_snat', None)
         update_body['external_gateway_info'] = kwargs.get(
             'external_gateway_info', body['router']['external_gateway_info'])
+        if 'distributed' in kwargs:
+            update_body['distributed'] = kwargs['distributed']
         update_body = dict(router=update_body)
         update_body = json.dumps(update_body)
         resp, body = self.put(uri, update_body)

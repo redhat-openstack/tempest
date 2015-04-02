@@ -1,17 +1,7 @@
 [DEFAULT]
 
 #
-# From tempest.config
-#
-
-# Whether to disable inter-process locks (boolean value)
-#disable_process_locking = false
-
-# Directory to use for lock files. (string value)
-#lock_path = <None>
-
-#
-# From tempest.config
+# From oslo.log
 #
 
 # Print debugging output (set logging level to DEBUG instead of
@@ -21,10 +11,6 @@
 # Print more verbose output (set logging level to INFO instead of
 # default WARNING level). (boolean value)
 #verbose = false
-
-#
-# From tempest.config
-#
 
 # The name of a logging configuration file. This file is appended to
 # any existing logging configuration files. For details about logging
@@ -66,16 +52,8 @@
 # Syslog facility to receive log lines. (string value)
 #syslog_log_facility = LOG_USER
 
-#
-# From tempest.config
-#
-
 # Log output to standard error. (boolean value)
 #use_stderr = true
-
-#
-# From tempest.config
-#
 
 # Format string to use for log messages with context. (string value)
 #logging_context_format_string = %(asctime)s.%(msecs)03d %(process)d %(levelname)s %(name)s [%(request_id)s %(user_identity)s] %(instance)s%(message)s
@@ -92,7 +70,7 @@
 #logging_exception_prefix = %(asctime)s.%(msecs)03d %(process)d TRACE %(name)s %(instance)s
 
 # List of logger=LEVEL pairs. (list value)
-#default_log_levels = amqp=WARN,amqplib=WARN,boto=WARN,qpid=WARN,sqlalchemy=WARN,suds=INFO,oslo.messaging=INFO,iso8601=WARN,requests.packages.urllib3.connectionpool=WARN,urllib3.connectionpool=WARN,websocket=WARN,keystonemiddleware=WARN,routes.middleware=WARN,stevedore=WARN
+#default_log_levels = amqp=WARN,amqplib=WARN,boto=WARN,qpid=WARN,sqlalchemy=WARN,suds=INFO,oslo.messaging=INFO,iso8601=WARN,requests.packages.urllib3.connectionpool=WARN,urllib3.connectionpool=WARN,websocket=WARN,requests.packages.urllib3.util.retry=WARN,urllib3.util.retry=WARN,keystonemiddleware=WARN,routes.middleware=WARN,stevedore=WARN
 
 # Enables or disables publication of error events. (boolean value)
 #publish_errors = false
@@ -116,8 +94,12 @@
 #
 
 # Path to the yaml file that contains the list of credentials to use
-# for running tests (string value)
-#test_accounts_file = etc/accounts.yaml
+# for running tests. If used when running in parallel you have to make
+# sure sufficient credentials are provided in the accounts file. For
+# example if no tests with roles are being run it requires at least `2
+# * CONC` distinct accounts configured in  the `test_accounts_file`,
+# with CONC == the number of concurrent test processes. (string value)
+#test_accounts_file = <None>
 
 # Allows test cases to create/destroy tenants and users. This option
 # requires that OpenStack Identity API admin credentials are known. If
@@ -125,18 +107,15 @@
 # achieved configuring a list of test accounts (boolean value)
 # Deprecated group/name - [compute]/allow_tenant_isolation
 # Deprecated group/name - [orchestration]/allow_tenant_isolation
-#allow_tenant_isolation = false
-
-# If set to True it enables the Accounts provider, which locks
-# credentials to allow for parallel execution with pre-provisioned
-# accounts. It can only be used to run tests that ensure credentials
-# cleanup happens. It requires at least `2 * CONC` distinct accounts
-# configured in `test_accounts_file`, with CONC == the number of
-# concurrent test processes. (boolean value)
-#locking_credentials_provider = false
+#allow_tenant_isolation = true
 
 # Roles to assign to all users created by tempest (list value)
 #tempest_roles =
+
+# Only applicable when identity.auth_version is v3.Domain within which
+# isolated credentials are provisioned.The default "None" means that
+# the domain from theadmin user is used instead. (string value)
+#tenant_isolation_domain_name = <None>
 
 
 [baremetal]
@@ -156,6 +135,7 @@
 
 # The endpoint type to use for the baremetal provisioning service
 # (string value)
+# Allowed values: public, admin, internal, publicURL, adminURL, internalURL
 #endpoint_type = publicURL
 
 # Timeout for Ironic node to completely provision (integer value)
@@ -318,9 +298,11 @@
 # value)
 #ssh_channel_timeout = 60
 
-# Name of the fixed network that is visible to all test tenants.
-# (string value)
-#fixed_network_name = private
+# Name of the fixed network that is visible to all test tenants. If
+# multiple networks are available for a tenant this is the network
+# which will be used for creating servers if tempest does not create a
+# network or a network is not specified elsewhere (string value)
+#fixed_network_name = <None>
 
 # Network used for SSH connections. Ignored if
 # use_floatingip_for_ssh=true or run_ssh=false. (string value)
@@ -341,6 +323,7 @@
 #region =
 
 # The endpoint type to use for the compute service. (string value)
+# Allowed values: public, admin, internal, publicURL, adminURL, internalURL
 #endpoint_type = publicURL
 
 # Path to a private key file for SSH access to remote hosts (string
@@ -408,7 +391,8 @@
 #block_migration_for_live_migration = false
 
 # Does the test environment block migration support cinder iSCSI
-# volumes (boolean value)
+# volumes. Note, libvirt doesn't support this, see
+# https://bugs.launchpad.net/nova/+bug/1398999 (boolean value)
 #block_migrate_cinder_iscsi = false
 
 # Enable VNC console. This configuration value should be same as
@@ -442,6 +426,11 @@
 # Does the test environment have the ec2 api running? (boolean value)
 #ec2_api = true
 
+# Does Nova preserve preexisting ports from Neutron when deleting an
+# instance? This should be set to True if testing Kilo+ Nova. (boolean
+# value)
+#preserve_ports = false
+
 
 [dashboard]
 
@@ -467,6 +456,7 @@
 
 # The endpoint type to use for the data processing service. (string
 # value)
+# Allowed values: public, admin, internal, publicURL, adminURL, internalURL
 #endpoint_type = publicURL
 
 
@@ -550,6 +540,7 @@
 #region = RegionOne
 
 # The endpoint type to use for the identity service. (string value)
+# Allowed values: public, admin, internal, publicURL, adminURL, internalURL
 #endpoint_type = publicURL
 
 # Username to use for Nova API requests. (string value)
@@ -631,6 +622,7 @@
 #region =
 
 # The endpoint type to use for the image service. (string value)
+# Allowed values: public, admin, internal, publicURL, adminURL, internalURL
 #endpoint_type = publicURL
 
 # http accessible image (string value)
@@ -739,6 +731,7 @@
 #region =
 
 # The endpoint type to use for the network service. (string value)
+# Allowed values: public, admin, internal, publicURL, adminURL, internalURL
 #endpoint_type = publicURL
 
 # The cidr block to allocate tenant ipv4 subnets from (string value)
@@ -781,6 +774,7 @@
 
 # vnic_type to use when Launching instances with pre-configured ports.
 # Supported ports are: ['normal','direct','macvtap'] (string value)
+# Allowed values: <None>, normal, direct, macvtap
 #port_vnic_type = <None>
 
 
@@ -819,6 +813,7 @@
 
 # The endpoint type to use for the object-store service. (string
 # value)
+# Allowed values: public, admin, internal, publicURL, adminURL, internalURL
 #endpoint_type = publicURL
 
 # Number of seconds to time on waiting for a container to container
@@ -884,7 +879,11 @@
 
 # The endpoint type to use for the orchestration service. (string
 # value)
+# Allowed values: public, admin, internal, publicURL, adminURL, internalURL
 #endpoint_type = publicURL
+
+# Role required for users to be able to manage stacks (string value)
+#stack_owner_role = heat_stack_owner
 
 # Time in seconds between build status checks. (integer value)
 #build_interval = 1
@@ -896,10 +895,6 @@
 # the test workload (string value)
 #instance_type = m1.micro
 
-# Name of heat-cfntools enabled image to use when launching test
-# instances. (string value)
-#image_ref = <None>
-
 # Name of existing keypair to launch servers with. (string value)
 #keypair_name = <None>
 
@@ -910,6 +905,24 @@
 # Value must match heat configuration of the same name. (integer
 # value)
 #max_resources_per_stack = 1000
+
+
+[oslo_concurrency]
+
+#
+# From oslo.concurrency
+#
+
+# Enables or disables inter-process locks. (boolean value)
+# Deprecated group/name - [DEFAULT]/disable_process_locking
+#disable_process_locking = false
+
+# Directory to use for lock files.  For security, the specified
+# directory should only be writable by the user running the processes
+# that need locking. Defaults to environment variable OSLO_LOCK_PATH.
+# If external locks are used, a lock path must be set. (string value)
+# Deprecated group/name - [DEFAULT]/lock_path
+#lock_path = <None>
 
 
 [scenario]
@@ -950,6 +963,7 @@
 # DHCP client used by images to renew DCHP lease. If left empty,
 # update operation will be skipped. Supported clients: "udhcpc",
 # "dhclient" (string value)
+# Allowed values: udhcpc, dhclient
 #dhcp_client = udhcpc
 
 
@@ -1049,6 +1063,7 @@
 #catalog_type = metering
 
 # The endpoint type to use for the telemetry service. (string value)
+# Allowed values: public, admin, internal, publicURL, adminURL, internalURL
 #endpoint_type = publicURL
 
 # This variable is used as flag to enable notification tests (boolean
@@ -1078,6 +1093,7 @@
 #region =
 
 # The endpoint type to use for the volume service. (string value)
+# Allowed values: public, admin, internal, publicURL, adminURL, internalURL
 #endpoint_type = publicURL
 
 # Name of the backend1 (must be declared in cinder.conf) (string

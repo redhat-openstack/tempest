@@ -24,16 +24,18 @@ import urllib
 import uuid
 
 import fixtures
+from oslo_log import log as logging
+from oslo_utils import importutils
+import six
 import testscenarios
 import testtools
 
 from tempest import clients
 from tempest.common import credentials
+from tempest.common import fixed_network
 import tempest.common.generator.valid_generator as valid
 from tempest import config
 from tempest import exceptions
-from tempest.openstack.common import importutils
-from tempest.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
 
@@ -62,6 +64,23 @@ def attr(*args, **kwargs):
     return decorator
 
 
+def idempotent_id(id):
+    """Stub for metadata decorator"""
+    if not isinstance(id, six.string_types):
+        raise TypeError('Test idempotent_id must be string not %s'
+                        '' % type(id).__name__)
+    uuid.UUID(id)
+
+    def decorator(f):
+        f = testtools.testcase.attr('id-%s' % id)(f)
+        if f.__doc__:
+            f.__doc__ = 'Test idempotent id: %s\n%s' % (id, f.__doc__)
+        else:
+            f.__doc__ = 'Test idempotent id: %s' % id
+        return f
+    return decorator
+
+
 def get_service_list():
     service_list = {
         'compute': CONF.service_available.nova,
@@ -76,7 +95,8 @@ def get_service_list():
         'object_storage': CONF.service_available.swift,
         'dashboard': CONF.service_available.horizon,
         'telemetry': CONF.service_available.ceilometer,
-        'data_processing': CONF.service_available.sahara
+        'data_processing': CONF.service_available.sahara,
+        'database': CONF.service_available.trove
     }
     return service_list
 
@@ -90,7 +110,7 @@ def services(*args, **kwargs):
     def decorator(f):
         services = ['compute', 'image', 'baremetal', 'volume', 'orchestration',
                     'network', 'identity', 'object_storage', 'dashboard',
-                    'telemetry', 'data_processing']
+                    'telemetry', 'data_processing', 'database']
         for service in args:
             if service not in services:
                 raise exceptions.InvalidServiceTag('%s is not a valid '
@@ -359,26 +379,23 @@ class BaseTestCase(testtools.testcase.WithAttributes,
                                                    level=None))
 
     @classmethod
-    def get_client_manager(cls, interface=None):
+    def get_client_manager(cls, identity_version=None):
         """
         Returns an OpenStack client manager
         """
         force_tenant_isolation = getattr(cls, 'force_tenant_isolation', None)
+        identity_version = identity_version or CONF.identity.auth_version
 
         if (not hasattr(cls, 'isolated_creds') or
             not cls.isolated_creds.name == cls.__name__):
             cls.isolated_creds = credentials.get_isolated_credentials(
                 name=cls.__name__, network_resources=cls.network_resources,
                 force_tenant_isolation=force_tenant_isolation,
+                identity_version=identity_version
             )
 
         creds = cls.isolated_creds.get_primary_creds()
-        params = dict(credentials=creds, service=cls._service)
-        if getattr(cls, '_interface', None):
-            interface = cls._interface
-        if interface:
-            params['interface'] = interface
-        os = clients.Manager(**params)
+        os = clients.Manager(credentials=creds, service=cls._service)
         return os
 
     @classmethod
@@ -394,13 +411,12 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         """
         Returns an instance of the Identity Admin API client
         """
-        os = clients.AdminManager(interface=cls._interface,
-                                  service=cls._service)
+        os = clients.AdminManager(service=cls._service)
         admin_client = os.identity_client
         return admin_client
 
     @classmethod
-    def set_network_resources(self, network=False, router=False, subnet=False,
+    def set_network_resources(cls, network=False, router=False, subnet=False,
                               dhcp=False):
         """Specify which network resources should be created
 
@@ -413,12 +429,27 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         # in order to ensure that even if it's called multiple times in
         # a chain of overloaded methods, the attribute is set only
         # in the leaf class
-        if not self.network_resources:
-            self.network_resources = {
+        if not cls.network_resources:
+            cls.network_resources = {
                 'network': network,
                 'router': router,
                 'subnet': subnet,
                 'dhcp': dhcp}
+
+    @classmethod
+    def get_tenant_network(cls):
+        """Get the network to be used in testing
+
+        :return: network dict including 'id' and 'name'
+        """
+        # Make sure isolated_creds exists and get a network client
+        networks_client = cls.get_client_manager().networks_client
+        isolated_creds = getattr(cls, 'isolated_creds', None)
+        if credentials.is_admin_available():
+            admin_creds = isolated_creds.get_admin_creds()
+            networks_client = clients.Manager(admin_creds).networks_client
+        return fixed_network.get_tenant_network(isolated_creds,
+                                                networks_client)
 
     def assertEmpty(self, list, msg=None):
         self.assertTrue(len(list) == 0, msg)
@@ -436,8 +467,7 @@ class NegativeAutoTest(BaseTestCase):
         super(NegativeAutoTest, cls).setUpClass()
         os = cls.get_client_manager()
         cls.client = os.negative_client
-        os_admin = clients.AdminManager(interface=cls._interface,
-                                        service=cls._service)
+        os_admin = clients.AdminManager(service=cls._service)
         cls.admin_client = os_admin.negative_client
 
     @staticmethod

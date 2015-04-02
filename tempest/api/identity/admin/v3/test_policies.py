@@ -13,25 +13,26 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
+
 from tempest.api.identity import base
-from tempest.common.utils import data_utils
 from tempest import test
 
 
 class PoliciesTestJSON(base.BaseIdentityV3AdminTest):
-    _interface = 'json'
 
     def _delete_policy(self, policy_id):
         self.policy_client.delete_policy(policy_id)
 
     @test.attr(type='smoke')
+    @test.idempotent_id('1a0ad286-2d06-4123-ab0d-728893a76201')
     def test_list_policies(self):
         # Test to list policies
         policy_ids = list()
         fetched_ids = list()
         for _ in range(3):
-            blob = data_utils.rand_name('BlobName-')
-            policy_type = data_utils.rand_name('PolicyType-')
+            blob = data_utils.rand_name('BlobName')
+            policy_type = data_utils.rand_name('PolicyType')
             policy = self.policy_client.create_policy(blob,
                                                       policy_type)
             # Delete the Policy at the end of this method
@@ -45,10 +46,11 @@ class PoliciesTestJSON(base.BaseIdentityV3AdminTest):
         self.assertEqual(0, len(missing_pols))
 
     @test.attr(type='smoke')
+    @test.idempotent_id('e544703a-2f03-4cf2-9b0f-350782fdb0d3')
     def test_create_update_delete_policy(self):
         # Test to update policy
-        blob = data_utils.rand_name('BlobName-')
-        policy_type = data_utils.rand_name('PolicyType-')
+        blob = data_utils.rand_name('BlobName')
+        policy_type = data_utils.rand_name('PolicyType')
         policy = self.policy_client.create_policy(blob, policy_type)
         self.addCleanup(self._delete_policy, policy['id'])
         self.assertIn('id', policy)
@@ -58,7 +60,7 @@ class PoliciesTestJSON(base.BaseIdentityV3AdminTest):
         self.assertEqual(blob, policy['blob'])
         self.assertEqual(policy_type, policy['type'])
         # Update policy
-        update_type = data_utils.rand_name('UpdatedPolicyType-')
+        update_type = data_utils.rand_name('UpdatedPolicyType')
         data = self.policy_client.update_policy(
             policy['id'], type=update_type)
         self.assertIn('type', data)

@@ -18,10 +18,9 @@ from __future__ import print_function
 import logging as std_logging
 import os
 
-from oslo.config import cfg
+from oslo_config import cfg
 
-from tempest.openstack.common import lockutils
-from tempest.openstack.common import log as logging
+from oslo_log import log as logging
 
 
 def register_opt_group(conf, opt_group, options):
@@ -36,11 +35,16 @@ auth_group = cfg.OptGroup(name='auth',
 
 AuthGroup = [
     cfg.StrOpt('test_accounts_file',
-               default='etc/accounts.yaml',
                help="Path to the yaml file that contains the list of "
-                    "credentials to use for running tests"),
+                    "credentials to use for running tests. If used when "
+                    "running in parallel you have to make sure sufficient "
+                    "credentials are provided in the accounts file. For "
+                    "example if no tests with roles are being run it requires "
+                    "at least `2 * CONC` distinct accounts configured in "
+                    " the `test_accounts_file`, with CONC == the "
+                    "number of concurrent test processes."),
     cfg.BoolOpt('allow_tenant_isolation',
-                default=False,
+                default=True,
                 help="Allows test cases to create/destroy tenants and "
                      "users. This option requires that OpenStack Identity "
                      "API admin credentials are known. If false, isolated "
@@ -50,18 +54,15 @@ AuthGroup = [
                                                    group='compute'),
                                  cfg.DeprecatedOpt('allow_tenant_isolation',
                                                    group='orchestration')]),
-    cfg.BoolOpt('locking_credentials_provider',
-                default=False,
-                help="If set to True it enables the Accounts provider, "
-                     "which locks credentials to allow for parallel execution "
-                     "with pre-provisioned accounts. It can only be used to "
-                     "run tests that ensure credentials cleanup happens. "
-                     "It requires at least `2 * CONC` distinct accounts "
-                     "configured in `test_accounts_file`, with CONC == the "
-                     "number of concurrent test processes."),
     cfg.ListOpt('tempest_roles',
                 help="Roles to assign to all users created by tempest",
-                default=[])
+                default=[]),
+    cfg.StrOpt('tenant_isolation_domain_name',
+               default=None,
+               help="Only applicable when identity.auth_version is v3."
+                    "Domain within which isolated credentials are provisioned."
+                    "The default \"None\" means that the domain from the"
+                    "admin user is used instead.")
 ]
 
 identity_group = cfg.OptGroup(name='identity',
@@ -227,9 +228,11 @@ ComputeGroup = [
                help="Timeout in seconds to wait for output from ssh "
                     "channel."),
     cfg.StrOpt('fixed_network_name',
-               default='private',
                help="Name of the fixed network that is visible to all test "
-                    "tenants."),
+                    "tenants. If multiple networks are available for a tenant"
+                    " this is the network which will be used for creating "
+                    "servers if tempest does not create a network or a "
+                    "network is not specified elsewhere"),
     cfg.StrOpt('network_for_ssh',
                default='public',
                help="Network used for SSH connections. Ignored if "
@@ -320,7 +323,8 @@ ComputeFeaturesGroup = [
     cfg.BoolOpt('block_migrate_cinder_iscsi',
                 default=False,
                 help="Does the test environment block migration support "
-                     "cinder iSCSI volumes"),
+                "cinder iSCSI volumes. Note, libvirt doesn't support this, "
+                "see https://bugs.launchpad.net/nova/+bug/1398999"),
     cfg.BoolOpt('vnc_console',
                 default=False,
                 help='Enable VNC console. This configuration value should '
@@ -352,7 +356,13 @@ ComputeFeaturesGroup = [
                      'images of running instances?'),
     cfg.BoolOpt('ec2_api',
                 default=True,
-                help='Does the test environment have the ec2 api running?')
+                help='Does the test environment have the ec2 api running?'),
+    # TODO(mriedem): Remove preserve_ports once juno-eol happens.
+    cfg.BoolOpt('preserve_ports',
+                default=False,
+                help='Does Nova preserve preexisting ports from Neutron '
+                     'when deleting an instance? This should be set to True '
+                     'if testing Kilo+ Nova.')
 ]
 
 
@@ -691,6 +701,8 @@ OrchestrationGroup = [
                choices=['public', 'admin', 'internal',
                         'publicURL', 'adminURL', 'internalURL'],
                help="The endpoint type to use for the orchestration service."),
+    cfg.StrOpt('stack_owner_role', default='heat_stack_owner',
+               help='Role required for users to be able to manage stacks'),
     cfg.IntOpt('build_interval',
                default=1,
                help="Time in seconds between build status checks."),
@@ -701,9 +713,6 @@ OrchestrationGroup = [
                default='m1.micro',
                help="Instance type for tests. Needs to be big enough for a "
                     "full OS plus the test workload"),
-    cfg.StrOpt('image_ref',
-               help="Name of heat-cfntools enabled image to use when "
-                    "launching test instances."),
     cfg.StrOpt('keypair_name',
                help="Name of existing keypair to launch servers with."),
     cfg.IntOpt('max_template_size',
@@ -1105,16 +1114,7 @@ def list_opts():
     The purpose of this is to allow tools like the Oslo sample config file
     generator to discover the options exposed to users.
     """
-    optlist = [(g.name, o) for g, o in _opts]
-
-    # NOTE(jgrimm): Can be removed once oslo-incubator/oslo changes happen.
-    optlist.append((None, lockutils.util_opts))
-    optlist.append((None, logging.common_cli_opts))
-    optlist.append((None, logging.logging_cli_opts))
-    optlist.append((None, logging.generic_log_opts))
-    optlist.append((None, logging.log_opts))
-
-    return optlist
+    return [(g.name, o) for g, o in _opts]
 
 
 # this should never be called outside of this class
@@ -1193,11 +1193,12 @@ class TempestConfigPrivate(object):
         # to remove an issue with the config file up to date checker.
         if parse_conf:
             config_files.append(path)
+        logging.register_options(cfg.CONF)
         if os.path.isfile(path):
             cfg.CONF([], project='tempest', default_config_files=config_files)
         else:
             cfg.CONF([], project='tempest')
-        logging.setup('tempest')
+        logging.setup(cfg.CONF, 'tempest')
         LOG = logging.getLogger('tempest')
         LOG.info("Using tempest config file %s" % path)
         register_opts()
@@ -1211,16 +1212,14 @@ class TempestConfigProxy(object):
     _path = None
 
     _extra_log_defaults = [
-        'keystoneclient.session=INFO',
-        'paramiko.transport=INFO',
-        'requests.packages.urllib3.connectionpool=WARN'
+        ('paramiko.transport', std_logging.INFO),
+        ('requests.packages.urllib3.connectionpool', std_logging.WARN),
     ]
 
     def _fix_log_levels(self):
         """Tweak the oslo log defaults."""
-        for opt in logging.log_opts:
-            if opt.dest == 'default_log_levels':
-                opt.default.extend(self._extra_log_defaults)
+        for name, level in self._extra_log_defaults:
+            std_logging.getLogger(name).setLevel(level)
 
     def __getattr__(self, attr):
         if not self._config:

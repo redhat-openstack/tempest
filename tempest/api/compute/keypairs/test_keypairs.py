@@ -13,8 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
+
 from tempest.api.compute import base
-from tempest.common.utils import data_utils
 from tempest import test
 
 
@@ -23,8 +24,8 @@ class KeyPairsV2TestJSON(base.BaseComputeTest):
     _api_version = 2
 
     @classmethod
-    def resource_setup(cls):
-        super(KeyPairsV2TestJSON, cls).resource_setup()
+    def setup_clients(cls):
+        super(KeyPairsV2TestJSON, cls).setup_clients()
         cls.client = cls.keypairs_client
 
     def _delete_keypair(self, keypair_name):
@@ -36,12 +37,13 @@ class KeyPairsV2TestJSON(base.BaseComputeTest):
         return body
 
     @test.attr(type='gate')
+    @test.idempotent_id('1d1dbedb-d7a0-432a-9d09-83f543c3c19b')
     def test_keypairs_create_list_delete(self):
         # Keypairs created should be available in the response list
         # Create 3 keypairs
         key_list = list()
         for i in range(3):
-            k_name = data_utils.rand_name('keypair-')
+            k_name = data_utils.rand_name('keypair')
             keypair = self._create_keypair(k_name)
             # Need to pop these keys so that our compare doesn't fail later,
             # as the keypair dicts from list API doesn't have them.
@@ -64,9 +66,10 @@ class KeyPairsV2TestJSON(base.BaseComputeTest):
                          % ', '.join(m_key['name'] for m_key in missing_kps))
 
     @test.attr(type='gate')
+    @test.idempotent_id('6c1d3123-4519-4742-9194-622cb1714b7d')
     def test_keypair_create_delete(self):
         # Keypair should be created, verified and deleted
-        k_name = data_utils.rand_name('keypair-')
+        k_name = data_utils.rand_name('keypair')
         keypair = self._create_keypair(k_name)
         private_key = keypair['private_key']
         key_name = keypair['name']
@@ -77,9 +80,10 @@ class KeyPairsV2TestJSON(base.BaseComputeTest):
                         "Field private_key is empty or not found.")
 
     @test.attr(type='gate')
+    @test.idempotent_id('a4233d5d-52d8-47cc-9a25-e1864527e3df')
     def test_get_keypair_detail(self):
         # Keypair should be created, Got details by name and deleted
-        k_name = data_utils.rand_name('keypair-')
+        k_name = data_utils.rand_name('keypair')
         self._create_keypair(k_name)
         keypair_detail = self.client.get_keypair(k_name)
         self.assertIn('name', keypair_detail)
@@ -92,9 +96,10 @@ class KeyPairsV2TestJSON(base.BaseComputeTest):
                         "Field public_key is empty or not found.")
 
     @test.attr(type='gate')
+    @test.idempotent_id('39c90c6a-304a-49dd-95ec-2366129def05')
     def test_keypair_create_with_pub_key(self):
         # Keypair should be created with a given public key
-        k_name = data_utils.rand_name('keypair-')
+        k_name = data_utils.rand_name('keypair')
         pub_key = ("ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCs"
                    "Ne3/1ILNCqFyfYWDeTKLD6jEXC2OQHLmietMWW+/vd"
                    "aZq7KZEwO0jhglaFjU1mpqq4Gz5RX156sCTNM9vRbw"

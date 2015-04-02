@@ -10,15 +10,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
 from tempest_lib import exceptions as lib_exc
 
 from tempest.api.telemetry import base
-from tempest.common.utils import data_utils
 from tempest import test
 
 
 class TelemetryAlarmingAPITestJSON(base.BaseTelemetryTest):
-    _interface = 'json'
 
     @classmethod
     def resource_setup(cls):
@@ -31,6 +30,7 @@ class TelemetryAlarmingAPITestJSON(base.BaseTelemetryTest):
             cls.create_alarm(threshold_rule=cls.rule)
 
     @test.attr(type="gate")
+    @test.idempotent_id('1c918e06-210b-41eb-bd45-14676dd77cd6')
     def test_alarm_list(self):
         # List alarms
         alarm_list = self.telemetry_client.list_alarms()
@@ -44,6 +44,7 @@ class TelemetryAlarmingAPITestJSON(base.BaseTelemetryTest):
                          ', '.join(str(a) for a in missing_alarms))
 
     @test.attr(type="gate")
+    @test.idempotent_id('1297b095-39c1-4e74-8a1f-4ae998cedd67')
     def test_create_update_get_delete_alarm(self):
         # Create an alarm
         alarm_name = data_utils.rand_name('telemetry_alarm')
@@ -75,20 +76,22 @@ class TelemetryAlarmingAPITestJSON(base.BaseTelemetryTest):
                           self.telemetry_client.get_alarm, alarm_id)
 
     @test.attr(type="gate")
+    @test.idempotent_id('aca49486-70bb-4016-87e0-f6131374f741')
     def test_set_get_alarm_state(self):
         alarm_states = ['ok', 'alarm', 'insufficient data']
         alarm = self.create_alarm(threshold_rule=self.rule)
         # Set alarm state and verify
         new_state =\
             [elem for elem in alarm_states if elem != alarm['state']][0]
-        _, state = self.telemetry_client.alarm_set_state(alarm['alarm_id'],
-                                                         new_state)
-        self.assertEqual(new_state, state)
+        state = self.telemetry_client.alarm_set_state(alarm['alarm_id'],
+                                                      new_state)
+        self.assertEqual(new_state, state.data)
         # Get alarm state and verify
-        _, state = self.telemetry_client.alarm_get_state(alarm['alarm_id'])
-        self.assertEqual(new_state, state)
+        state = self.telemetry_client.alarm_get_state(alarm['alarm_id'])
+        self.assertEqual(new_state, state.data)
 
     @test.attr(type="gate")
+    @test.idempotent_id('08d7e45a-1344-4e5c-ba6f-f6cbb77f55b9')
     def test_create_delete_alarm_with_combination_rule(self):
         rule = {"alarm_ids": self.alarm_ids,
                 "operator": "or"}

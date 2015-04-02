@@ -13,14 +13,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
+
 from tempest.api.network import base
-from tempest.common.utils import data_utils
 from tempest import test
 
 
 class LoadBalancerAdminTestJSON(base.BaseAdminNetworkTest):
-    _interface = 'json'
-
     """
     Test admin actions for load balancer.
 
@@ -29,21 +28,35 @@ class LoadBalancerAdminTestJSON(base.BaseAdminNetworkTest):
     """
 
     @classmethod
-    def resource_setup(cls):
-        super(LoadBalancerAdminTestJSON, cls).resource_setup()
+    def skip_checks(cls):
+        super(LoadBalancerAdminTestJSON, cls).skip_checks()
         if not test.is_extension_enabled('lbaas', 'network'):
             msg = "lbaas extension not enabled."
             raise cls.skipException(msg)
+
+    @classmethod
+    def setup_credentials(cls):
+        super(LoadBalancerAdminTestJSON, cls).setup_credentials()
+        cls.manager = cls.get_client_manager()
+        cls.primary_creds = cls.isolated_creds.get_primary_creds()
+
+    @classmethod
+    def setup_clients(cls):
+        super(LoadBalancerAdminTestJSON, cls).setup_clients()
+        cls.client = cls.manager.network_client
+
+    @classmethod
+    def resource_setup(cls):
+        super(LoadBalancerAdminTestJSON, cls).resource_setup()
         cls.force_tenant_isolation = True
-        manager = cls.get_client_manager()
-        cls.client = manager.network_client
-        cls.tenant_id = cls.isolated_creds.get_primary_creds().tenant_id
+        cls.tenant_id = cls.primary_creds.tenant_id
         cls.network = cls.create_network()
         cls.subnet = cls.create_subnet(cls.network)
         cls.pool = cls.create_pool(data_utils.rand_name('pool-'),
                                    "ROUND_ROBIN", "HTTP", cls.subnet)
 
     @test.attr(type='smoke')
+    @test.idempotent_id('6b0a20d8-4fcd-455e-b54f-ec4db5199518')
     def test_create_vip_as_admin_for_another_tenant(self):
         name = data_utils.rand_name('vip-')
         body = self.admin_client.create_pool(
@@ -70,6 +83,7 @@ class LoadBalancerAdminTestJSON(base.BaseAdminNetworkTest):
         self.assertEqual(vip['name'], show_vip['name'])
 
     @test.attr(type='smoke')
+    @test.idempotent_id('74552cfc-ab78-4fb6-825b-f67bca379921')
     def test_create_health_monitor_as_admin_for_another_tenant(self):
         body = (
             self.admin_client.create_health_monitor(delay=4,
@@ -87,6 +101,7 @@ class LoadBalancerAdminTestJSON(base.BaseAdminNetworkTest):
         self.assertEqual(health_monitor['id'], show_health_monitor['id'])
 
     @test.attr(type='smoke')
+    @test.idempotent_id('266a192d-3c22-46c4-a8fb-802450301e82')
     def test_create_pool_from_admin_user_other_tenant(self):
         body = self.admin_client.create_pool(
             name=data_utils.rand_name('pool-'),
@@ -100,6 +115,7 @@ class LoadBalancerAdminTestJSON(base.BaseAdminNetworkTest):
         self.assertEqual(self.tenant_id, pool['tenant_id'])
 
     @test.attr(type='smoke')
+    @test.idempotent_id('158bb272-b9ed-4cfc-803c-661dac46f783')
     def test_create_member_from_admin_user_other_tenant(self):
         body = self.admin_client.create_member(address="10.0.9.47",
                                                protocol_port=80,

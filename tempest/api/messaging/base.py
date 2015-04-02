@@ -13,9 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from tempest.common.utils import data_utils
+from oslo_log import log as logging
+from tempest_lib.common.utils import data_utils
+
 from tempest import config
-from tempest.openstack.common import log as logging
 from tempest import test
 
 CONF = config.CONF
@@ -35,13 +36,25 @@ class BaseMessagingTest(test.BaseTestCase):
     """
 
     @classmethod
-    def resource_setup(cls):
-        super(BaseMessagingTest, cls).resource_setup()
+    def skip_checks(cls):
+        super(BaseMessagingTest, cls).skip_checks()
         if not CONF.service_available.zaqar:
             raise cls.skipException("Zaqar support is required")
-        os = cls.get_client_manager()
+
+    @classmethod
+    def setup_credentials(cls):
+        super(BaseMessagingTest, cls).setup_credentials()
+        cls.os = cls.get_client_manager()
+
+    @classmethod
+    def setup_clients(cls):
+        super(BaseMessagingTest, cls).setup_clients()
+        cls.client = cls.os.messaging_client
+
+    @classmethod
+    def resource_setup(cls):
+        super(BaseMessagingTest, cls).resource_setup()
         cls.messaging_cfg = CONF.messaging
-        cls.client = os.messaging_client
 
     @classmethod
     def create_queue(cls, queue_name):

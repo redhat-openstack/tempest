@@ -14,21 +14,20 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import os
 import subprocess
 
 import netaddr
+from oslo_log import log
 import six
+from tempest_lib.common.utils import data_utils
 from tempest_lib import exceptions as lib_exc
 
 from tempest import clients
-from tempest.common import cred_provider
 from tempest.common import credentials
-from tempest.common.utils import data_utils
+from tempest.common import fixed_network
 from tempest.common.utils.linux import remote_client
 from tempest import config
 from tempest import exceptions
-from tempest.openstack.common import log
 from tempest.services.network import resources as net_resources
 import tempest.test
 
@@ -41,8 +40,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
     """Base class for scenario tests. Uses tempest own clients. """
 
     @classmethod
-    def resource_setup(cls):
-        super(ScenarioTest, cls).resource_setup()
+    def setup_credentials(cls):
+        super(ScenarioTest, cls).setup_credentials()
         # TODO(andreaf) Some of the code from this resource_setup could be
         # moved into `BaseTestCase`
         cls.isolated_creds = credentials.get_isolated_credentials(
@@ -50,7 +49,10 @@ class ScenarioTest(tempest.test.BaseTestCase):
         cls.manager = clients.Manager(
             credentials=cls.credentials()
         )
-        cls.admin_manager = clients.Manager(cls.admin_credentials())
+
+    @classmethod
+    def setup_clients(cls):
+        super(ScenarioTest, cls).setup_clients()
         # Clients (in alphabetical order)
         cls.flavors_client = cls.manager.flavors_client
         cls.floating_ips_client = cls.manager.floating_ips_client
@@ -59,7 +61,6 @@ class ScenarioTest(tempest.test.BaseTestCase):
         # Compute image client
         cls.images_client = cls.manager.images_client
         cls.keypairs_client = cls.manager.keypairs_client
-        cls.networks_client = cls.admin_manager.networks_client
         # Nova security groups client
         cls.security_groups_client = cls.manager.security_groups_client
         cls.servers_client = cls.manager.servers_client
@@ -184,11 +185,13 @@ class ScenarioTest(tempest.test.BaseTestCase):
             flavor = CONF.compute.flavor_ref
         if create_kwargs is None:
             create_kwargs = {}
+        network = self.get_tenant_network()
+        fixed_network.set_networks_kwarg(network, create_kwargs)
 
         LOG.debug("Creating a server (name: %s, image: %s, flavor: %s)",
                   name, image, flavor)
-        _, server = self.servers_client.create_server(name, image, flavor,
-                                                      **create_kwargs)
+        server = self.servers_client.create_server(name, image, flavor,
+                                                   **create_kwargs)
         if wait_on_delete:
             self.addCleanup(self.servers_client.wait_for_server_termination,
                             server['id'])
@@ -203,11 +206,11 @@ class ScenarioTest(tempest.test.BaseTestCase):
         # The instance retrieved on creation is missing network
         # details, necessitating retrieval after it becomes active to
         # ensure correct details.
-        _, server = self.servers_client.get_server(server['id'])
+        server = self.servers_client.get_server(server['id'])
         self.assertEqual(server['name'], name)
         return server
 
-    def create_volume(self, size=1, name=None, snapshot_id=None,
+    def create_volume(self, size=None, name=None, snapshot_id=None,
                       imageRef=None, volume_type=None, wait_on_delete=True):
         if name is None:
             name = data_utils.rand_name(self.__class__.__name__)
@@ -379,13 +382,13 @@ class ScenarioTest(tempest.test.BaseTestCase):
             LOG.debug('Console output not supported, cannot log')
             return
         if not servers:
-            _, servers = self.servers_client.list_servers()
+            servers = self.servers_client.list_servers()
             servers = servers['servers']
         for server in servers:
             console_output = self.servers_client.get_console_output(
-                server['id'], length=None)
-            LOG.debug('Console output for %s\nhead=%s\nbody=\n%s',
-                      server['id'], console_output[0], console_output[1])
+                server['id'], length=None).data
+            LOG.debug('Console output for %s\nbody=\n%s',
+                      server['id'], console_output)
 
     def _log_net_info(self, exc):
         # network debug is called as part of ssh init
@@ -513,7 +516,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         Nova clients
         """
 
-        _, floating_ip = self.floating_ips_client.create_floating_ip(pool_name)
+        floating_ip = self.floating_ips_client.create_floating_ip(pool_name)
         self.addCleanup(self.delete_wrapper,
                         self.floating_ips_client.delete_floating_ip,
                         floating_ip['id'])
@@ -534,13 +537,21 @@ class NetworkScenarioTest(ScenarioTest):
     """
 
     @classmethod
-    def check_preconditions(cls):
+    def skip_checks(cls):
+        super(NetworkScenarioTest, cls).skip_checks()
         if not CONF.service_available.neutron:
             raise cls.skipException('Neutron not available')
+        if not credentials.is_admin_available():
+            msg = ("Missing Identity Admin API credentials in configuration.")
+            raise cls.skipException(msg)
+
+    @classmethod
+    def setup_credentials(cls):
+        super(NetworkScenarioTest, cls).setup_credentials()
+        cls.admin_manager = clients.Manager(cls.admin_credentials())
 
     @classmethod
     def resource_setup(cls):
-        cls.check_preconditions()
         super(NetworkScenarioTest, cls).resource_setup()
         cls.tenant_id = cls.manager.identity_client.tenant_id
 
@@ -909,6 +920,11 @@ class NetworkScenarioTest(ScenarioTest):
             dict(
                 # ping
                 protocol='icmp',
+            ),
+            dict(
+                # ipv6-icmp for ping6
+                protocol='icmp',
+                ethertype='IPv6',
             )
         ]
         for ruleset in rulesets:
@@ -1136,12 +1152,16 @@ class BaremetalProvisionStates(object):
 
 class BaremetalScenarioTest(ScenarioTest):
     @classmethod
-    def resource_setup(cls):
+    def skip_checks(cls):
+        super(BaremetalScenarioTest, cls).skip_checks()
         if (not CONF.service_available.ironic or
            not CONF.baremetal.driver_enabled):
             msg = 'Ironic not available or Ironic compute driver not enabled'
             raise cls.skipException(msg)
-        super(BaremetalScenarioTest, cls).resource_setup()
+
+    @classmethod
+    def setup_credentials(cls):
+        super(BaremetalScenarioTest, cls).setup_credentials()
 
         # use an admin client manager for baremetal client
         manager = clients.Manager(
@@ -1149,6 +1169,9 @@ class BaremetalScenarioTest(ScenarioTest):
         )
         cls.baremetal_client = manager.baremetal_client
 
+    @classmethod
+    def resource_setup(cls):
+        super(BaremetalScenarioTest, cls).resource_setup()
         # allow any issues obtaining the node list to raise early
         cls.baremetal_client.list_nodes()
 
@@ -1249,7 +1272,7 @@ class BaremetalScenarioTest(ScenarioTest):
         self.servers_client.wait_for_server_status(self.instance['id'],
                                                    'ACTIVE')
         self.node = self.get_node(instance_id=self.instance['id'])
-        _, self.instance = self.servers_client.get_server(self.instance['id'])
+        self.instance = self.servers_client.get_server(self.instance['id'])
 
     def terminate_instance(self):
         self.servers_client.delete_server(self.instance['id'])
@@ -1267,9 +1290,17 @@ class EncryptionScenarioTest(ScenarioTest):
     """
 
     @classmethod
-    def resource_setup(cls):
-        super(EncryptionScenarioTest, cls).resource_setup()
-        cls.admin_volume_types_client = cls.admin_manager.volume_types_client
+    def skip_checks(cls):
+        super(EncryptionScenarioTest, cls).skip_checks()
+        if not credentials.is_admin_available():
+            msg = ("Missing Identity Admin API credentials in configuration.")
+            raise cls.skipException(msg)
+
+    @classmethod
+    def setup_clients(cls):
+        super(EncryptionScenarioTest, cls).setup_clients()
+        admin_manager = clients.Manager(cls.admin_credentials())
+        cls.admin_volume_types_client = admin_manager.volume_types_client
 
     def _wait_for_volume_status(self, status):
         self.status_timeout(
@@ -1308,49 +1339,6 @@ class EncryptionScenarioTest(ScenarioTest):
             control_location=control_location)
 
 
-class OrchestrationScenarioTest(ScenarioTest):
-    """
-    Base class for orchestration scenario tests
-    """
-
-    @classmethod
-    def resource_setup(cls):
-        if not CONF.service_available.heat:
-            raise cls.skipException("Heat support is required")
-        super(OrchestrationScenarioTest, cls).resource_setup()
-
-    @classmethod
-    def credentials(cls):
-        admin_creds = cred_provider.get_configured_credentials(
-            'identity_admin')
-        creds = cred_provider.get_configured_credentials('user')
-        admin_creds.tenant_name = creds.tenant_name
-        return admin_creds
-
-    def _load_template(self, base_file, file_name):
-        filepath = os.path.join(os.path.dirname(os.path.realpath(base_file)),
-                                file_name)
-        with open(filepath) as f:
-            return f.read()
-
-    @classmethod
-    def _stack_rand_name(cls):
-        return data_utils.rand_name(cls.__name__ + '-')
-
-    @classmethod
-    def _get_default_network(cls):
-        networks = cls.networks_client.list_networks()
-        for net in networks:
-            if net['label'] == CONF.compute.fixed_network_name:
-                return net
-
-    @staticmethod
-    def _stack_output(stack, output_key):
-        """Return a stack output value for a given key."""
-        return next((o['output_value'] for o in stack['outputs']
-                    if o['output_key'] == output_key), None)
-
-
 class SwiftScenarioTest(ScenarioTest):
     """
     Provide harness to do Swift scenario tests.
@@ -1360,17 +1348,35 @@ class SwiftScenarioTest(ScenarioTest):
     """
 
     @classmethod
-    def resource_setup(cls):
+    def skip_checks(cls):
+        super(SwiftScenarioTest, cls).skip_checks()
         if not CONF.service_available.swift:
             skip_msg = ("%s skipped as swift is not available" %
                         cls.__name__)
             raise cls.skipException(skip_msg)
+
+    @classmethod
+    def setup_credentials(cls):
         cls.set_network_resources()
-        super(SwiftScenarioTest, cls).resource_setup()
+        super(SwiftScenarioTest, cls).setup_credentials()
+        operator_role = CONF.object_storage.operator_role
+        if not cls.isolated_creds.is_role_available(operator_role):
+            skip_msg = ("%s skipped because the configured credential provider"
+                        " is not able to provide credentials with the %s role "
+                        "assigned." % (cls.__name__, operator_role))
+            raise cls.skipException(skip_msg)
+        else:
+            cls.os_operator = clients.Manager(
+                cls.isolated_creds.get_creds_by_roles(
+                    [operator_role]))
+
+    @classmethod
+    def setup_clients(cls):
+        super(SwiftScenarioTest, cls).setup_clients()
         # Clients for Swift
-        cls.account_client = cls.manager.account_client
-        cls.container_client = cls.manager.container_client
-        cls.object_client = cls.manager.object_client
+        cls.account_client = cls.os_operator.account_client
+        cls.container_client = cls.os_operator.container_client
+        cls.object_client = cls.os_operator.object_client
 
     def get_swift_stat(self):
         """get swift status for our user account."""

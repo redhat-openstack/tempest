@@ -15,10 +15,10 @@
 import json
 
 import mock
+from oslotest import mockpatch
 
 from tempest.cmd import verify_tempest_config
 from tempest import config
-from tempest.openstack.common.fixture import mockpatch
 from tempest.tests import base
 from tempest.tests import fake_config
 
@@ -49,9 +49,8 @@ class TestDiscovery(base.TestCase):
             return_value='http://fake_endpoint:5000'))
         fake_resp = {'versions': {'values': [{'id': 'v2.0'}, {'id': 'v3.0'}]}}
         fake_resp = json.dumps(fake_resp)
-        self.useFixture(mockpatch.PatchObject(
-            verify_tempest_config.RAW_HTTP, 'request',
-            return_value=(None, fake_resp)))
+        self.useFixture(mockpatch.Patch('httplib2.Http.request',
+                                        return_value=(None, fake_resp)))
         fake_os = mock.MagicMock()
         versions = verify_tempest_config._get_api_versions(fake_os, 'keystone')
         self.assertIn('v2.0', versions)
@@ -63,9 +62,8 @@ class TestDiscovery(base.TestCase):
             return_value='http://fake_endpoint:5000'))
         fake_resp = {'versions': [{'id': 'v1.0'}, {'id': 'v2.0'}]}
         fake_resp = json.dumps(fake_resp)
-        self.useFixture(mockpatch.PatchObject(
-            verify_tempest_config.RAW_HTTP, 'request',
-            return_value=(None, fake_resp)))
+        self.useFixture(mockpatch.Patch('httplib2.Http.request',
+                                        return_value=(None, fake_resp)))
         fake_os = mock.MagicMock()
         versions = verify_tempest_config._get_api_versions(fake_os, 'cinder')
         self.assertIn('v1.0', versions)
@@ -77,9 +75,8 @@ class TestDiscovery(base.TestCase):
             return_value='http://fake_endpoint:5000'))
         fake_resp = {'versions': [{'id': 'v2.0'}, {'id': 'v3.0'}]}
         fake_resp = json.dumps(fake_resp)
-        self.useFixture(mockpatch.PatchObject(
-            verify_tempest_config.RAW_HTTP, 'request',
-            return_value=(None, fake_resp)))
+        self.useFixture(mockpatch.Patch('httplib2.Http.request',
+                                        return_value=(None, fake_resp)))
         fake_os = mock.MagicMock()
         versions = verify_tempest_config._get_api_versions(fake_os, 'nova')
         self.assertIn('v2.0', versions)
@@ -109,9 +106,8 @@ class TestDiscovery(base.TestCase):
             return_value='http://fake_endpoint:5000'))
         fake_resp = {'versions': {'values': [{'id': 'v2.0'}]}}
         fake_resp = json.dumps(fake_resp)
-        self.useFixture(mockpatch.PatchObject(
-            verify_tempest_config.RAW_HTTP, 'request',
-            return_value=(None, fake_resp)))
+        self.useFixture(mockpatch.Patch('httplib2.Http.request',
+                                        return_value=(None, fake_resp)))
         fake_os = mock.MagicMock()
         with mock.patch.object(verify_tempest_config,
                                'print_and_or_update') as print_mock:
@@ -126,9 +122,8 @@ class TestDiscovery(base.TestCase):
             return_value='http://fake_endpoint:5000'))
         fake_resp = {'versions': {'values': [{'id': 'v3.0'}]}}
         fake_resp = json.dumps(fake_resp)
-        self.useFixture(mockpatch.PatchObject(
-            verify_tempest_config.RAW_HTTP, 'request',
-            return_value=(None, fake_resp)))
+        self.useFixture(mockpatch.Patch('httplib2.Http.request',
+                                        return_value=(None, fake_resp)))
         fake_os = mock.MagicMock()
         with mock.patch.object(verify_tempest_config,
                                'print_and_or_update') as print_mock:
@@ -143,9 +138,8 @@ class TestDiscovery(base.TestCase):
             return_value='http://fake_endpoint:5000'))
         fake_resp = {'versions': [{'id': 'v1.0'}]}
         fake_resp = json.dumps(fake_resp)
-        self.useFixture(mockpatch.PatchObject(
-            verify_tempest_config.RAW_HTTP, 'request',
-            return_value=(None, fake_resp)))
+        self.useFixture(mockpatch.Patch('httplib2.Http.request',
+                                        return_value=(None, fake_resp)))
         fake_os = mock.MagicMock()
         with mock.patch.object(verify_tempest_config,
                                'print_and_or_update') as print_mock:
@@ -159,9 +153,8 @@ class TestDiscovery(base.TestCase):
             return_value='http://fake_endpoint:5000'))
         fake_resp = {'versions': [{'id': 'v2.0'}]}
         fake_resp = json.dumps(fake_resp)
-        self.useFixture(mockpatch.PatchObject(
-            verify_tempest_config.RAW_HTTP, 'request',
-            return_value=(None, fake_resp)))
+        self.useFixture(mockpatch.Patch('httplib2.Http.request',
+                                        return_value=(None, fake_resp)))
         fake_os = mock.MagicMock()
         with mock.patch.object(verify_tempest_config,
                                'print_and_or_update') as print_mock:
@@ -282,8 +275,8 @@ class TestDiscovery(base.TestCase):
 
     def test_verify_extensions_nova(self):
         def fake_list_extensions():
-            return (None, [{'alias': 'fake1'}, {'alias': 'fake2'},
-                           {'alias': 'not_fake'}])
+            return ([{'alias': 'fake1'}, {'alias': 'fake2'},
+                     {'alias': 'not_fake'}])
         fake_os = mock.MagicMock()
         fake_os.extensions_client.list_extensions = fake_list_extensions
         self.useFixture(mockpatch.PatchObject(
@@ -303,9 +296,9 @@ class TestDiscovery(base.TestCase):
 
     def test_verify_extensions_nova_all(self):
         def fake_list_extensions():
-            return (None, {'extensions': [{'alias': 'fake1'},
-                                          {'alias': 'fake2'},
-                                          {'alias': 'not_fake'}]})
+            return ({'extensions': [{'alias': 'fake1'},
+                                    {'alias': 'fake2'},
+                                    {'alias': 'not_fake'}]})
         fake_os = mock.MagicMock()
         fake_os.extensions_client.list_extensions = fake_list_extensions
         self.useFixture(mockpatch.PatchObject(

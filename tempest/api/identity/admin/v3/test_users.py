@@ -13,22 +13,23 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
+
 from tempest.api.identity import base
-from tempest.common.utils import data_utils
 from tempest import test
 
 
 class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
-    _interface = 'json'
 
     @test.attr(type='gate')
+    @test.idempotent_id('b537d090-afb9-4519-b95d-270b0708e87e')
     def test_user_update(self):
         # Test case to check if updating of user attributes is successful.
         # Creating first user
-        u_name = data_utils.rand_name('user-')
+        u_name = data_utils.rand_name('user')
         u_desc = u_name + 'description'
         u_email = u_name + '@testmail.tm'
-        u_password = data_utils.rand_name('pass-')
+        u_password = data_utils.rand_name('pass')
         user = self.client.create_user(
             u_name, description=u_desc, password=u_password,
             email=u_email, enabled=False)
@@ -36,12 +37,12 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         self.addCleanup(self.client.delete_user, user['id'])
         # Creating second project for updation
         project = self.client.create_project(
-            data_utils.rand_name('project-'),
-            description=data_utils.rand_name('project-desc-'))
+            data_utils.rand_name('project'),
+            description=data_utils.rand_name('project-desc'))
         # Delete the Project at the end of this method
         self.addCleanup(self.client.delete_project, project['id'])
         # Updating user details with new values
-        u_name2 = data_utils.rand_name('user2-')
+        u_name2 = data_utils.rand_name('user2')
         u_email2 = u_name2 + '@testmail.tm'
         u_description2 = u_name2 + ' description'
         update_user = self.client.update_user(
@@ -65,6 +66,7 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         self.assertEqual('false', str(new_user_get['enabled']).lower())
 
     @test.attr(type='gate')
+    @test.idempotent_id('2d223a0e-e457-4a70-9fb1-febe027a0ff9')
     def test_update_user_password(self):
         # Creating User to check password updation
         u_name = data_utils.rand_name('user')
@@ -77,7 +79,8 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         new_password = data_utils.rand_name('pass1')
         self.client.update_user_password(user['id'], new_password,
                                          original_password)
-        resp = self.token.auth(user['id'], new_password).response
+        resp = self.token.auth(user_id=user['id'],
+                               password=new_password).response
         subject_token = resp['x-subject-token']
         # Perform GET Token to verify and confirm password is updated
         token_details = self.client.get_token(subject_token)
@@ -86,20 +89,21 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         self.assertEqual(token_details['user']['name'], u_name)
 
     @test.attr(type='gate')
+    @test.idempotent_id('a831e70c-e35b-430b-92ed-81ebbc5437b8')
     def test_list_user_projects(self):
         # List the projects that a user has access upon
         assigned_project_ids = list()
         fetched_project_ids = list()
         u_project = self.client.create_project(
-            data_utils.rand_name('project-'),
-            description=data_utils.rand_name('project-desc-'))
+            data_utils.rand_name('project'),
+            description=data_utils.rand_name('project-desc'))
         # Delete the Project at the end of this method
         self.addCleanup(self.client.delete_project, u_project['id'])
         # Create a user.
-        u_name = data_utils.rand_name('user-')
+        u_name = data_utils.rand_name('user')
         u_desc = u_name + 'description'
         u_email = u_name + '@testmail.tm'
-        u_password = data_utils.rand_name('pass-')
+        u_password = data_utils.rand_name('pass')
         user_body = self.client.create_user(
             u_name, description=u_desc, password=u_password,
             email=u_email, enabled=False, project_id=u_project['id'])
@@ -107,7 +111,7 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         self.addCleanup(self.client.delete_user, user_body['id'])
         # Creating Role
         role_body = self.client.create_role(
-            data_utils.rand_name('role-'))
+            data_utils.rand_name('role'))
         # Delete the Role at the end of this method
         self.addCleanup(self.client.delete_role, role_body['id'])
 
@@ -116,8 +120,8 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         for i in range(2):
             # Creating project so as to assign role
             project_body = self.client.create_project(
-                data_utils.rand_name('project-'),
-                description=data_utils.rand_name('project-desc-'))
+                data_utils.rand_name('project'),
+                description=data_utils.rand_name('project-desc'))
             project = self.client.get_project(project_body['id'])
             # Delete the Project at the end of this method
             self.addCleanup(self.client.delete_project, project_body['id'])
@@ -139,6 +143,7 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
                                    in missing_projects))
 
     @test.attr(type='gate')
+    @test.idempotent_id('c10dcd90-461d-4b16-8e23-4eb836c00644')
     def test_get_user(self):
         # Get a user detail
         self.data.setup_test_v3_user()

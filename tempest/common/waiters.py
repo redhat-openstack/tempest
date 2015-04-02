@@ -13,10 +13,11 @@
 
 import time
 
-from tempest.common.utils import misc as misc_utils
+from oslo_log import log as logging
+from tempest_lib.common.utils import misc as misc_utils
+
 from tempest import config
 from tempest import exceptions
-from tempest.openstack.common import log as logging
 
 CONF = config.CONF
 LOG = logging.getLogger(__name__)
@@ -32,7 +33,7 @@ def wait_for_server_status(client, server_id, status, ready_wait=True,
 
     # NOTE(afazekas): UNKNOWN status possible on ERROR
     # or in a very early stage.
-    resp, body = client.get_server(server_id)
+    body = client.get_server(server_id)
     old_status = server_status = body['status']
     old_task_state = task_state = _get_task_state(body)
     start_time = int(time.time())
@@ -59,7 +60,7 @@ def wait_for_server_status(client, server_id, status, ready_wait=True,
                 return
 
         time.sleep(client.build_interval)
-        resp, body = client.get_server(server_id)
+        body = client.get_server(server_id)
         server_status = body['status']
         task_state = _get_task_state(body)
         if (server_status != old_status) or (task_state != old_task_state):

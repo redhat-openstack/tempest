@@ -14,12 +14,12 @@
 
 import abc
 
+from oslo_log import log as logging
 import six
 
 from tempest import auth
 from tempest import config
 from tempest import exceptions
-from tempest.openstack.common import log as logging
 
 CONF = config.CONF
 LOG = logging.getLogger(__name__)
@@ -29,6 +29,13 @@ CREDENTIAL_TYPES = {
     'identity_admin': ('identity', 'admin'),
     'user': ('identity', None),
     'alt_user': ('identity', 'alt')
+}
+
+DEFAULT_PARAMS = {
+    'disable_ssl_certificate_validation':
+        CONF.identity.disable_ssl_certificate_validation,
+    'ca_certs': CONF.identity.ca_certificates_file,
+    'trace_requests': CONF.debug.trace_requests
 }
 
 
@@ -46,7 +53,7 @@ def get_configured_credentials(credential_type, fill_in=True,
     if identity_version == 'v3':
         conf_attributes.append('domain_name')
     # Read the parts of credentials from config
-    params = {}
+    params = DEFAULT_PARAMS.copy()
     section, prefix = CREDENTIAL_TYPES[credential_type]
     for attr in conf_attributes:
         _section = getattr(CONF, section)
@@ -56,7 +63,8 @@ def get_configured_credentials(credential_type, fill_in=True,
             params[attr] = getattr(_section, prefix + "_" + attr)
     # Build and validate credentials. We are reading configured credentials,
     # so validate them even if fill_in is False
-    credentials = auth.get_credentials(fill_in=fill_in, **params)
+    credentials = get_credentials(fill_in=fill_in,
+                                  identity_version=identity_version, **params)
     if not fill_in:
         if not credentials.is_valid():
             msg = ("The %s credentials are incorrectly set in the config file."
@@ -66,11 +74,47 @@ def get_configured_credentials(credential_type, fill_in=True,
     return credentials
 
 
+# Wrapper around auth.get_credentials to use the configured identity version
+# is none is specified
+def get_credentials(fill_in=True, identity_version=None, **kwargs):
+    params = dict(DEFAULT_PARAMS, **kwargs)
+    identity_version = identity_version or CONF.identity.auth_version
+    # In case of "v3" add the domain from config if not specified
+    if identity_version == 'v3':
+        domain_fields = set(x for x in auth.KeystoneV3Credentials.ATTRIBUTES
+                            if 'domain' in x)
+        if not domain_fields.intersection(kwargs.keys()):
+            params['user_domain_name'] = CONF.identity.admin_domain_name
+        auth_url = CONF.identity.uri_v3
+    else:
+        auth_url = CONF.identity.uri
+    return auth.get_credentials(auth_url,
+                                fill_in=fill_in,
+                                identity_version=identity_version,
+                                **params)
+
+
 @six.add_metaclass(abc.ABCMeta)
 class CredentialProvider(object):
-    def __init__(self, name, interface='json', password='pass',
+    def __init__(self, identity_version=None, name=None, password='pass',
                  network_resources=None):
-        self.name = name
+        """A CredentialProvider supplies credentials to test classes.
+        :param identity_version If specified it will return credentials of the
+                                corresponding identity version, otherwise it
+                                uses auth_version from configuration
+        :param name Name of the calling test. Included in provisioned
+                    credentials when credentials are provisioned on the fly
+        :param password Used for provisioned credentials when credentials are
+                        provisioned on the fly
+        :param network_resources Network resources required for the credentials
+        """
+        # TODO(andreaf) name and password are tenant isolation specific, and
+        # could be removed from this abstract class
+        self.name = name or "test_creds"
+        self.identity_version = identity_version or CONF.identity.auth_version
+        if not auth.is_identity_version_supported(self.identity_version):
+            raise exceptions.InvalidIdentityVersion(
+                identity_version=self.identity_version)
 
     @abc.abstractmethod
     def get_primary_creds(self):
@@ -94,4 +138,12 @@ class CredentialProvider(object):
 
     @abc.abstractmethod
     def is_multi_tenant(self):
+        return
+
+    @abc.abstractmethod
+    def get_creds_by_roles(self, roles, force_new=False):
+        return
+
+    @abc.abstractmethod
+    def is_role_available(self, role):
         return

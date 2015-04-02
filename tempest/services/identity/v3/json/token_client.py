@@ -13,20 +13,21 @@
 #    under the License.
 
 import json
+from tempest_lib.common import rest_client
 from tempest_lib import exceptions as lib_exc
 
 from tempest.common import service_client
-from tempest import config
 from tempest import exceptions
 
-CONF = config.CONF
 
+class V3TokenClientJSON(rest_client.RestClient):
 
-class V3TokenClientJSON(service_client.ServiceClient):
-
-    def __init__(self):
-        super(V3TokenClientJSON, self).__init__(None, None, None)
-        auth_url = CONF.identity.uri_v3
+    def __init__(self, auth_url, disable_ssl_certificate_validation=None,
+                 ca_certs=None, trace_requests=None):
+        dscv = disable_ssl_certificate_validation
+        super(V3TokenClientJSON, self).__init__(
+            None, None, None, disable_ssl_certificate_validation=dscv,
+            ca_certs=ca_certs, trace_requests=trace_requests)
         if not auth_url:
             raise exceptions.InvalidConfiguration('you must specify a v3 uri '
                                                   'if using the v3 identity '
@@ -36,23 +37,30 @@ class V3TokenClientJSON(service_client.ServiceClient):
 
         self.auth_url = auth_url
 
-    def auth(self, user=None, password=None, tenant=None, user_type='id',
-             domain=None, token=None):
+    def auth(self, user_id=None, username=None, password=None, project_id=None,
+             project_name=None, user_domain_id=None, user_domain_name=None,
+             project_domain_id=None, project_domain_name=None, domain_id=None,
+             domain_name=None, token=None):
         """
-        :param user: user id or name, as specified in user_type
-        :param domain: the user and tenant domain
+        :param user_id: user id
+        :param username: user name
+        :param user_domain_id: the user domain id
+        :param user_domain_name: the user domain name
+        :param project_domain_id: the project domain id
+        :param project_domain_name: the project domain name
+        :param domain_id: a domain id to scope to
+        :param domain_name: a domain name to scope to
+        :param project_id: a project id to scope to
+        :param project_name: a project name to scope to
         :param token: a token to re-scope.
 
-        Accepts different combinations of credentials. Restrictions:
-        - tenant and domain are only name (no id)
-        - user domain and tenant domain are assumed identical
-        - domain scope is not supported here
+        Accepts different combinations of credentials.
         Sample sample valid combinations:
         - token
-        - token, tenant, domain
+        - token, project_name, project_domain_id
         - user_id, password
-        - username, password, domain
-        - username, password, tenant, domain
+        - username, password, user_domain_id
+        - username, password, project_name, user_domain_id, project_domain_id
         Validation is left to the server side.
         """
         creds = {
@@ -68,25 +76,45 @@ class V3TokenClientJSON(service_client.ServiceClient):
             id_obj['token'] = {
                 'id': token
             }
-        if user and password:
+
+        if (user_id or username) and password:
             id_obj['methods'].append('password')
             id_obj['password'] = {
                 'user': {
                     'password': password,
                 }
             }
-            if user_type == 'id':
-                id_obj['password']['user']['id'] = user
+            if user_id:
+                id_obj['password']['user']['id'] = user_id
             else:
-                id_obj['password']['user']['name'] = user
-            if domain is not None:
-                _domain = dict(name=domain)
+                id_obj['password']['user']['name'] = username
+
+            _domain = None
+            if user_domain_id is not None:
+                _domain = dict(id=user_domain_id)
+            elif user_domain_name is not None:
+                _domain = dict(name=user_domain_name)
+            if _domain:
                 id_obj['password']['user']['domain'] = _domain
-        if tenant is not None:
-            _domain = dict(name=domain)
-            project = dict(name=tenant, domain=_domain)
-            scope = dict(project=project)
-            creds['auth']['scope'] = scope
+
+        if (project_id or project_name):
+            _project = dict()
+
+            if project_id:
+                _project['id'] = project_id
+            elif project_name:
+                _project['name'] = project_name
+
+                if project_domain_id is not None:
+                    _project['domain'] = {'id': project_domain_id}
+                elif project_domain_name is not None:
+                    _project['domain'] = {'name': project_domain_name}
+
+            creds['auth']['scope'] = dict(project=_project)
+        elif domain_id:
+            creds['auth']['scope'] = dict(domain={'id': domain_id})
+        elif domain_name:
+            creds['auth']['scope'] = dict(domain={'name': domain_name})
 
         body = json.dumps(creds)
         resp, body = self.post(self.auth_url, body=body)
@@ -120,14 +148,22 @@ class V3TokenClientJSON(service_client.ServiceClient):
 
         return resp, json.loads(resp_body)
 
-    def get_token(self, user, password, tenant, domain='Default',
-                  auth_data=False):
+    def get_token(self, **kwargs):
         """
-        :param user: username
         Returns (token id, token data) for supplied credentials
         """
-        body = self.auth(user, password, tenant, user_type='name',
-                         domain=domain)
+
+        auth_data = kwargs.pop('auth_data', False)
+
+        if not (kwargs.get('user_domain_id') or
+                kwargs.get('user_domain_name')):
+            kwargs['user_domain_name'] = 'Default'
+
+        if not (kwargs.get('project_domain_id') or
+                kwargs.get('project_domain_name')):
+            kwargs['project_domain_name'] = 'Default'
+
+        body = self.auth(**kwargs)
 
         token = body.response.get('x-subject-token')
         if auth_data:

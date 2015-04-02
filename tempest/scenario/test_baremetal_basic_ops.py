@@ -13,8 +13,9 @@
 # License for the specific language governing permissions and limitations
 # under the License.
 
+from oslo_log import log as logging
+
 from tempest import config
-from tempest.openstack.common import log as logging
 from tempest.scenario import manager
 from tempest import test
 
@@ -104,7 +105,7 @@ class BaremetalBasicOps(manager.BaremetalScenarioTest):
         return int(ephemeral)
 
     def add_floating_ip(self):
-        _, floating_ip = self.floating_ips_client.create_floating_ip()
+        floating_ip = self.floating_ips_client.create_floating_ip()
         self.floating_ips_client.associate_floating_ip_to_server(
             floating_ip['ip'], self.instance['id'])
         return floating_ip['ip']
@@ -117,6 +118,7 @@ class BaremetalBasicOps(manager.BaremetalScenarioTest):
             self.assertEqual(n_port['device_id'], self.instance['id'])
             self.assertEqual(n_port['mac_address'], port['address'])
 
+    @test.idempotent_id('549173a5-38ec-42bb-b0e2-c8b9f4a08943')
     @test.services('baremetal', 'compute', 'image', 'network')
     def test_baremetal_server_ops(self):
         test_filename = '/mnt/rebuild_test.txt'

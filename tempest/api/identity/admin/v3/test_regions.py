@@ -13,23 +13,26 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
 from tempest_lib import exceptions as lib_exc
 
 from tempest.api.identity import base
-from tempest.common.utils import data_utils
 from tempest import test
 
 
 class RegionsTestJSON(base.BaseIdentityV3AdminTest):
-    _interface = 'json'
+
+    @classmethod
+    def setup_clients(cls):
+        super(RegionsTestJSON, cls).setup_clients()
+        cls.client = cls.region_client
 
     @classmethod
     def resource_setup(cls):
         super(RegionsTestJSON, cls).resource_setup()
         cls.setup_regions = list()
-        cls.client = cls.region_client
         for i in range(2):
-            r_description = data_utils.rand_name('description-')
+            r_description = data_utils.rand_name('description')
             region = cls.client.create_region(r_description)
             cls.setup_regions.append(region)
 
@@ -45,8 +48,9 @@ class RegionsTestJSON(base.BaseIdentityV3AdminTest):
                           self.client.get_region, region_id)
 
     @test.attr(type='gate')
+    @test.idempotent_id('56186092-82e4-43f2-b954-91013218ba42')
     def test_create_update_get_delete_region(self):
-        r_description = data_utils.rand_name('description-')
+        r_description = data_utils.rand_name('description')
         region = self.client.create_region(
             r_description, parent_region_id=self.setup_regions[0]['id'])
         self.addCleanup(self._delete_region, region['id'])
@@ -54,7 +58,7 @@ class RegionsTestJSON(base.BaseIdentityV3AdminTest):
         self.assertEqual(self.setup_regions[0]['id'],
                          region['parent_region_id'])
         # Update region with new description and parent ID
-        r_alt_description = data_utils.rand_name('description-')
+        r_alt_description = data_utils.rand_name('description')
         region = self.client.update_region(
             region['id'],
             description=r_alt_description,
@@ -69,10 +73,11 @@ class RegionsTestJSON(base.BaseIdentityV3AdminTest):
                          region['parent_region_id'])
 
     @test.attr(type='smoke')
+    @test.idempotent_id('2c12c5b5-efcf-4aa5-90c5-bff1ab0cdbe2')
     def test_create_region_with_specific_id(self):
         # Create a region with a specific id
         r_region_id = data_utils.rand_uuid()
-        r_description = data_utils.rand_name('description-')
+        r_description = data_utils.rand_name('description')
         region = self.client.create_region(
             r_description, unique_region_id=r_region_id)
         self.addCleanup(self._delete_region, region['id'])
@@ -81,6 +86,7 @@ class RegionsTestJSON(base.BaseIdentityV3AdminTest):
         self.assertEqual(r_description, region['description'])
 
     @test.attr(type='gate')
+    @test.idempotent_id('d180bf99-544a-445c-ad0d-0c0d27663796')
     def test_list_regions(self):
         # Get a list of regions
         fetched_regions = self.client.list_regions()

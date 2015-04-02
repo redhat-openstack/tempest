@@ -1,7 +1,5 @@
 # Copyright (C) 2013 eNovance SAS <licensing@enovance.com>
 #
-# Author: Joe H. Rahme <joe.hakim.rahme@enovance.com>
-#
 # Licensed under the Apache License, Version 2.0 (the "License"); you may
 # not use this file except in compliance with the License. You may obtain
 # a copy of the License at
@@ -22,16 +20,13 @@ from tempest import test
 
 class HealthcheckTest(base.BaseObjectTest):
 
-    @classmethod
-    def resource_setup(cls):
-        super(HealthcheckTest, cls).resource_setup()
-
     def setUp(self):
         super(HealthcheckTest, self).setUp()
         # Turning http://.../v1/foobar into http://.../
         self.account_client.skip_path()
 
     @test.attr('gate')
+    @test.idempotent_id('db5723b1-f25c-49a9-bfeb-7b5640caf337')
     def test_get_healthcheck(self):
 
         resp, _ = self.account_client.get("healthcheck", {})

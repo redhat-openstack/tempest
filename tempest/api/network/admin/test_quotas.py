@@ -13,15 +13,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
 
 from tempest.api.network import base
-from tempest.common.utils import data_utils
 from tempest import test
 
 
 class QuotasTest(base.BaseAdminNetworkTest):
-    _interface = 'json'
-
     """
     Tests the following operations in the Neutron API using the REST client for
     Neutron:
@@ -39,11 +37,15 @@ class QuotasTest(base.BaseAdminNetworkTest):
     """
 
     @classmethod
-    def resource_setup(cls):
-        super(QuotasTest, cls).resource_setup()
+    def skip_checks(cls):
+        super(QuotasTest, cls).skip_checks()
         if not test.is_extension_enabled('quotas', 'network'):
             msg = "quotas extension not enabled."
             raise cls.skipException(msg)
+
+    @classmethod
+    def setup_clients(cls):
+        super(QuotasTest, cls).setup_clients()
         cls.identity_admin_client = cls.os_adm.identity_client
 
     def _check_quotas(self, new_quotas):
@@ -84,10 +86,12 @@ class QuotasTest(base.BaseAdminNetworkTest):
             self.assertNotEqual(tenant_id, q['tenant_id'])
 
     @test.attr(type='gate')
+    @test.idempotent_id('2390f766-836d-40ef-9aeb-e810d78207fb')
     def test_quotas(self):
         new_quotas = {'network': 0, 'security_group': 0}
         self._check_quotas(new_quotas)
 
+    @test.idempotent_id('a7add2b1-691e-44d6-875f-697d9685f091')
     @test.requires_ext(extension='lbaas', service='network')
     @test.attr(type='gate')
     def test_lbaas_quotas(self):

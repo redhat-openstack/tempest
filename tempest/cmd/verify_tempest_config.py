@@ -28,7 +28,6 @@ from tempest import config
 
 
 CONF = config.CONF
-RAW_HTTP = httplib2.Http()
 CONF_PARSER = None
 
 
@@ -83,7 +82,11 @@ def _get_api_versions(os, service):
     }
     client_dict[service].skip_path()
     endpoint = _get_unversioned_endpoint(client_dict[service].base_url)
-    __, body = RAW_HTTP.request(endpoint, 'GET')
+    dscv = CONF.identity.disable_ssl_certificate_validation
+    ca_certs = CONF.identity.ca_certificates_file
+    raw_http = httplib2.Http(disable_ssl_certificate_validation=dscv,
+                             ca_certs=ca_certs)
+    __, body = raw_http.request(endpoint, 'GET')
     client_dict[service].reset_path()
     body = json.loads(body)
     if service == 'keystone':
@@ -154,7 +157,7 @@ def get_enabled_extensions(service):
 
 def verify_extensions(os, service, results):
     extensions_client = get_extension_client(os, service)
-    if service == 'neutron' or service == 'cinder':
+    if service != 'swift':
         resp = extensions_client.list_extensions()
     else:
         __, resp = extensions_client.list_extensions()
@@ -327,7 +330,7 @@ def main():
         CONF_PARSER = moves.configparser.SafeConfigParser()
         CONF_PARSER.optionxform = str
         CONF_PARSER.readfp(conf_file)
-    os = clients.AdminManager(interface='json')
+    os = clients.AdminManager()
     services = check_service_availability(os, update)
     results = {}
     for service in ['nova', 'cinder', 'neutron', 'swift']:

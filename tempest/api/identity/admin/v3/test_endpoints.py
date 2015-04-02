@@ -13,23 +13,27 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
+
 from tempest.api.identity import base
-from tempest.common.utils import data_utils
 from tempest import test
 
 
 class EndPointsTestJSON(base.BaseIdentityV3AdminTest):
-    _interface = 'json'
+
+    @classmethod
+    def setup_clients(cls):
+        super(EndPointsTestJSON, cls).setup_clients()
+        cls.identity_client = cls.client
+        cls.client = cls.endpoints_client
 
     @classmethod
     def resource_setup(cls):
         super(EndPointsTestJSON, cls).resource_setup()
-        cls.identity_client = cls.client
-        cls.client = cls.endpoints_client
         cls.service_ids = list()
-        s_name = data_utils.rand_name('service-')
-        s_type = data_utils.rand_name('type--')
-        s_description = data_utils.rand_name('description-')
+        s_name = data_utils.rand_name('service')
+        s_type = data_utils.rand_name('type')
+        s_description = data_utils.rand_name('description')
         cls.service_data =\
             cls.service_client.create_service(s_name, s_type,
                                               description=s_description)
@@ -54,6 +58,7 @@ class EndPointsTestJSON(base.BaseIdentityV3AdminTest):
         super(EndPointsTestJSON, cls).resource_cleanup()
 
     @test.attr(type='gate')
+    @test.idempotent_id('c19ecf90-240e-4e23-9966-21cee3f6a618')
     def test_list_endpoints(self):
         # Get a list of endpoints
         fetched_endpoints = self.client.list_endpoints()
@@ -65,6 +70,7 @@ class EndPointsTestJSON(base.BaseIdentityV3AdminTest):
                          ', '.join(str(e) for e in missing_endpoints))
 
     @test.attr(type='gate')
+    @test.idempotent_id('0e2446d2-c1fd-461b-a729-b9e73e3e3b37')
     def test_create_list_delete_endpoint(self):
         region = data_utils.rand_name('region')
         url = data_utils.rand_url()
@@ -88,6 +94,7 @@ class EndPointsTestJSON(base.BaseIdentityV3AdminTest):
         self.assertNotIn(endpoint['id'], fetched_endpoints_id)
 
     @test.attr(type='smoke')
+    @test.idempotent_id('37e8f15e-ee7c-4657-a1e7-f6b61e375eff')
     def test_update_endpoint(self):
         # Creating an endpoint so as to check update endpoint
         # with new values
@@ -100,9 +107,9 @@ class EndPointsTestJSON(base.BaseIdentityV3AdminTest):
                                         enabled=True)
         self.addCleanup(self.client.delete_endpoint, endpoint_for_update['id'])
         # Creating service so as update endpoint with new service ID
-        s_name = data_utils.rand_name('service-')
-        s_type = data_utils.rand_name('type--')
-        s_description = data_utils.rand_name('description-')
+        s_name = data_utils.rand_name('service')
+        s_type = data_utils.rand_name('type')
+        s_description = data_utils.rand_name('description')
         service2 =\
             self.service_client.create_service(s_name, s_type,
                                                description=s_description)

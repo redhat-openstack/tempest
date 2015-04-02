@@ -10,20 +10,24 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
+
 from tempest.api.identity import base
 from tempest import auth
 from tempest import clients
-from tempest.common.utils import data_utils
+from tempest import config
+from tempest import manager
 from tempest import test
+
+CONF = config.CONF
 
 
 class TestDefaultProjectId (base.BaseIdentityV3AdminTest):
-    _interface = 'json'
 
     @classmethod
-    def resource_setup(cls):
+    def setup_credentials(cls):
         cls.set_network_resources()
-        super(TestDefaultProjectId, cls).resource_setup()
+        super(TestDefaultProjectId, cls).setup_credentials()
 
     def _delete_domain(self, domain_id):
         # It is necessary to disable the domain before deleting,
@@ -32,6 +36,7 @@ class TestDefaultProjectId (base.BaseIdentityV3AdminTest):
         self.client.delete_domain(domain_id)
 
     @test.attr(type='smoke')
+    @test.idempotent_id('d6110661-6a71-49a7-a453-b5e26640ff6d')
     def test_default_project_id(self):
         # create a domain
         dom_name = data_utils.rand_name('dom')
@@ -61,7 +66,7 @@ class TestDefaultProjectId (base.BaseIdentityV3AdminTest):
                          "doesn't have domain id " + dom_id)
 
         # get roles and find the admin role
-        admin_role = self.get_role_by_name("admin")
+        admin_role = self.get_role_by_name(CONF.identity.admin_role)
         admin_role_id = admin_role['id']
 
         # grant the admin role to the user on his project
@@ -71,11 +76,10 @@ class TestDefaultProjectId (base.BaseIdentityV3AdminTest):
         # create a new client with user's credentials (NOTE: unscoped token!)
         creds = auth.KeystoneV3Credentials(username=user_name,
                                            password=user_name,
-                                           domain_name=dom_name)
-        auth_provider = auth.KeystoneV3AuthProvider(creds)
+                                           user_domain_name=dom_name)
+        auth_provider = manager.get_auth_provider(creds)
         creds = auth_provider.fill_credentials()
-        admin_client = clients.Manager(interface=self._interface,
-                                       credentials=creds)
+        admin_client = clients.Manager(credentials=creds)
 
         # verify the user's token and see that it is scoped to the project
         token, auth_data = admin_client.auth_provider.get_auth()

@@ -13,10 +13,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_log import log as logging
+from tempest_lib.common.utils import data_utils
+
 from tempest.api.volume import base
-from tempest.common.utils import data_utils
 from tempest import config
-from tempest.openstack.common import log as logging
 from tempest import test
 
 CONF = config.CONF
@@ -24,18 +25,21 @@ LOG = logging.getLogger(__name__)
 
 
 class VolumesBackupsV2Test(base.BaseVolumeAdminTest):
-    _interface = "json"
+
+    @classmethod
+    def skip_checks(cls):
+        super(VolumesBackupsV2Test, cls).skip_checks()
+        if not CONF.volume_feature_enabled.backup:
+            raise cls.skipException("Cinder backup feature disabled")
 
     @classmethod
     def resource_setup(cls):
         super(VolumesBackupsV2Test, cls).resource_setup()
 
-        if not CONF.volume_feature_enabled.backup:
-            raise cls.skipException("Cinder backup feature disabled")
-
         cls.volume = cls.create_volume()
 
     @test.attr(type='smoke')
+    @test.idempotent_id('a66eb488-8ee1-47d4-8e9f-575a095728c6')
     def test_volume_backup_create_get_detailed_list_restore_delete(self):
         # Create backup
         backup_name = data_utils.rand_name('Backup')

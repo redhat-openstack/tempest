@@ -13,10 +13,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_log import log as logging
+
 from tempest.common import custom_matchers
 from tempest import config
 from tempest import exceptions
-from tempest.openstack.common import log as logging
 from tempest.scenario import manager
 from tempest import test
 
@@ -53,13 +54,13 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
                                          create_kwargs=create_kwargs)
 
     def nova_list(self):
-        _, servers = self.servers_client.list_servers()
+        servers = self.servers_client.list_servers()
         # The list servers in the compute client is inconsistent...
         servers = servers['servers']
         self.assertIn(self.server['id'], [x['id'] for x in servers])
 
     def nova_show(self):
-        _, got_server = self.servers_client.get_server(self.server['id'])
+        got_server = self.servers_client.get_server(self.server['id'])
         self.assertThat(
             self.server, custom_matchers.MatchesDictExceptForKeys(
                 got_server, excluded_keys=['OS-EXT-AZ:availability_zone']))
@@ -109,7 +110,7 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
                         self.server['id'], secgroup['name'])
 
         def wait_for_secgroup_add():
-            _, body = self.servers_client.get_server(self.server['id'])
+            body = self.servers_client.get_server(self.server['id'])
             return {'name': secgroup['name']} in body['security_groups']
 
         if not test.call_until_true(wait_for_secgroup_add,
@@ -119,6 +120,7 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
                    '%s' % (secgroup['id'], self.server['id']))
             raise exceptions.TimeoutException(msg)
 
+    @test.idempotent_id('bdbb5441-9204-419d-a225-b4fdbfb1a1a8')
     @test.services('compute', 'volume', 'image', 'network')
     def test_minimum_basic_scenario(self):
         self.glance_image_create()

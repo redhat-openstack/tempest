@@ -110,18 +110,18 @@ import sys
 import unittest
 
 import netaddr
+from oslo_log import log as logging
+from oslo_utils import timeutils
 from tempest_lib import exceptions as lib_exc
 import yaml
 
 import tempest.auth
 from tempest import config
-from tempest import exceptions
-from tempest.openstack.common import log as logging
-from tempest.openstack.common import timeutils
 from tempest.services.compute.json import flavors_client
+from tempest.services.compute.json import floating_ips_client
 from tempest.services.compute.json import security_groups_client
 from tempest.services.compute.json import servers_client
-from tempest.services.identity.json import identity_client
+from tempest.services.identity.v2.json import identity_client
 from tempest.services.image.v2.json import image_client
 from tempest.services.network.json import network_client
 from tempest.services.object_storage import container_client
@@ -177,19 +177,40 @@ class OSClient(object):
             username=user,
             password=pw,
             tenant_name=tenant)
-        _auth = tempest.auth.KeystoneV2AuthProvider(_creds)
-        self.identity = identity_client.IdentityClientJSON(_auth)
+        auth_provider_params = {
+            'disable_ssl_certificate_validation':
+                CONF.identity.disable_ssl_certificate_validation,
+            'ca_certs': CONF.identity.ca_certificates_file,
+            'trace_requests': CONF.debug.trace_requests
+        }
+        _auth = tempest.auth.KeystoneV2AuthProvider(
+            _creds, CONF.identity.uri, **auth_provider_params)
+        self.identity = identity_client.IdentityClientJSON(
+            _auth,
+            CONF.identity.catalog_type,
+            CONF.identity.region,
+            endpoint_type='adminURL',
+            **default_params_with_timeout_values)
         self.servers = servers_client.ServersClientJSON(_auth,
                                                         **compute_params)
         self.flavors = flavors_client.FlavorsClientJSON(_auth,
                                                         **compute_params)
+        self.floating_ips = floating_ips_client.FloatingIPsClientJSON(
+            _auth, **compute_params)
         self.secgroups = security_groups_client.SecurityGroupsClientJSON(
             _auth, **compute_params)
         self.objects = object_client.ObjectClient(_auth,
                                                   **object_storage_params)
         self.containers = container_client.ContainerClient(
             _auth, **object_storage_params)
-        self.images = image_client.ImageClientV2JSON(_auth)
+        self.images = image_client.ImageClientV2JSON(
+            _auth,
+            CONF.image.catalog_type,
+            CONF.image.region or CONF.identity.region,
+            endpoint_type=CONF.image.endpoint_type,
+            build_interval=CONF.image.build_interval,
+            build_timeout=CONF.image.build_timeout,
+            **default_params)
         self.telemetry = telemetry_client.TelemetryClientJSON(
             _auth,
             CONF.telemetry.catalog_type,
@@ -232,9 +253,6 @@ def client_for_user(name):
     else:
         LOG.error("%s not found in USERS: %s" % (name, USERS))
 
-
-def resp_ok(response):
-    return 200 >= int(response['status']) < 300
 
 ###################
 #
@@ -406,8 +424,7 @@ class JavelinCheck(unittest.TestCase):
             # on the cloud. We don't care about the results except that it
             # remains authorized.
             client = client_for_user(user['name'])
-            resp, body = client.servers.list_servers()
-            self.assertEqual(resp['status'], '200')
+            client.servers.list_servers()
 
     def check_objects(self):
         """Check that the objects created are still there."""
@@ -433,19 +450,35 @@ class JavelinCheck(unittest.TestCase):
                 found,
                 "Couldn't find expected server %s" % server['name'])
 
-            r, found = client.servers.get_server(found['id'])
+            found = client.servers.get_server(found['id'])
             # validate neutron is enabled and ironic disabled:
             if (CONF.service_available.neutron and
                     not CONF.baremetal.driver_enabled):
+                _floating_is_alive = False
                 for network_name, body in found['addresses'].items():
                     for addr in body:
                         ip = addr['addr']
-                        if addr.get('OS-EXT-IPS:type', 'fixed') == 'fixed':
+                        # If floatingip_for_ssh is at True, it's assumed
+                        # you want to use the floating IP to reach the server,
+                        # fallback to fixed IP, then other type.
+                        # This is useful in multi-node environment.
+                        if CONF.compute.use_floatingip_for_ssh:
+                            if addr.get('OS-EXT-IPS:type',
+                                        'floating') == 'floating':
+                                self._ping_ip(ip, 60)
+                                _floating_is_alive = True
+                        elif addr.get('OS-EXT-IPS:type', 'fixed') == 'fixed':
                             namespace = _get_router_namespace(client,
                                                               network_name)
                             self._ping_ip(ip, 60, namespace)
                         else:
                             self._ping_ip(ip, 60)
+                # if floatingip_for_ssh is at True, validate found a
+                # floating IP and ping worked.
+                if CONF.compute.use_floatingip_for_ssh:
+                    self.assertTrue(_floating_is_alive,
+                                    "Server %s has no floating IP." %
+                                    server['name'])
             else:
                 addr = found['addresses']['private'][0]['addr']
                 self._ping_ip(addr, 60)
@@ -708,7 +741,7 @@ def create_subnets(subnets):
                                           cidr=subnet['range'],
                                           name=subnet['name'],
                                           ip_version=ip_version)
-        except exceptions.BadRequest as e:
+        except lib_exc.BadRequest as e:
             is_overlapping_cidr = 'overlaps with another subnet' in str(e)
             if not is_overlapping_cidr:
                 raise
@@ -781,7 +814,7 @@ def add_router_interface(routers):
 #######################
 
 def _get_server_by_name(client, name):
-    r, body = client.servers.list_servers()
+    body = client.servers.list_servers()
     for server in body['servers']:
         if name == server['name']:
             return server
@@ -817,13 +850,17 @@ def create_servers(servers):
                 client.networks, 'networks', x)['id'])
             kwargs['networks'] = [{'uuid': get_net_id(network)}
                                   for network in server['networks']]
-        resp, body = client.servers.create_server(
+        body = client.servers.create_server(
             server['name'], image_id, flavor_id, **kwargs)
         server_id = body['id']
         client.servers.wait_for_server_status(server_id, 'ACTIVE')
         # create to security group(s) after server spawning
         for secgroup in server['secgroups']:
             client.servers.add_security_group(server_id, secgroup)
+        if CONF.compute.use_floatingip_for_ssh:
+            floating_ip = client.floating_ips.create_floating_ip()
+            client.floating_ips.associate_floating_ip_to_server(
+                floating_ip['ip'], server_id)
 
 
 def destroy_servers(servers):
@@ -838,6 +875,7 @@ def destroy_servers(servers):
             LOG.info("Server '%s' does not exist" % server['name'])
             continue
 
+        # TODO(EmilienM): disassociate floating IP from server and release it.
         client.servers.delete_server(response['id'])
         client.servers.wait_for_server_termination(response['id'],
                                                    ignore_error=True)
@@ -1024,7 +1062,7 @@ def get_options():
 
 def setup_logging():
     global LOG
-    logging.setup(__name__)
+    logging.setup(CONF, __name__)
     LOG = logging.getLogger(__name__)
 
 

@@ -20,15 +20,13 @@ import exceptions
 import re
 import urlparse
 
+from oslo_log import log as logging
 import six
 
-from tempest import config
-from tempest.openstack.common import log as logging
-from tempest.services.identity.json import token_client as json_id
+from tempest.services.identity.v2.json import token_client as json_v2id
 from tempest.services.identity.v3.json import token_client as json_v3id
 
 
-CONF = config.CONF
 LOG = logging.getLogger(__name__)
 
 
@@ -38,34 +36,21 @@ class AuthProvider(object):
     Provide authentication
     """
 
-    def __init__(self, credentials, interface=None):
+    def __init__(self, credentials):
         """
         :param credentials: credentials for authentication
-        :param interface: 'json' or 'xml'. Applicable for tempest client only
-            (deprecated: only json now supported)
         """
-        credentials = self._convert_credentials(credentials)
         if self.check_credentials(credentials):
             self.credentials = credentials
         else:
             raise TypeError("Invalid credentials")
-        self.interface = 'json'
         self.cache = None
         self.alt_auth_data = None
         self.alt_part = None
 
-    def _convert_credentials(self, credentials):
-        # Support dict credentials for backwards compatibility
-        if isinstance(credentials, dict):
-            return get_credentials(**credentials)
-        else:
-            return credentials
-
     def __str__(self):
-        return "Creds :{creds}, interface: {interface}, " \
-               "cached auth data: {cache}".format(
-                   creds=self.credentials, interface=self.interface,
-                   cache=self.cache)
+        return "Creds :{creds}, cached auth data: {cache}".format(
+            creds=self.credentials, cache=self.cache)
 
     @abc.abstractmethod
     def _decorate_request(self, filters, method, url, headers=None, body=None,
@@ -201,9 +186,14 @@ class KeystoneAuthProvider(AuthProvider):
 
     token_expiry_threshold = datetime.timedelta(seconds=60)
 
-    def __init__(self, credentials, interface=None):
-        super(KeystoneAuthProvider, self).__init__(credentials, interface)
-        self.auth_client = self._auth_client()
+    def __init__(self, credentials, auth_url,
+                 disable_ssl_certificate_validation=None,
+                 ca_certs=None, trace_requests=None):
+        super(KeystoneAuthProvider, self).__init__(credentials)
+        self.dsvm = disable_ssl_certificate_validation
+        self.ca_certs = ca_certs
+        self.trace_requests = trace_requests
+        self.auth_client = self._auth_client(auth_url)
 
     def _decorate_request(self, filters, method, url, headers=None, body=None,
                           auth_data=None):
@@ -251,8 +241,10 @@ class KeystoneV2AuthProvider(KeystoneAuthProvider):
 
     EXPIRY_DATE_FORMAT = '%Y-%m-%dT%H:%M:%SZ'
 
-    def _auth_client(self):
-        return json_id.TokenClientJSON()
+    def _auth_client(self, auth_url):
+        return json_v2id.TokenClientJSON(
+            auth_url, disable_ssl_certificate_validation=self.dsvm,
+            ca_certs=self.ca_certs, trace_requests=self.trace_requests)
 
     def _auth_params(self):
         return dict(
@@ -329,15 +321,24 @@ class KeystoneV3AuthProvider(KeystoneAuthProvider):
 
     EXPIRY_DATE_FORMAT = '%Y-%m-%dT%H:%M:%S.%fZ'
 
-    def _auth_client(self):
-        return json_v3id.V3TokenClientJSON()
+    def _auth_client(self, auth_url):
+        return json_v3id.V3TokenClientJSON(
+            auth_url, disable_ssl_certificate_validation=self.dsvm,
+            ca_certs=self.ca_certs, trace_requests=self.trace_requests)
 
     def _auth_params(self):
         return dict(
-            user=self.credentials.username,
+            user_id=self.credentials.user_id,
+            username=self.credentials.username,
             password=self.credentials.password,
-            tenant=self.credentials.tenant_name,
-            domain=self.credentials.user_domain_name,
+            project_id=self.credentials.project_id,
+            project_name=self.credentials.project_name,
+            user_domain_id=self.credentials.user_domain_id,
+            user_domain_name=self.credentials.user_domain_name,
+            project_domain_id=self.credentials.project_domain_id,
+            project_domain_name=self.credentials.project_domain_name,
+            domain_id=self.credentials.domain_id,
+            domain_name=self.credentials.domain_name,
             auth_data=True)
 
     def _fill_credentials(self, auth_data_body):
@@ -440,14 +441,29 @@ class KeystoneV3AuthProvider(KeystoneAuthProvider):
             datetime.datetime.utcnow()
 
 
-def get_credentials(fill_in=True, **kwargs):
+def is_identity_version_supported(identity_version):
+    return identity_version in IDENTITY_VERSION
+
+
+def get_credentials(auth_url, fill_in=True, identity_version='v2',
+                    disable_ssl_certificate_validation=None, ca_certs=None,
+                    trace_requests=None, **kwargs):
     """
     Builds a credentials object based on the configured auth_version
 
+    :param auth_url (string): Full URI of the OpenStack Identity API(Keystone)
+           which is used to fetch the token from Identity service.
     :param fill_in (boolean): obtain a token and fill in all credential
            details provided by the identity service. When fill_in is not
            specified, credentials are not validated. Validation can be invoked
            by invoking ``is_valid()``
+    :param identity_version (string): identity API version is used to
+           select the matching auth provider and credentials class
+    :param disable_ssl_certificate_validation: whether to enforce SSL
+           certificate validation in SSL API requests to the auth system
+    :param ca_certs: CA certificate bundle for validation of certificates
+           in SSL API requests to the auth system
+    :param trace_requests: trace in log API requests to the auth system
     :param kwargs (dict): Dict of credential key/value pairs
 
     Examples:
@@ -458,18 +474,20 @@ def get_credentials(fill_in=True, **kwargs):
         Returns credentials including IDs:
         >>> get_credentials(username='foo', password='bar', fill_in=True)
     """
-    if CONF.identity.auth_version == 'v2':
-        credential_class = KeystoneV2Credentials
-        auth_provider_class = KeystoneV2AuthProvider
-    elif CONF.identity.auth_version == 'v3':
-        credential_class = KeystoneV3Credentials
-        auth_provider_class = KeystoneV3AuthProvider
-    else:
-        raise exceptions.InvalidConfiguration('Unsupported auth version')
+    if not is_identity_version_supported(identity_version):
+        raise exceptions.InvalidIdentityVersion(
+            identity_version=identity_version)
+
+    credential_class, auth_provider_class = IDENTITY_VERSION.get(
+        identity_version)
+
     creds = credential_class(**kwargs)
     # Fill in the credentials fields that were not specified
     if fill_in:
-        auth_provider = auth_provider_class(creds)
+        dsvm = disable_ssl_certificate_validation
+        auth_provider = auth_provider_class(
+            creds, auth_url, disable_ssl_certificate_validation=dsvm,
+            ca_certs=ca_certs, trace_requests=trace_requests)
         creds = auth_provider.fill_credentials()
     return creds
 
@@ -567,20 +585,10 @@ class KeystoneV3Credentials(Credentials):
     Credentials suitable for the Keystone Identity V3 API
     """
 
-    ATTRIBUTES = ['domain_name', 'password', 'tenant_name', 'username',
+    ATTRIBUTES = ['domain_id', 'domain_name', 'password', 'username',
                   'project_domain_id', 'project_domain_name', 'project_id',
                   'project_name', 'tenant_id', 'tenant_name', 'user_domain_id',
                   'user_domain_name', 'user_id']
-
-    def __init__(self, **kwargs):
-        """
-        If domain is not specified, load the one configured for the
-        identity manager.
-        """
-        domain_fields = set(x for x in self.ATTRIBUTES if 'domain' in x)
-        if not domain_fields.intersection(kwargs.keys()):
-            kwargs['user_domain_name'] = CONF.identity.admin_domain_name
-        super(KeystoneV3Credentials, self).__init__(**kwargs)
 
     def __setattr__(self, key, value):
         parent = super(KeystoneV3Credentials, self)
@@ -623,6 +631,8 @@ class KeystoneV3Credentials(Credentials):
         - None
         - Project id (optional domain)
         - Project name and its domain id/name
+        - Domain id
+        - Domain name
         """
         valid_user_domain = any(
             [self.user_domain_id is not None,
@@ -633,8 +643,17 @@ class KeystoneV3Credentials(Credentials):
         valid_user = any(
             [self.user_id is not None,
              self.username is not None and valid_user_domain])
-        valid_project = any(
+        valid_project_scope = any(
             [self.project_name is None and self.project_id is None,
              self.project_id is not None,
              self.project_name is not None and valid_project_domain])
-        return all([self.password is not None, valid_user, valid_project])
+        valid_domain_scope = any(
+            [self.domain_id is None and self.domain_name is None,
+             self.domain_id or self.domain_name])
+        return all([self.password is not None,
+                    valid_user,
+                    valid_project_scope and valid_domain_scope])
+
+
+IDENTITY_VERSION = {'v2': (KeystoneV2Credentials, KeystoneV2AuthProvider),
+                    'v3': (KeystoneV3Credentials, KeystoneV3AuthProvider)}

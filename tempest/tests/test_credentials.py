@@ -15,16 +15,11 @@
 
 import copy
 
-from oslo.config import cfg
-
 from tempest import auth
-from tempest.common import tempest_fixtures as fixtures
-from tempest import config
 from tempest import exceptions
-from tempest.services.identity.json import token_client as v2_client
+from tempest.services.identity.v2.json import token_client as v2_client
 from tempest.services.identity.v3.json import token_client as v3_client
 from tempest.tests import base
-from tempest.tests import fake_config
 from tempest.tests import fake_identity
 
 
@@ -48,11 +43,6 @@ class CredentialsTests(base.TestCase):
                 self.assertIsNotNone(getattr(credentials, attr))
             else:
                 self.assertIsNone(getattr(credentials, attr))
-
-    def setUp(self):
-        super(CredentialsTests, self).setUp()
-        self.useFixture(fake_config.ConfigFixture())
-        self.stubs.Set(config, 'TempestConfigPrivate', fake_config.FakePrivate)
 
     def test_create(self):
         creds = self._get_credentials()
@@ -78,6 +68,7 @@ class KeystoneV2CredentialsTests(CredentialsTests):
     identity_response = fake_identity._fake_v2_response
     credentials_class = auth.KeystoneV2Credentials
     tokenclient_class = v2_client.TokenClientJSON
+    identity_version = 'v2'
 
     def setUp(self):
         super(KeystoneV2CredentialsTests, self).setUp()
@@ -85,16 +76,17 @@ class KeystoneV2CredentialsTests(CredentialsTests):
                        self.identity_response)
 
     def _verify_credentials(self, credentials_class, creds_dict, filled=True):
-        creds = auth.get_credentials(fill_in=filled, **creds_dict)
+        creds = auth.get_credentials(fake_identity.FAKE_AUTH_URL,
+                                     fill_in=filled,
+                                     identity_version=self.identity_version,
+                                     **creds_dict)
         self._check(creds, credentials_class, filled)
 
     def test_get_credentials(self):
-        self.useFixture(fixtures.LockFixture('auth_version'))
         self._verify_credentials(credentials_class=self.credentials_class,
                                  creds_dict=self.attributes)
 
     def test_get_credentials_not_filled(self):
-        self.useFixture(fixtures.LockFixture('auth_version'))
         self._verify_credentials(credentials_class=self.credentials_class,
                                  creds_dict=self.attributes,
                                  filled=False)
@@ -156,15 +148,7 @@ class KeystoneV3CredentialsTests(KeystoneV2CredentialsTests):
     credentials_class = auth.KeystoneV3Credentials
     identity_response = fake_identity._fake_v3_response
     tokenclient_class = v3_client.V3TokenClientJSON
-
-    def setUp(self):
-        super(KeystoneV3CredentialsTests, self).setUp()
-        # Additional config items reset by cfg fixture after each test
-        cfg.CONF.set_default('auth_version', 'v3', group='identity')
-        # Identity group items
-        for prefix in ['', 'alt_', 'admin_']:
-            cfg.CONF.set_default(prefix + 'domain_name', 'fake_domain_name',
-                                 group='identity')
+    identity_version = 'v3'
 
     def test_is_not_valid(self):
         # NOTE(mtreinish) For a Keystone V3 credential object a project name

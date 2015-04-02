@@ -17,13 +17,10 @@ import json
 import urllib
 
 from tempest.common import service_client
-from tempest import config
-from tempest.services.identity.v3.json import base
-
-CONF = config.CONF
 
 
-class IdentityV3ClientJSON(base.IdentityV3Client):
+class IdentityV3ClientJSON(service_client.ServiceClient):
+    api_version = "v3"
 
     def create_user(self, user_name, password=None, project_id=None,
                     email=None, domain_id='default', **kwargs):
@@ -245,9 +242,12 @@ class IdentityV3ClientJSON(base.IdentityV3Client):
         self.expected_success(204, resp.status)
         return service_client.ResponseBody(resp, body)
 
-    def list_domains(self):
+    def list_domains(self, params=None):
         """List Domains."""
-        resp, body = self.get('domains')
+        url = 'domains'
+        if params:
+            url += '?%s' % urllib.urlencode(params)
+        resp, body = self.get(url)
         self.expected_success(200, resp.status)
         body = json.loads(body)
         return service_client.ResponseBodyList(resp, body['domains'])

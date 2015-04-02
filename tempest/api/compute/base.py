@@ -13,15 +13,18 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest_lib import exceptions as lib_exc
 import time
 
+from oslo_log import log as logging
+from oslo_utils import excutils
+from tempest_lib.common.utils import data_utils
+from tempest_lib import exceptions as lib_exc
+
 from tempest import clients
-from tempest.common.utils import data_utils
+from tempest.common import credentials
+from tempest.common import fixed_network
 from tempest import config
 from tempest import exceptions
-from tempest.openstack.common import excutils
-from tempest.openstack.common import log as logging
 import tempest.test
 
 CONF = config.CONF
@@ -36,15 +39,60 @@ class BaseComputeTest(tempest.test.BaseTestCase):
     force_tenant_isolation = False
 
     @classmethod
-    def resource_setup(cls):
-        cls.set_network_resources()
-        super(BaseComputeTest, cls).resource_setup()
+    def skip_checks(cls):
+        super(BaseComputeTest, cls).skip_checks()
+        if cls._api_version != 2:
+            msg = ("Unexpected API version is specified (%s)" %
+                   cls._api_version)
+            raise exceptions.InvalidConfiguration(message=msg)
 
+    @classmethod
+    def setup_credentials(cls):
+        cls.set_network_resources()
+        super(BaseComputeTest, cls).setup_credentials()
         # TODO(andreaf) WE should care also for the alt_manager here
         # but only once client lazy load in the manager is done
         cls.os = cls.get_client_manager()
+        # Note that we put this here and not in skip_checks because in
+        # the case of preprovisioned users we won't know if we can get
+        # two distinct users until we go and lock them
         cls.multi_user = cls.check_multi_user()
 
+    @classmethod
+    def setup_clients(cls):
+        super(BaseComputeTest, cls).setup_clients()
+        cls.servers_client = cls.os.servers_client
+        cls.flavors_client = cls.os.flavors_client
+        cls.images_client = cls.os.images_client
+        cls.extensions_client = cls.os.extensions_client
+        cls.floating_ips_client = cls.os.floating_ips_client
+        cls.keypairs_client = cls.os.keypairs_client
+        cls.security_groups_client = cls.os.security_groups_client
+        cls.quotas_client = cls.os.quotas_client
+        # NOTE(mriedem): os-quota-class-sets is v2 API only
+        cls.quota_classes_client = cls.os.quota_classes_client
+        # NOTE(mriedem): os-networks is v2 API only
+        cls.networks_client = cls.os.networks_client
+        cls.limits_client = cls.os.limits_client
+        cls.volumes_extensions_client = cls.os.volumes_extensions_client
+        cls.volumes_client = cls.os.volumes_client
+        cls.interfaces_client = cls.os.interfaces_client
+        cls.fixed_ips_client = cls.os.fixed_ips_client
+        cls.availability_zone_client = cls.os.availability_zone_client
+        cls.agents_client = cls.os.agents_client
+        cls.aggregates_client = cls.os.aggregates_client
+        cls.services_client = cls.os.services_client
+        cls.instance_usages_audit_log_client = (
+            cls.os.instance_usages_audit_log_client)
+        cls.hypervisor_client = cls.os.hypervisor_client
+        cls.certificates_client = cls.os.certificates_client
+        cls.migrations_client = cls.os.migrations_client
+        cls.security_group_default_rules_client = (
+            cls.os.security_group_default_rules_client)
+
+    @classmethod
+    def resource_setup(cls):
+        super(BaseComputeTest, cls).resource_setup()
         cls.build_interval = CONF.compute.build_interval
         cls.build_timeout = CONF.compute.build_timeout
         cls.ssh_user = CONF.compute.ssh_user
@@ -59,39 +107,13 @@ class BaseComputeTest(tempest.test.BaseTestCase):
         cls.security_groups = []
         cls.server_groups = []
 
-        if cls._api_version == 2:
-            cls.servers_client = cls.os.servers_client
-            cls.flavors_client = cls.os.flavors_client
-            cls.images_client = cls.os.images_client
-            cls.extensions_client = cls.os.extensions_client
-            cls.floating_ips_client = cls.os.floating_ips_client
-            cls.keypairs_client = cls.os.keypairs_client
-            cls.security_groups_client = cls.os.security_groups_client
-            cls.quotas_client = cls.os.quotas_client
-            # NOTE(mriedem): os-quota-class-sets is v2 API only
-            cls.quota_classes_client = cls.os.quota_classes_client
-            # NOTE(mriedem): os-networks is v2 API only
-            cls.networks_client = cls.os.networks_client
-            cls.limits_client = cls.os.limits_client
-            cls.volumes_extensions_client = cls.os.volumes_extensions_client
-            cls.volumes_client = cls.os.volumes_client
-            cls.interfaces_client = cls.os.interfaces_client
-            cls.fixed_ips_client = cls.os.fixed_ips_client
-            cls.availability_zone_client = cls.os.availability_zone_client
-            cls.agents_client = cls.os.agents_client
-            cls.aggregates_client = cls.os.aggregates_client
-            cls.services_client = cls.os.services_client
-            cls.instance_usages_audit_log_client = \
-                cls.os.instance_usages_audit_log_client
-            cls.hypervisor_client = cls.os.hypervisor_client
-            cls.certificates_client = cls.os.certificates_client
-            cls.migrations_client = cls.os.migrations_client
-            cls.security_group_default_rules_client = (
-                cls.os.security_group_default_rules_client)
-        else:
-            msg = ("Unexpected API version is specified (%s)" %
-                   cls._api_version)
-            raise exceptions.InvalidConfiguration(message=msg)
+    @classmethod
+    def resource_cleanup(cls):
+        cls.clear_images()
+        cls.clear_servers()
+        cls.clear_security_groups()
+        cls.clear_server_groups()
+        super(BaseComputeTest, cls).resource_cleanup()
 
     @classmethod
     def check_multi_user(cls):
@@ -183,14 +205,6 @@ class BaseComputeTest(tempest.test.BaseTestCase):
                               server_group_id)
 
     @classmethod
-    def resource_cleanup(cls):
-        cls.clear_images()
-        cls.clear_servers()
-        cls.clear_security_groups()
-        cls.clear_server_groups()
-        super(BaseComputeTest, cls).resource_cleanup()
-
-    @classmethod
     def create_test_server(cls, **kwargs):
         """Wrapper utility that returns a test server."""
         name = data_utils.rand_name(cls.__name__ + "-instance")
@@ -199,14 +213,16 @@ class BaseComputeTest(tempest.test.BaseTestCase):
         flavor = kwargs.get('flavor', cls.flavor_ref)
         image_id = kwargs.get('image_id', cls.image_ref)
 
-        resp, body = cls.servers_client.create_server(
+        kwargs = fixed_network.set_networks_kwarg(
+            cls.get_tenant_network(), kwargs) or {}
+        body = cls.servers_client.create_server(
             name, image_id, flavor, **kwargs)
 
         # handle the case of multiple servers
         servers = [body]
         if 'min_count' in kwargs or 'max_count' in kwargs:
             # Get servers created which name match with name param.
-            r, b = cls.servers_client.list_servers()
+            b = cls.servers_client.list_servers()
             servers = [s for s in b['servers'] if s['name'].startswith(name)]
 
         if 'wait_until' in kwargs:
@@ -227,14 +243,14 @@ class BaseComputeTest(tempest.test.BaseTestCase):
 
         cls.servers.extend(servers)
 
-        return resp, body
+        return body
 
     @classmethod
     def create_security_group(cls, name=None, description=None):
         if name is None:
             name = data_utils.rand_name(cls.__name__ + "-securitygroup")
         if description is None:
-            description = data_utils.rand_name('description-')
+            description = data_utils.rand_name('description')
         body = \
             cls.security_groups_client.create_security_group(name,
                                                              description)
@@ -248,9 +264,9 @@ class BaseComputeTest(tempest.test.BaseTestCase):
             name = data_utils.rand_name(cls.__name__ + "-Server-Group")
         if policy is None:
             policy = ['affinity']
-        resp, body = cls.servers_client.create_server_group(name, policy)
+        body = cls.servers_client.create_server_group(name, policy)
         cls.server_groups.append(body['id'])
-        return resp, body
+        return body
 
     def wait_for(self, condition):
         """Repeatedly calls condition() until a timeout."""
@@ -317,7 +333,7 @@ class BaseComputeTest(tempest.test.BaseTestCase):
                 cls.servers_client.wait_for_server_termination(server_id)
             except Exception:
                 LOG.exception('Failed to delete server %s' % server_id)
-        resp, server = cls.create_test_server(wait_until='ACTIVE', **kwargs)
+        server = cls.create_test_server(wait_until='ACTIVE', **kwargs)
         cls.password = server['adminPass']
         return server['id']
 
@@ -329,24 +345,27 @@ class BaseComputeTest(tempest.test.BaseTestCase):
 
 class BaseV2ComputeTest(BaseComputeTest):
     _api_version = 2
-    _interface = "json"
 
 
 class BaseComputeAdminTest(BaseComputeTest):
     """Base test case class for Compute Admin API tests."""
-    _interface = "json"
 
     @classmethod
-    def resource_setup(cls):
-        super(BaseComputeAdminTest, cls).resource_setup()
-        try:
-            creds = cls.isolated_creds.get_admin_creds()
-            cls.os_adm = clients.Manager(
-                credentials=creds, interface=cls._interface)
-        except NotImplementedError:
-            msg = ("Missing Compute Admin API credentials in configuration.")
+    def skip_checks(cls):
+        if not credentials.is_admin_available():
+            msg = ("Missing Identity Admin API credentials in configuration.")
             raise cls.skipException(msg)
+        super(BaseComputeAdminTest, cls).skip_checks()
 
+    @classmethod
+    def setup_credentials(cls):
+        super(BaseComputeAdminTest, cls).setup_credentials()
+        creds = cls.isolated_creds.get_admin_creds()
+        cls.os_adm = clients.Manager(credentials=creds)
+
+    @classmethod
+    def setup_clients(cls):
+        super(BaseComputeAdminTest, cls).setup_clients()
         cls.availability_zone_admin_client = (
             cls.os_adm.availability_zone_client)
 

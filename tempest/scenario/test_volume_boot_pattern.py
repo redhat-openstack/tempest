@@ -10,11 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest_lib import decorators
+from oslo_log import log
+from tempest_lib.common.utils import data_utils
 
-from tempest.common.utils import data_utils
 from tempest import config
-from tempest.openstack.common import log
 from tempest.scenario import manager
 from tempest import test
 
@@ -38,10 +37,10 @@ class TestVolumeBootPattern(manager.ScenarioTest):
      * Check written content in the instance booted from snapshot
     """
     @classmethod
-    def resource_setup(cls):
+    def skip_checks(cls):
+        super(TestVolumeBootPattern, cls).skip_checks()
         if not CONF.volume_feature_enabled.snapshot:
             raise cls.skipException("Cinder volume snapshots are disabled")
-        super(TestVolumeBootPattern, cls).resource_setup()
 
     def _create_volume_from_image(self):
         img_uuid = CONF.compute.image_ref
@@ -101,7 +100,7 @@ class TestVolumeBootPattern(manager.ScenarioTest):
 
     def _ssh_to_server(self, server, keypair):
         if CONF.compute.use_floatingip_for_ssh:
-            _, floating_ip = self.floating_ips_client.create_floating_ip()
+            floating_ip = self.floating_ips_client.create_floating_ip()
             self.addCleanup(self.delete_wrapper,
                             self.floating_ips_client.delete_floating_ip,
                             floating_ip['id'])
@@ -119,7 +118,7 @@ class TestVolumeBootPattern(manager.ScenarioTest):
         return ssh_client.exec_command('cat /tmp/text')
 
     def _write_text(self, ssh_client):
-        text = data_utils.rand_name('text-')
+        text = data_utils.rand_name('text')
         ssh_client.exec_command('echo "%s" > /tmp/text; sync' % (text))
 
         return self._get_content(ssh_client)
@@ -132,7 +131,7 @@ class TestVolumeBootPattern(manager.ScenarioTest):
         actual = self._get_content(ssh_client)
         self.assertEqual(expected, actual)
 
-    @decorators.skip_because(bug='1373513')
+    @test.idempotent_id('557cd2c2-4eb8-4dce-98be-f86765ff311b')
     @test.services('compute', 'volume', 'image')
     def test_volume_boot_pattern(self):
         keypair = self.create_keypair()
@@ -175,7 +174,6 @@ class TestVolumeBootPattern(manager.ScenarioTest):
         # NOTE(gfidente): ensure resources are in clean state for
         # deletion operations to succeed
         self._stop_instances([instance_2nd, instance_from_snapshot])
-        self._detach_volumes([volume_origin, volume])
 
 
 class TestVolumeBootPatternV2(TestVolumeBootPattern):

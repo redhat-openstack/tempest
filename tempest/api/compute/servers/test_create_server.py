@@ -16,10 +16,10 @@
 import base64
 
 import netaddr
+from tempest_lib.common.utils import data_utils
 import testtools
 
 from tempest.api.compute import base
-from tempest.common.utils import data_utils
 from tempest.common.utils.linux import remote_client
 from tempest import config
 from tempest import test
@@ -31,8 +31,18 @@ class ServersTestJSON(base.BaseV2ComputeTest):
     disk_config = 'AUTO'
 
     @classmethod
-    def resource_setup(cls):
+    def setup_credentials(cls):
         cls.prepare_instance_network()
+        super(ServersTestJSON, cls).setup_credentials()
+
+    @classmethod
+    def setup_clients(cls):
+        super(ServersTestJSON, cls).setup_clients()
+        cls.client = cls.servers_client
+        cls.network_client = cls.os.network_client
+
+    @classmethod
+    def resource_setup(cls):
         super(ServersTestJSON, cls).resource_setup()
         cls.meta = {'hello': 'world'}
         cls.accessIPv4 = '1.1.1.1'
@@ -41,20 +51,19 @@ class ServersTestJSON(base.BaseV2ComputeTest):
         file_contents = 'This is a test file.'
         personality = [{'path': '/test.txt',
                        'contents': base64.b64encode(file_contents)}]
-        cls.client = cls.servers_client
-        cls.network_client = cls.os.network_client
-        cli_resp = cls.create_test_server(name=cls.name,
-                                          meta=cls.meta,
-                                          accessIPv4=cls.accessIPv4,
-                                          accessIPv6=cls.accessIPv6,
-                                          personality=personality,
-                                          disk_config=cls.disk_config)
-        cls.resp, cls.server_initial = cli_resp
+        disk_config = cls.disk_config
+        cls.server_initial = cls.create_test_server(name=cls.name,
+                                                    meta=cls.meta,
+                                                    accessIPv4=cls.accessIPv4,
+                                                    accessIPv6=cls.accessIPv6,
+                                                    personality=personality,
+                                                    disk_config=disk_config)
         cls.password = cls.server_initial['adminPass']
         cls.client.wait_for_server_status(cls.server_initial['id'], 'ACTIVE')
-        resp, cls.server = cls.client.get_server(cls.server_initial['id'])
+        cls.server = cls.client.get_server(cls.server_initial['id'])
 
     @test.attr(type='smoke')
+    @test.idempotent_id('5de47127-9977-400a-936f-abcfbec1218f')
     def test_verify_server_details(self):
         # Verify the specified server attributes are set correctly
         self.assertEqual(self.accessIPv4, self.server['accessIPv4'])
@@ -68,21 +77,24 @@ class ServersTestJSON(base.BaseV2ComputeTest):
         self.assertEqual(self.meta, self.server['metadata'])
 
     @test.attr(type='smoke')
+    @test.idempotent_id('9a438d88-10c6-4bcd-8b5b-5b6e25e1346f')
     def test_list_servers(self):
         # The created server should be in the list of all servers
-        resp, body = self.client.list_servers()
+        body = self.client.list_servers()
         servers = body['servers']
         found = any([i for i in servers if i['id'] == self.server['id']])
         self.assertTrue(found)
 
     @test.attr(type='smoke')
+    @test.idempotent_id('585e934c-448e-43c4-acbf-d06a9b899997')
     def test_list_servers_with_detail(self):
         # The created server should be in the detailed list of all servers
-        resp, body = self.client.list_servers_with_detail()
+        body = self.client.list_servers_with_detail()
         servers = body['servers']
         found = any([i for i in servers if i['id'] == self.server['id']])
         self.assertTrue(found)
 
+    @test.idempotent_id('cbc0f52f-05aa-492b-bdc1-84b575ca294b')
     @testtools.skipUnless(CONF.compute.run_ssh,
                           'Instance validation tests are disabled.')
     @test.attr(type='gate')
@@ -94,6 +106,7 @@ class ServersTestJSON(base.BaseV2ComputeTest):
                                                   self.password)
         self.assertEqual(flavor['vcpus'], linux_client.get_number_of_vcpus())
 
+    @test.idempotent_id('ac1ad47f-984b-4441-9274-c9079b7a0666')
     @testtools.skipUnless(CONF.compute.run_ssh,
                           'Instance validation tests are disabled.')
     @test.attr(type='gate')
@@ -104,26 +117,25 @@ class ServersTestJSON(base.BaseV2ComputeTest):
         self.assertTrue(linux_client.hostname_equals_servername(self.name))
 
     @test.attr(type='gate')
+    @test.idempotent_id('ed20d3fb-9d1f-4329-b160-543fbd5d9811')
     def test_create_server_with_scheduler_hint_group(self):
         # Create a server with the scheduler hint "group".
         name = data_utils.rand_name('server_group')
         policies = ['affinity']
-        resp, body = self.client.create_server_group(name=name,
-                                                     policies=policies)
-        self.assertEqual(200, resp.status)
+        body = self.client.create_server_group(name=name,
+                                               policies=policies)
         group_id = body['id']
         self.addCleanup(self.client.delete_server_group, group_id)
 
         hints = {'group': group_id}
-        resp, server = self.create_test_server(sched_hints=hints,
-                                               wait_until='ACTIVE')
-        self.assertEqual(202, resp.status)
+        server = self.create_test_server(sched_hints=hints,
+                                         wait_until='ACTIVE')
 
         # Check a server is in the group
-        resp, server_group = self.client.get_server_group(group_id)
-        self.assertEqual(200, resp.status)
+        server_group = self.client.get_server_group(group_id)
         self.assertIn(server['id'], server_group['members'])
 
+    @test.idempotent_id('0578d144-ed74-43f8-8e57-ab10dbf9b3c2')
     @testtools.skipUnless(CONF.service_available.neutron,
                           'Neutron service must be available.')
     def test_verify_multiple_nics_order(self):
@@ -156,7 +168,7 @@ class ServersTestJSON(base.BaseV2ComputeTest):
         networks = [{'uuid': net1['network']['id']},
                     {'uuid': net2['network']['id']}]
 
-        _, server_multi_nics = self.create_test_server(
+        server_multi_nics = self.create_test_server(
             networks=networks, wait_until='ACTIVE')
 
         # Cleanup server; this is needed in the test case because with the LIFO
@@ -171,7 +183,7 @@ class ServersTestJSON(base.BaseV2ComputeTest):
 
         self.addCleanup(cleanup_server)
 
-        _, addresses = self.client.list_addresses(server_multi_nics['id'])
+        addresses = self.client.list_addresses(server_multi_nics['id'])
 
         # We can't predict the ip addresses assigned to the server on networks.
         # Sometimes the assigned addresses are ['19.80.0.2', '19.86.0.2'], at
@@ -190,12 +202,13 @@ class ServersWithSpecificFlavorTestJSON(base.BaseV2ComputeAdminTest):
     disk_config = 'AUTO'
 
     @classmethod
-    def resource_setup(cls):
+    def setup_clients(cls):
         cls.prepare_instance_network()
-        super(ServersWithSpecificFlavorTestJSON, cls).resource_setup()
+        super(ServersWithSpecificFlavorTestJSON, cls).setup_clients()
         cls.flavor_client = cls.os_adm.flavors_client
         cls.client = cls.servers_client
 
+    @test.idempotent_id('b3c7bcfc-bb5b-4e22-b517-c7f686b802ca')
     @testtools.skipUnless(CONF.compute.run_ssh,
                           'Instance validation tests are disabled.')
     @test.attr(type='gate')
@@ -245,22 +258,22 @@ class ServersWithSpecificFlavorTestJSON(base.BaseV2ComputeAdminTest):
 
         admin_pass = self.image_ssh_password
 
-        resp, server_no_eph_disk = (self.create_test_server(
-                                    wait_until='ACTIVE',
-                                    adminPass=admin_pass,
-                                    flavor=flavor_no_eph_disk_id))
-        resp, server_with_eph_disk = (self.create_test_server(
-                                      wait_until='ACTIVE',
-                                      adminPass=admin_pass,
-                                      flavor=flavor_with_eph_disk_id))
+        server_no_eph_disk = (self.create_test_server(
+                              wait_until='ACTIVE',
+                              adminPass=admin_pass,
+                              flavor=flavor_no_eph_disk_id))
+        server_with_eph_disk = (self.create_test_server(
+                                wait_until='ACTIVE',
+                                adminPass=admin_pass,
+                                flavor=flavor_with_eph_disk_id))
         # Get partition number of server without extra specs.
-        _, server_no_eph_disk = self.client.get_server(
+        server_no_eph_disk = self.client.get_server(
             server_no_eph_disk['id'])
         linux_client = remote_client.RemoteClient(server_no_eph_disk,
                                                   self.ssh_user, admin_pass)
         partition_num = len(linux_client.get_partitions().split('\n'))
 
-        _, server_with_eph_disk = self.client.get_server(
+        server_with_eph_disk = self.client.get_server(
             server_with_eph_disk['id'])
         linux_client = remote_client.RemoteClient(server_with_eph_disk,
                                                   self.ssh_user, admin_pass)
@@ -272,8 +285,8 @@ class ServersTestManualDisk(ServersTestJSON):
     disk_config = 'MANUAL'
 
     @classmethod
-    def resource_setup(cls):
+    def skip_checks(cls):
+        super(ServersTestManualDisk, cls).skip_checks()
         if not CONF.compute_feature_enabled.disk_config:
             msg = "DiskConfig extension not enabled."
             raise cls.skipException(msg)
-        super(ServersTestManualDisk, cls).resource_setup()

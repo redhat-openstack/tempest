@@ -13,15 +13,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
+
 from tempest.api.network import base
-from tempest.common.utils import data_utils
 
 
 class BaseSecGroupTest(base.BaseNetworkTest):
-
-    @classmethod
-    def resource_setup(cls):
-        super(BaseSecGroupTest, cls).resource_setup()
 
     def _create_security_group(self):
         # Create a security group

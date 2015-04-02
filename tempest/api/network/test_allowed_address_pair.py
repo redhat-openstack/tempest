@@ -23,8 +23,6 @@ CONF = config.CONF
 
 
 class AllowedAddressPairTestJSON(base.BaseNetworkTest):
-    _interface = 'json'
-
     """
     Tests the Neutron Allowed Address Pair API extension using the Tempest
     ReST client. The following API operations are tested with this extension:
@@ -42,11 +40,15 @@ class AllowedAddressPairTestJSON(base.BaseNetworkTest):
     """
 
     @classmethod
-    def resource_setup(cls):
-        super(AllowedAddressPairTestJSON, cls).resource_setup()
+    def skip_checks(cls):
+        super(AllowedAddressPairTestJSON, cls).skip_checks()
         if not test.is_extension_enabled('allowed-address-pairs', 'network'):
             msg = "Allowed Address Pairs extension not enabled."
             raise cls.skipException(msg)
+
+    @classmethod
+    def resource_setup(cls):
+        super(AllowedAddressPairTestJSON, cls).resource_setup()
         cls.network = cls.create_network()
         cls.create_subnet(cls.network)
         port = cls.create_port(cls.network)
@@ -54,6 +56,7 @@ class AllowedAddressPairTestJSON(base.BaseNetworkTest):
         cls.mac_address = port['mac_address']
 
     @test.attr(type='smoke')
+    @test.idempotent_id('86c3529b-1231-40de-803c-00e40882f043')
     def test_create_list_port_with_address_pair(self):
         # Create port with allowed address pair attribute
         allowed_address_pairs = [{'ip_address': self.ip_address,
@@ -92,17 +95,20 @@ class AllowedAddressPairTestJSON(base.BaseNetworkTest):
         self.assertEqual(allowed_address_pair, allowed_address_pairs)
 
     @test.attr(type='smoke')
+    @test.idempotent_id('9599b337-272c-47fd-b3cf-509414414ac4')
     def test_update_port_with_address_pair(self):
         # Update port with allowed address pair
         self._update_port_with_address(self.ip_address)
 
     @test.attr(type='smoke')
+    @test.idempotent_id('4d6d178f-34f6-4bff-a01c-0a2f8fe909e4')
     def test_update_port_with_cidr_address_pair(self):
         # Update allowed address pair with cidr
         cidr = str(netaddr.IPNetwork(CONF.network.tenant_network_cidr))
         self._update_port_with_address(cidr)
 
     @test.attr(type='smoke')
+    @test.idempotent_id('b3f20091-6cd5-472b-8487-3516137df933')
     def test_update_port_with_multiple_ip_mac_address_pair(self):
         # Create an ip _address and mac_address through port create
         resp = self.client.create_port(network_id=self.network['id'])

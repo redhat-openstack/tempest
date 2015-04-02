@@ -13,10 +13,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
 from testtools import matchers
 
 from tempest.api.volume import base
-from tempest.common.utils import data_utils
 from tempest import config
 from tempest import test
 
@@ -26,9 +26,13 @@ CONF = config.CONF
 class VolumesV2GetTest(base.BaseVolumeTest):
 
     @classmethod
+    def setup_clients(cls):
+        super(VolumesV2GetTest, cls).setup_clients()
+        cls.client = cls.volumes_client
+
+    @classmethod
     def resource_setup(cls):
         super(VolumesV2GetTest, cls).resource_setup()
-        cls.client = cls.volumes_client
 
         cls.name_field = cls.special_fields['name_field']
         cls.descrip_field = cls.special_fields['descrip_field']
@@ -36,15 +40,6 @@ class VolumesV2GetTest(base.BaseVolumeTest):
     def _delete_volume(self, volume_id):
         self.client.delete_volume(volume_id)
         self.client.wait_for_resource_deletion(volume_id)
-
-    def _is_true(self, val):
-        # NOTE(jdg): Temporary conversion method to get cinder patch
-        # merged.  Then we'll make this strict again and
-        # specifically check "true" or "false"
-        if val in ['true', 'True', True]:
-            return True
-        else:
-            return False
 
     def _volume_create_get_update_delete(self, **kwargs):
         # Create a volume, Get it's details and Delete the volume
@@ -79,13 +74,10 @@ class VolumesV2GetTest(base.BaseVolumeTest):
                         'The fetched Volume metadata misses data '
                         'from the created Volume')
 
-        # NOTE(jdg): Revert back to strict true/false checking
-        # after fix for bug #1227837 merges
-        boot_flag = self._is_true(fetched_volume['bootable'])
         if 'imageRef' in kwargs:
-            self.assertEqual(boot_flag, True)
+            self.assertEqual('true', fetched_volume['bootable'])
         if 'imageRef' not in kwargs:
-            self.assertEqual(boot_flag, False)
+            self.assertEqual('false', fetched_volume['bootable'])
 
         # Update Volume
         # Test volume update when display_name is same with original value
@@ -116,7 +108,7 @@ class VolumesV2GetTest(base.BaseVolumeTest):
         new_v_desc = data_utils.rand_name('@#$%^* description')
         params = {self.descrip_field: new_v_desc,
                   'availability_zone': volume['availability_zone']}
-        new_volume = self.client.create_volume(size=1, **params)
+        new_volume = self.client.create_volume(**params)
         self.assertIn('id', new_volume)
         self.addCleanup(self._delete_volume, new_volume['id'])
         self.client.wait_for_volume_status(new_volume['id'], 'available')
@@ -125,24 +117,24 @@ class VolumesV2GetTest(base.BaseVolumeTest):
                   self.descrip_field: volume[self.descrip_field]}
         self.client.update_volume(new_volume['id'], **params)
 
-        # NOTE(jdg): Revert back to strict true/false checking
-        # after fix for bug #1227837 merges
-        boot_flag = self._is_true(updated_volume['bootable'])
         if 'imageRef' in kwargs:
-            self.assertEqual(boot_flag, True)
+            self.assertEqual('true', updated_volume['bootable'])
         if 'imageRef' not in kwargs:
-            self.assertEqual(boot_flag, False)
+            self.assertEqual('false', updated_volume['bootable'])
 
     @test.attr(type='smoke')
+    @test.idempotent_id('27fb0e9f-fb64-41dd-8bdb-1ffa762f0d51')
     def test_volume_create_get_update_delete(self):
         self._volume_create_get_update_delete()
 
     @test.attr(type='smoke')
+    @test.idempotent_id('54a01030-c7fc-447c-86ee-c1182beae638')
     @test.services('image')
     def test_volume_create_get_update_delete_from_image(self):
         self._volume_create_get_update_delete(imageRef=CONF.compute.image_ref)
 
     @test.attr(type='gate')
+    @test.idempotent_id('3f591b4a-7dc6-444c-bd51-77469506b3a1')
     def test_volume_create_get_update_delete_as_clone(self):
         origin = self.create_volume()
         self._volume_create_get_update_delete(source_volid=origin['id'])

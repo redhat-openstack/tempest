@@ -13,10 +13,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
 import testtools
 
 from tempest.api.compute import base
-from tempest.common.utils import data_utils
 from tempest import config
 from tempest import test
 
@@ -26,8 +26,8 @@ CONF = config.CONF
 class SecurityGroupsTestAdminJSON(base.BaseV2ComputeAdminTest):
 
     @classmethod
-    def resource_setup(cls):
-        super(SecurityGroupsTestAdminJSON, cls).resource_setup()
+    def setup_clients(cls):
+        super(SecurityGroupsTestAdminJSON, cls).setup_clients()
         cls.adm_client = cls.os_adm.security_groups_client
         cls.client = cls.security_groups_client
 
@@ -37,8 +37,9 @@ class SecurityGroupsTestAdminJSON(base.BaseV2ComputeAdminTest):
         else:
             self.client.delete_security_group(securitygroup_id)
 
+    @test.idempotent_id('49667619-5af9-4c63-ab5d-2cfdd1c8f7f1')
     @testtools.skipIf(CONF.service_available.neutron,
-                      "Skipped because neutron do not support all_tenants"
+                      "Skipped because neutron does not support all_tenants "
                       "search filter.")
     @test.attr(type='smoke')
     @test.services('network')
@@ -48,8 +49,8 @@ class SecurityGroupsTestAdminJSON(base.BaseV2ComputeAdminTest):
         security_group_list = []
         # Create two security groups for a non-admin tenant
         for i in range(2):
-            name = data_utils.rand_name('securitygroup-')
-            description = data_utils.rand_name('description-')
+            name = data_utils.rand_name('securitygroup')
+            description = data_utils.rand_name('description')
             securitygroup = (self.client
                              .create_security_group(name, description))
             self.addCleanup(self._delete_security_group,
@@ -59,8 +60,8 @@ class SecurityGroupsTestAdminJSON(base.BaseV2ComputeAdminTest):
         client_tenant_id = securitygroup['tenant_id']
         # Create two security groups for admin tenant
         for i in range(2):
-            name = data_utils.rand_name('securitygroup-')
-            description = data_utils.rand_name('description-')
+            name = data_utils.rand_name('securitygroup')
+            description = data_utils.rand_name('description')
             adm_securitygroup = (self.adm_client
                                  .create_security_group(name,
                                                         description))

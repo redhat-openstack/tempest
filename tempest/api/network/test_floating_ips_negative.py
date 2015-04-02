@@ -14,19 +14,17 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
 from tempest_lib import exceptions as lib_exc
 
 from tempest.api.network import base
-from tempest.common.utils import data_utils
 from tempest import config
-from tempest import exceptions
 from tempest import test
 
 CONF = config.CONF
 
 
 class FloatingIPNegativeTestJSON(base.BaseNetworkTest):
-    _interface = 'json'
     """
     Test the following negative  operations for floating ips:
 
@@ -36,11 +34,15 @@ class FloatingIPNegativeTestJSON(base.BaseNetworkTest):
     """
 
     @classmethod
-    def resource_setup(cls):
-        super(FloatingIPNegativeTestJSON, cls).resource_setup()
+    def skip_checks(cls):
+        super(FloatingIPNegativeTestJSON, cls).skip_checks()
         if not test.is_extension_enabled('router', 'network'):
             msg = "router extension not enabled."
             raise cls.skipException(msg)
+
+    @classmethod
+    def resource_setup(cls):
+        super(FloatingIPNegativeTestJSON, cls).resource_setup()
         cls.ext_net_id = CONF.network.public_network_id
         # Create a network with a subnet connected to a router.
         cls.network = cls.create_network()
@@ -50,6 +52,7 @@ class FloatingIPNegativeTestJSON(base.BaseNetworkTest):
         cls.port = cls.create_port(cls.network)
 
     @test.attr(type=['negative', 'smoke'])
+    @test.idempotent_id('22996ea8-4a81-4b27-b6e1-fa5df92fa5e8')
     def test_create_floatingip_with_port_ext_net_unreachable(self):
         self.assertRaises(lib_exc.NotFound, self.client.create_floatingip,
                           floating_network_id=self.ext_net_id,
@@ -58,8 +61,9 @@ class FloatingIPNegativeTestJSON(base.BaseNetworkTest):
                                                     ['ip_address'])
 
     @test.attr(type=['negative', 'smoke'])
+    @test.idempotent_id('50b9aeb4-9f0b-48ee-aa31-fa955a48ff54')
     def test_create_floatingip_in_private_network(self):
-        self.assertRaises(exceptions.BadRequest,
+        self.assertRaises(lib_exc.BadRequest,
                           self.client.create_floatingip,
                           floating_network_id=self.network['id'],
                           port_id=self.port['id'],
@@ -67,6 +71,7 @@ class FloatingIPNegativeTestJSON(base.BaseNetworkTest):
                                                     ['ip_address'])
 
     @test.attr(type=['negative', 'smoke'])
+    @test.idempotent_id('6b3b8797-6d43-4191-985c-c48b773eb429')
     def test_associate_floatingip_port_ext_net_unreachable(self):
         # Create floating ip
         body = self.client.create_floatingip(

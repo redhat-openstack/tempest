@@ -23,11 +23,12 @@ CONF = config.CONF
 class VolumesV2ExtendTest(base.BaseVolumeTest):
 
     @classmethod
-    def resource_setup(cls):
-        super(VolumesV2ExtendTest, cls).resource_setup()
+    def setup_clients(cls):
+        super(VolumesV2ExtendTest, cls).setup_clients()
         cls.client = cls.volumes_client
 
     @test.attr(type='gate')
+    @test.idempotent_id('9a36df71-a257-43a5-9555-dc7c88e66e0e')
     def test_volume_extend(self):
         # Extend Volume Test.
         self.volume = self.create_volume()

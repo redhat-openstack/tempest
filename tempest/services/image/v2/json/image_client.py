@@ -21,29 +21,34 @@ from tempest_lib import exceptions as lib_exc
 
 from tempest.common import glance_http
 from tempest.common import service_client
-from tempest import config
-
-CONF = config.CONF
 
 
 class ImageClientV2JSON(service_client.ServiceClient):
 
-    def __init__(self, auth_provider):
+    def __init__(self, auth_provider, catalog_type, region, endpoint_type=None,
+                 build_interval=None, build_timeout=None,
+                 disable_ssl_certificate_validation=None, ca_certs=None,
+                 trace_requests=None):
         super(ImageClientV2JSON, self).__init__(
             auth_provider,
-            CONF.image.catalog_type,
-            CONF.image.region or CONF.identity.region,
-            endpoint_type=CONF.image.endpoint_type,
-            build_interval=CONF.image.build_interval,
-            build_timeout=CONF.image.build_timeout)
+            catalog_type,
+            region,
+            endpoint_type=endpoint_type,
+            build_interval=build_interval,
+            build_timeout=build_timeout,
+            disable_ssl_certificate_validation=(
+                disable_ssl_certificate_validation),
+            ca_certs=ca_certs,
+            trace_requests=trace_requests)
         self._http = None
+        self.dscv = disable_ssl_certificate_validation
+        self.ca_certs = ca_certs
 
     def _get_http(self):
-        dscv = CONF.identity.disable_ssl_certificate_validation
-        ca_certs = CONF.identity.ca_certificates_file
         return glance_http.HTTPClient(auth_provider=self.auth_provider,
                                       filters=self.filters,
-                                      insecure=dscv, ca_certs=ca_certs)
+                                      insecure=self.dscv,
+                                      ca_certs=self.ca_certs)
 
     def _validate_schema(self, body, type='image'):
         if type in ['image', 'images']:
@@ -56,8 +61,7 @@ class ImageClientV2JSON(service_client.ServiceClient):
     @property
     def http(self):
         if self._http is None:
-            if CONF.service_available.glance:
-                self._http = self._get_http()
+            self._http = self._get_http()
         return self._http
 
     def update_image(self, image_id, patch):
@@ -141,8 +145,7 @@ class ImageClientV2JSON(service_client.ServiceClient):
         url = 'v2/images/%s/file' % image_id
         resp, body = self.get(url)
         self.expected_success(200, resp.status)
-        # We can't return a ResponseBody because the body is a string
-        return resp, body
+        return service_client.ResponseBodyData(resp, body)
 
     def add_image_tag(self, image_id, tag):
         url = 'v2/images/%s/tags/%s' % (image_id, tag)

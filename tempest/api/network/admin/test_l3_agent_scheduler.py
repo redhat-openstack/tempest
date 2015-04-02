@@ -12,14 +12,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from tempest_lib.common.utils import data_utils
+
 from tempest.api.network import base
-from tempest.common.utils import data_utils
+from tempest import exceptions
 from tempest import test
 
 
 class L3AgentSchedulerTestJSON(base.BaseAdminNetworkTest):
-    _interface = 'json'
-
     """
     Tests the following operations in the Neutron API using the REST client for
     Neutron:
@@ -34,12 +34,15 @@ class L3AgentSchedulerTestJSON(base.BaseAdminNetworkTest):
     """
 
     @classmethod
-    def resource_setup(cls):
-        super(L3AgentSchedulerTestJSON, cls).resource_setup()
+    def skip_checks(cls):
+        super(L3AgentSchedulerTestJSON, cls).skip_checks()
         if not test.is_extension_enabled('l3_agent_scheduler', 'network'):
             msg = "L3 Agent Scheduler Extension not enabled."
             raise cls.skipException(msg)
-        # Trying to get agent details for L3 Agent
+
+    @classmethod
+    def resource_setup(cls):
+        super(L3AgentSchedulerTestJSON, cls).resource_setup()
         body = cls.admin_client.list_agents()
         agents = body['agents']
         for agent in agents:
@@ -47,14 +50,16 @@ class L3AgentSchedulerTestJSON(base.BaseAdminNetworkTest):
                 cls.agent = agent
                 break
         else:
-            msg = "L3 Agent not found"
-            raise cls.skipException(msg)
+            msg = "L3 Agent Scheduler enabled in conf, but L3 Agent not found"
+            raise exceptions.InvalidConfiguration(msg)
 
     @test.attr(type='smoke')
+    @test.idempotent_id('b7ce6e89-e837-4ded-9b78-9ed3c9c6a45a')
     def test_list_routers_on_l3_agent(self):
         self.admin_client.list_routers_on_l3_agent(self.agent['id'])
 
     @test.attr(type='smoke')
+    @test.idempotent_id('9464e5e7-8625-49c3-8fd1-89c52be59d66')
     def test_add_list_remove_router_on_l3_agent(self):
         l3_agent_ids = list()
         name = data_utils.rand_name('router1-')

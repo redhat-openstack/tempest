@@ -14,13 +14,14 @@
 #    under the License.
 
 import netaddr
+from oslo_log import log as logging
+from tempest_lib.common.utils import data_utils
 from tempest_lib import exceptions as lib_exc
 
 from tempest import clients
-from tempest.common.utils import data_utils
+from tempest.common import credentials
 from tempest import config
 from tempest import exceptions
-from tempest.openstack.common import log as logging
 import tempest.test
 
 CONF = config.CONF
@@ -50,26 +51,36 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
         neutron as True
     """
 
-    _interface = 'json'
     force_tenant_isolation = False
 
     # Default to ipv4.
     _ip_version = 4
 
     @classmethod
-    def resource_setup(cls):
-        # Create no network resources for these test.
-        cls.set_network_resources()
-        super(BaseNetworkTest, cls).resource_setup()
+    def skip_checks(cls):
+        super(BaseNetworkTest, cls).skip_checks()
         if not CONF.service_available.neutron:
             raise cls.skipException("Neutron support is required")
         if cls._ip_version == 6 and not CONF.network_feature_enabled.ipv6:
             raise cls.skipException("IPv6 Tests are disabled.")
 
-        os = cls.get_client_manager()
+    @classmethod
+    def setup_credentials(cls):
+        # Create no network resources for these test.
+        cls.set_network_resources()
+        super(BaseNetworkTest, cls).setup_credentials()
+        cls.os = cls.get_client_manager()
+
+    @classmethod
+    def setup_clients(cls):
+        super(BaseNetworkTest, cls).setup_clients()
+        cls.client = cls.os.network_client
+
+    @classmethod
+    def resource_setup(cls):
+        super(BaseNetworkTest, cls).resource_setup()
 
         cls.network_cfg = CONF.network
-        cls.client = os.network_client
         cls.networks = []
         cls.subnets = []
         cls.ports = []
@@ -158,7 +169,6 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
             for network in cls.networks:
                 cls._try_delete_resource(cls.client.delete_network,
                                          network['id'])
-            cls.clear_isolated_creds()
         super(BaseNetworkTest, cls).resource_cleanup()
 
     @classmethod
@@ -224,7 +234,7 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
                     gateway_ip=gateway_ip,
                     **kwargs)
                 break
-            except exceptions.BadRequest as e:
+            except lib_exc.BadRequest as e:
                 is_overlapping_cidr = 'overlaps with another subnet' in str(e)
                 if not is_overlapping_cidr:
                     raise
@@ -253,7 +263,8 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
 
     @classmethod
     def create_router(cls, router_name=None, admin_state_up=False,
-                      external_network_id=None, enable_snat=None):
+                      external_network_id=None, enable_snat=None,
+                      **kwargs):
         ext_gw_info = {}
         if external_network_id:
             ext_gw_info['network_id'] = external_network_id
@@ -261,7 +272,7 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
             ext_gw_info['enable_snat'] = enable_snat
         body = cls.client.create_router(
             router_name, external_gateway_info=ext_gw_info,
-            admin_state_up=admin_state_up)
+            admin_state_up=admin_state_up, **kwargs)
         router = body['router']
         cls.routers.append(router)
         return router
@@ -416,17 +427,22 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
 class BaseAdminNetworkTest(BaseNetworkTest):
 
     @classmethod
-    def resource_setup(cls):
-        super(BaseAdminNetworkTest, cls).resource_setup()
-
-        try:
-            creds = cls.isolated_creds.get_admin_creds()
-            cls.os_adm = clients.Manager(
-                credentials=creds, interface=cls._interface)
-        except NotImplementedError:
+    def skip_checks(cls):
+        super(BaseAdminNetworkTest, cls).skip_checks()
+        if not credentials.is_admin_available():
             msg = ("Missing Administrative Network API credentials "
                    "in configuration.")
             raise cls.skipException(msg)
+
+    @classmethod
+    def setup_credentials(cls):
+        super(BaseAdminNetworkTest, cls).setup_credentials()
+        creds = cls.isolated_creds.get_admin_creds()
+        cls.os_adm = clients.Manager(credentials=creds)
+
+    @classmethod
+    def setup_clients(cls):
+        super(BaseAdminNetworkTest, cls).setup_clients()
         cls.admin_client = cls.os_adm.network_client
 
     @classmethod

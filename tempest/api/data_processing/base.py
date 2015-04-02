@@ -22,16 +22,26 @@ CONF = config.CONF
 
 
 class BaseDataProcessingTest(tempest.test.BaseTestCase):
-    _interface = 'json'
+
+    @classmethod
+    def skip_checks(cls):
+        super(BaseDataProcessingTest, cls).skip_checks()
+        if not CONF.service_available.sahara:
+            raise cls.skipException('Sahara support is required')
+
+    @classmethod
+    def setup_credentials(cls):
+        super(BaseDataProcessingTest, cls).setup_credentials()
+        cls.os = cls.get_client_manager()
+
+    @classmethod
+    def setup_clients(cls):
+        super(BaseDataProcessingTest, cls).setup_clients()
+        cls.client = cls.os.data_processing_client
 
     @classmethod
     def resource_setup(cls):
         super(BaseDataProcessingTest, cls).resource_setup()
-        if not CONF.service_available.sahara:
-            raise cls.skipException('Sahara support is required')
-
-        cls.os = cls.get_client_manager()
-        cls.client = cls.os.data_processing_client
 
         cls.flavor_ref = CONF.compute.flavor_ref
 
@@ -56,7 +66,6 @@ class BaseDataProcessingTest(tempest.test.BaseTestCase):
                               cls.client.delete_job_binary_internal)
         cls.cleanup_resources(getattr(cls, '_data_sources', []),
                               cls.client.delete_data_source)
-        cls.clear_isolated_creds()
         super(BaseDataProcessingTest, cls).resource_cleanup()
 
     @staticmethod

@@ -14,10 +14,10 @@
 import logging
 
 import netaddr
+from tempest_lib.common.utils import data_utils
 
 from tempest.api.orchestration import base
 from tempest import clients
-from tempest.common.utils import data_utils
 from tempest import config
 from tempest import exceptions
 from tempest import test
@@ -30,15 +30,25 @@ LOG = logging.getLogger(__name__)
 class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
 
     @classmethod
-    def resource_setup(cls):
-        super(NeutronResourcesTestJSON, cls).resource_setup()
-        if not CONF.orchestration.image_ref:
-            raise cls.skipException("No image available to test")
-        os = clients.Manager()
+    def skip_checks(cls):
+        super(NeutronResourcesTestJSON, cls).skip_checks()
         if not CONF.service_available.neutron:
             raise cls.skipException("Neutron support is required")
+
+    @classmethod
+    def setup_credentials(cls):
+        super(NeutronResourcesTestJSON, cls).setup_credentials()
+        cls.os = clients.Manager()
+
+    @classmethod
+    def setup_clients(cls):
+        super(NeutronResourcesTestJSON, cls).setup_clients()
+        cls.network_client = cls.os.network_client
+
+    @classmethod
+    def resource_setup(cls):
+        super(NeutronResourcesTestJSON, cls).resource_setup()
         cls.neutron_basic_template = cls.load_template('neutron_basic')
-        cls.network_client = os.network_client
         cls.stack_name = data_utils.rand_name('heat')
         template = cls.read_template('neutron_basic')
         cls.keypair_name = (CONF.orchestration.keypair_name or
@@ -56,7 +66,7 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
             parameters={
                 'KeyName': cls.keypair_name,
                 'InstanceType': CONF.orchestration.instance_type,
-                'ImageId': CONF.orchestration.image_ref,
+                'ImageId': CONF.compute.image_ref,
                 'ExternalNetworkId': cls.external_network_id,
                 'timeout': CONF.orchestration.build_timeout,
                 'DNSServers': CONF.network.dns_servers,
@@ -75,8 +85,8 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
                                                'Server')
                 server_id = body['physical_resource_id']
                 LOG.debug('Console output for %s', server_id)
-                _, output = cls.servers_client.get_console_output(
-                    server_id, None)
+                output = cls.servers_client.get_console_output(
+                    server_id, None).data
                 LOG.debug(output)
             raise e
 
@@ -84,7 +94,8 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
         for resource in resources:
             cls.test_resources[resource['logical_resource_id']] = resource
 
-    @test.attr(type='slow')
+    @test.attr(type='gate')
+    @test.idempotent_id('f9e2664c-bc44-4eef-98b6-495e4f9d74b3')
     def test_created_resources(self):
         """Verifies created neutron resources."""
         resources = [('Network', self.neutron_basic_template['resources'][
@@ -102,7 +113,8 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
             self.assertEqual(resource_type, resource['resource_type'])
             self.assertEqual('CREATE_COMPLETE', resource['resource_status'])
 
-    @test.attr(type='slow')
+    @test.attr(type='gate')
+    @test.idempotent_id('c572b915-edb1-4e90-b196-c7199a6848c0')
     @test.services('network')
     def test_created_network(self):
         """Verifies created network."""
@@ -114,7 +126,8 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
         self.assertEqual(self.neutron_basic_template['resources'][
             'Network']['properties']['name'], network['name'])
 
-    @test.attr(type='slow')
+    @test.attr(type='gate')
+    @test.idempotent_id('e8f84b96-f9d7-4684-ad5f-340203e9f2c2')
     @test.services('network')
     def test_created_subnet(self):
         """Verifies created subnet."""
@@ -132,7 +145,8 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
             'Subnet']['properties']['ip_version'], subnet['ip_version'])
         self.assertEqual(str(self.subnet_cidr), subnet['cidr'])
 
-    @test.attr(type='slow')
+    @test.attr(type='gate')
+    @test.idempotent_id('96af4c7f-5069-44bc-bdcf-c0390f8a67d1')
     @test.services('network')
     def test_created_router(self):
         """Verifies created router."""
@@ -145,7 +159,8 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
                          router['external_gateway_info']['network_id'])
         self.assertEqual(True, router['admin_state_up'])
 
-    @test.attr(type='slow')
+    @test.attr(type='gate')
+    @test.idempotent_id('89f605bd-153e-43ee-a0ed-9919b63423c5')
     @test.services('network')
     def test_created_router_interface(self):
         """Verifies created router interface."""
@@ -168,12 +183,13 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
         self.assertEqual(str(self.subnet_cidr.iter_hosts().next()),
                          router_interface_ip)
 
-    @test.attr(type='slow')
+    @test.attr(type='gate')
+    @test.idempotent_id('75d85316-4ac2-4c0e-a1a9-edd2148fc10e')
     @test.services('compute', 'network')
     def test_created_server(self):
         """Verifies created sever."""
         server_id = self.test_resources.get('Server')['physical_resource_id']
-        _, server = self.servers_client.get_server(server_id)
+        server = self.servers_client.get_server(server_id)
         self.assertEqual(self.keypair_name, server['key_name'])
         self.assertEqual('ACTIVE', server['status'])
         network = server['addresses'][self.neutron_basic_template['resources'][

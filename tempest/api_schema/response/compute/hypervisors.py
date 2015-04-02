@@ -56,6 +56,8 @@ common_list_hypervisors_detail = {
                 'items': {
                     'type': 'object',
                     'properties': {
+                        'status': {'type': 'string'},
+                        'state': {'type': 'string'},
                         'cpu_info': {'type': 'string'},
                         'current_workload': {'type': 'integer'},
                         'disk_available_least': {'type': ['integer', 'null']},
@@ -78,13 +80,20 @@ common_list_hypervisors_detail = {
                             'type': 'object',
                             'properties': {
                                 'host': {'type': 'string'},
-                                'id': {'type': ['integer', 'string']}
+                                'id': {'type': ['integer', 'string']},
+                                'disabled_reason': {'type': ['string', 'null']}
                             },
+                            # NOTE(gmann): 'disabled_reason' is updated in
+                            # 'service' dict if 'os-hypervisor-status'
+                            # extension is loaded. So this is not required.
                             'required': ['host', 'id']
                         },
                         'vcpus': {'type': 'integer'},
                         'vcpus_used': {'type': 'integer'}
                     },
+                    # NOTE: When loading os-hypervisor-status extension,
+                    # a response contains status and state. So these params
+                    # should not be required.
                     'required': ['cpu_info', 'current_workload',
                                  'disk_available_least', 'host_ip',
                                  'free_disk_gb', 'free_ram_mb',
@@ -108,6 +117,8 @@ common_show_hypervisor = {
             'hypervisor': {
                 'type': 'object',
                 'properties': {
+                    'status': {'type': 'string'},
+                    'state': {'type': 'string'},
                     'cpu_info': {'type': 'string'},
                     'current_workload': {'type': 'integer'},
                     'disk_available_least': {'type': ['integer', 'null']},
@@ -130,13 +141,20 @@ common_show_hypervisor = {
                         'type': 'object',
                         'properties': {
                             'host': {'type': 'string'},
-                            'id': {'type': ['integer', 'string']}
+                            'id': {'type': ['integer', 'string']},
+                            'disabled_reason': {'type': ['string', 'null']}
                         },
+                        # NOTE: 'disabled_reason' is updated in 'service'
+                        # dict if os-hypervisor-status' extension is loaded.
+                        # So this is not required.
                         'required': ['host', 'id']
                     },
                     'vcpus': {'type': 'integer'},
                     'vcpus_used': {'type': 'integer'}
                 },
+                # NOTE: When loading os-hypervisor-status extension,
+                # a response contains status and state. So these params
+                # should not be required.
                 'required': ['cpu_info', 'current_workload',
                              'disk_available_least', 'host_ip',
                              'free_disk_gb', 'free_ram_mb',
@@ -160,9 +178,14 @@ common_hypervisors_detail = {
                 'items': {
                     'type': 'object',
                     'properties': {
+                        'status': {'type': 'string'},
+                        'state': {'type': 'string'},
                         'id': {'type': ['integer', 'string']},
                         'hypervisor_hostname': {'type': 'string'}
                     },
+                    # NOTE: When loading os-hypervisor-status extension,
+                    # a response contains status and state. So these params
+                    # should not be required.
                     'required': ['id', 'hypervisor_hostname']
                 }
             }
@@ -179,9 +202,14 @@ common_hypervisors_info = {
             'hypervisor': {
                 'type': 'object',
                 'properties': {
+                    'status': {'type': 'string'},
+                    'state': {'type': 'string'},
                     'id': {'type': ['integer', 'string']},
                     'hypervisor_hostname': {'type': 'string'},
                 },
+                # NOTE: When loading os-hypervisor-status extension,
+                # a response contains status and state. So these params
+                # should not be required.
                 'required': ['id', 'hypervisor_hostname']
             }
         },
