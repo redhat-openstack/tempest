@@ -102,11 +102,11 @@ class BaseService(object):
             setattr(self, key, value)
 
     def _filter_by_tenant_id(self, item_list):
-        if (item_list is None
-                or len(item_list) == 0
-                or not hasattr(self, 'tenant_id')
-                or self.tenant_id is None
-                or 'tenant_id' not in item_list[0]):
+        if (item_list is None or
+                len(item_list) == 0 or not
+                hasattr(self, 'tenant_id') or
+                self.tenant_id is None or
+                'tenant_id' not in item_list[0]):
             return item_list
 
         return [item for item in item_list
@@ -341,6 +341,44 @@ class VolumeService(BaseService):
         self.data['volumes'] = vols
 
 
+class VolumeQuotaService(BaseService):
+    def __init__(self, manager, **kwargs):
+        super(VolumeQuotaService, self).__init__(kwargs)
+        self.client = manager.volume_quotas_client
+
+    def delete(self):
+        client = self.client
+        try:
+            client.delete_quota_set(self.tenant_id)
+        except Exception as e:
+            LOG.exception("Delete Volume Quotas exception: %s" % e)
+            pass
+
+    def dry_run(self):
+        _, quotas = self.client.get_quota_usage(self.tenant_id)
+        self.data['volume_quotas'] = quotas
+
+
+class NovaQuotaService(BaseService):
+    def __init__(self, manager, **kwargs):
+        super(NovaQuotaService, self).__init__(kwargs)
+        self.client = manager.quotas_client
+        self.limits_client = manager.limits_client
+
+    def delete(self):
+        client = self.client
+        try:
+            client.delete_quota_set(self.tenant_id)
+        except Exception as e:
+            LOG.exception("Delete Quotas exception: %s" % e)
+            pass
+
+    def dry_run(self):
+        client = self.limits_client
+        _, quotas = client.get_absolute_limits()
+        self.data['compute_quotas'] = quotas
+
+
 # Begin network service classes
 class NetworkService(BaseService):
     def __init__(self, manager, **kwargs):
@@ -553,8 +591,10 @@ class NetworkRouterService(NetworkService):
                 _, ports = client.list_router_interfaces(rid)
                 ports = ports['ports']
                 for port in ports:
+                    pid = port['id']
                     subid = port['fixed_ips'][0]['subnet_id']
                     client.remove_router_interface_with_subnet_id(rid, subid)
+                    client.remove_router_interface_with_port_id(rid, pid)
                 client.delete_router(rid)
             except Exception as e:
                 LOG.exception("Delete Router exception: %s" % e)
@@ -933,8 +973,8 @@ class RoleService(IdentityService):
             if not self.is_save_state:
                 roles = [role for role in roles if
                          (role['id'] not in
-                          self.saved_state_json['roles'].keys()
-                          and role['name'] != CONF.identity.admin_role)]
+                          self.saved_state_json['roles'].keys() and
+                          role['name'] != CONF.identity.admin_role)]
                 LOG.debug("List count, %s Roles after reconcile" % len(roles))
             return roles
         except Exception as ex:
@@ -969,8 +1009,8 @@ class TenantService(IdentityService):
         _, tenants = client.list_tenants()
         if not self.is_save_state:
             tenants = [tenant for tenant in tenants if (tenant['id']
-                       not in self.saved_state_json['tenants'].keys()
-                       and tenant['name'] != CONF.identity.admin_tenant_name)]
+                       not in self.saved_state_json['tenants'].keys() and
+                       tenant['name'] != CONF.identity.admin_tenant_name)]
 
         if self.is_preserve:
             tenants = [tenant for tenant in tenants if tenant['name']
@@ -1050,6 +1090,7 @@ def get_tenant_cleanup_services():
         tenant_services.append(ServerGroupService)
         if not IS_NEUTRON:
             tenant_services.append(FloatingIpService)
+        tenant_services.append(NovaQuotaService)
     if IS_HEAT:
         tenant_services.append(StackService)
     if IS_NEUTRON:
@@ -1076,6 +1117,7 @@ def get_tenant_cleanup_services():
     if IS_CINDER:
         tenant_services.append(SnapshotService)
         tenant_services.append(VolumeService)
+        tenant_services.append(VolumeQuotaService)
     return tenant_services
 
 
