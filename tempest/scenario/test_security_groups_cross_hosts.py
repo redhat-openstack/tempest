@@ -13,10 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest.openstack.common import log as logging
-from tempest.scenario import test_security_groups_basic_ops as base
+import logging
 
-LOG = logging.getLogger(__name__)
+from tempest.scenario import test_security_groups_basic_ops as base
 
 
 class TestCrossHost(base.TestSecurityGroupsBasicOps):

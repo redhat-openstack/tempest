@@ -16,9 +16,8 @@
 
 import httplib2
 import json
+import logging
 import urlparse
-
-from tempest.openstack.common import log as logging
 
 LOG = logging.getLogger(__name__)
 
@@ -124,19 +123,27 @@ def get_service_class(service_name):
     return service_dict.get(service_name, Service)
 
 
-def discover(identity_client):
+def discover(auth_provider, region):
     """
     Returns a dict with discovered apis.
-    :param identity_client: A keystone client from official python client.
+    :param auth_provider: An AuthProvider to obtain service urls.
+    :param region: A specific region to use. If the catalog has only one region
+    then that region will be used.
     :return: A dict with an entry for the type of each discovered service.
         Each entry has keys for 'extensions' and 'versions'.
     """
-    token = identity_client.auth_token
-    endpoints = identity_client.service_catalog.get_endpoints()
+    token, auth_data = auth_provider.get_auth()
     services = {}
-    for (name, descriptor) in endpoints.iteritems():
+    for entry in auth_data['serviceCatalog']:
+        name = entry['type']
         services[name] = dict()
-        services[name]['url'] = descriptor[0]['publicURL']
+        for _ep in entry['endpoints']:
+            if _ep['region'] == region:
+                ep = _ep
+                break
+        else:
+            ep = entry['endpoints'][0]
+        services[name]['url'] = ep['publicURL']
 
         service_class = get_service_class(name)
         service = service_class(name, services[name]['url'], token)
