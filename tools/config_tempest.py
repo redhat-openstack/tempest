@@ -36,23 +36,26 @@ obtained by querying the cloud.
 
 import argparse
 import ConfigParser
-import glanceclient as glance_client
-import keystoneclient.exceptions as keystone_exception
-import keystoneclient.v2_0.client as keystone_client
 import logging
-import neutronclient.v2_0.client as neutron_client
-import novaclient.client as nova_client
 import os
 import shutil
 import subprocess
 import sys
 import urllib2
 
+from tempest_lib import exceptions
 # Since tempest can be configured in different directories, we need to use
 # the path starting at cwd.
 sys.path.insert(0, os.getcwd())
 
+import tempest.auth
 from tempest.common import api_discovery
+from tempest.services.compute.json import flavors_client
+from tempest.services.compute.json import networks_client as nova_net_client
+from tempest.services.compute.json import servers_client
+from tempest.services.identity.v2.json import identity_client
+from tempest.services.image.v2.json import image_client
+from tempest.services.network.json import network_client
 
 LOG = logging.getLogger(__name__)
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -131,13 +134,13 @@ def main():
         conf.set("identity", "admin_tenant_name", "")
         conf.set("identity", "admin_password", "")
         conf.set("auth", "allow_tenant_isolation", "False")
-
     clients = ClientManager(conf, not args.non_admin)
-    services = api_discovery.discover(clients.identity)
+    services = api_discovery.discover(clients.auth_provider,
+                                      clients.identity_region)
     if args.create:
         create_tempest_users(clients.identity, conf, services)
-    create_tempest_flavors(clients.compute, conf, args.create)
-    create_tempest_images(clients, conf,
+    create_tempest_flavors(clients.flavors, conf, args.create)
+    create_tempest_images(clients.images, conf,
                           args.image, args.create)
     has_neutron = "network" in services
 
@@ -229,73 +232,89 @@ class ClientManager(object):
     Connections to clients are created on-demand, i.e. the client tries to
     connect to the server only when it's being requested.
     """
-    _identity = None
-    _compute = None
-    _image = None
-    _network = None
 
     def __init__(self, conf, admin):
-        self.insecure = \
-            conf.get('identity', 'disable_ssl_certificate_validation')
-        self.auth_url = conf.get('identity', 'uri')
         if admin:
-            self.username = conf.get('identity', 'admin_username')
-            self.password = conf.get('identity', 'admin_password')
-            self.tenant_name = conf.get('identity', 'admin_tenant_name')
+            username = conf.get_defaulted('identity', 'admin_username')
+            password = conf.get_defaulted('identity', 'admin_password')
+            tenant_name = conf.get_defaulted('identity', 'admin_tenant_name')
         else:
-            self.username = conf.get('identity', 'username', 'demo')
-            self.password = conf.get('identity', 'password', 'secret')
-            self.tenant_name = conf.get('identity', 'tenant_name', 'demo')
+            username = conf.get_defaulted('identity', 'username')
+            password = conf.get_defaulted('identity', 'password')
+            tenant_name = conf.get_defaulted('identity', 'tenant_name')
 
-    @property
-    def identity(self):
-        if self._identity:
-            return self._identity
-        LOG.info("Connecting to Keystone at '%s' with username '%s',"
-                 " tenant '%s', and password '%s'", self.auth_url,
-                 self.username, self.tenant_name, self.password)
-        self._identity = keystone_client.Client(username=self.username,
-                                                password=self.password,
-                                                tenant_name=self.tenant_name,
-                                                auth_url=self.auth_url,
-                                                insecure=self.insecure)
-        return self._identity
+        self.identity_region = conf.get_defaulted('identity', 'region')
+        default_params = {
+            'disable_ssl_certificate_validation':
+                conf.get_defaulted('identity',
+                                   'disable_ssl_certificate_validation'),
+            'ca_certs': conf.get_defaulted('identity', 'ca_certificates_file')
+        }
+        compute_params = {
+            'service': conf.get_defaulted('compute', 'catalog_type'),
+            'region': self.identity_region,
+            'endpoint_type': conf.get_defaulted('compute', 'endpoint_type')
+        }
+        compute_params.update(default_params)
 
-    @property
-    def compute(self):
-        if self._compute:
-            return self._compute
-        LOG.debug("Connecting to Nova")
-        self._compute = nova_client.Client('2', self.username, self.password,
-                                           self.tenant_name, self.auth_url,
-                                           insecure=self.insecure,
-                                           no_cache=True)
-        return self._compute
+        _creds = tempest.auth.KeystoneV2Credentials(
+            username=username,
+            password=password,
+            tenant_name=tenant_name)
+        auth_provider_params = {
+            'disable_ssl_certificate_validation':
+                conf.get_defaulted('identity',
+                                   'disable_ssl_certificate_validation'),
+            'ca_certs': conf.get_defaulted('identity', 'ca_certificates_file')
+        }
+        _auth = tempest.auth.KeystoneV2AuthProvider(
+            _creds, conf.get_defaulted('identity', 'uri'),
+            **auth_provider_params)
+        self.auth_provider = _auth
+        self.identity = identity_client.IdentityClientJSON(
+            _auth,
+            conf.get_defaulted('identity', 'catalog_type'),
+            self.identity_region,
+            endpoint_type='adminURL',
+            **default_params)
 
-    @property
-    def image(self):
-        if not self._image:
-            LOG.debug("Connecting to Glance")
-            token = self.identity.auth_token
-            catalog = self.identity.service_catalog
-            endpoint = catalog.url_for(service_type='image',
-                                       endpoint_type='publicURL')
-            self._image = glance_client.Client("1", endpoint=endpoint,
-                                               token=token,
-                                               insecure=self.insecure)
-        return self._image
+        self.images = image_client.ImageClientV2JSON(
+            _auth,
+            conf.get_defaulted('image', 'catalog_type'),
+            self.identity_region,
+            conf.get_defaulted('image', 'endpoint_type'),
+            **default_params)
+        self.servers = servers_client.ServersClientJSON(_auth,
+                                                        **compute_params)
+        self.flavors = flavors_client.FlavorsClientJSON(_auth,
+                                                        **compute_params)
 
-    @property
-    def network(self):
-        if self._network:
-            return self._network
-        LOG.debug("Connecting to Neutron")
-        self._network = neutron_client.Client(username=self.username,
-                                              password=self.password,
-                                              tenant_name=self.tenant_name,
-                                              auth_url=self.auth_url,
-                                              insecure=self.insecure)
-        return self._network
+        self.networks = None
+
+        def create_nova_network_client():
+            if self.networks is None:
+                self.networks = \
+                    nova_net_client.NetworksClientJSON(_auth, **compute_params)
+            return self.networks
+
+        def create_neutron_client():
+            if self.networks is None:
+                self.networks = network_client.NetworkClientJSON(
+                    _auth,
+                    conf.get_defaulted('network', 'catalog_type'),
+                    self.identity_region,
+                    endpoint_type=conf.get_defaulted('network',
+                                                     'endpoint_type'),
+                    **default_params)
+            return self.networks
+
+        self.get_nova_net_client = create_nova_network_client
+        self.get_neutron_client = create_neutron_client
+
+        # Set admin tenant id needed for keystone v3 tests.
+        if admin:
+            tenant_id = self.identity.get_tenant_by_name(tenant_name)['id']
+            conf.set('identity', 'admin_tenant_id', tenant_id)
 
 
 class TempestConf(ConfigParser.SafeConfigParser):
@@ -305,6 +324,14 @@ class TempestConf(ConfigParser.SafeConfigParser):
     # set of pairs `(section, key)` which have a higher priority (are
     # user-defined) and will usually not be overwritten by `set()`
     priority_sectionkeys = set()
+
+    CONF = tempest.config.TempestConfigPrivate(parse_conf=False)
+
+    def get_defaulted(self, section, key):
+        if self.has_option(section, key):
+            return self.get(section, key)
+        else:
+            return self.CONF.get(section).get(key)
 
     def set(self, section, key, value, priority=False):
         """Set value in configuration, similar to `SafeConfigParser.set`
@@ -360,28 +387,29 @@ def create_tempest_users(identity_client, conf, services):
                             conf.get('identity', 'alt_tenant_name'))
 
 
-def give_role_to_user(identity_client, username, tenant_name, role_name,
+def give_role_to_user(client, username, tenant_name, role_name,
                       role_required=True):
     """Give the user a role in the project (tenant)."""
-    user_id = identity_client.users.find(name=username)
-    tenant_id = identity_client.tenants.find(name=tenant_name)
-    try:
-        role_id = identity_client.roles.find(name=role_name)
-    except keystone_exception.NotFound:
+    tenant_id = client.get_tenant_by_name(tenant_name)['id']
+    user_ids = [u['id'] for u in client.get_users() if u['name'] == username]
+    user_id = user_ids[0]
+    role_ids = [r['id'] for r in client.list_roles() if r['name'] == role_name]
+    if not role_ids:
         if role_required:
-            raise
+            raise Exception("required role %s not found" % role_name)
         LOG.debug("%s role not required" % role_name)
         return
+    role_id = role_ids[0]
     try:
-        identity_client.tenants.add_user(tenant_id, user_id, role_id)
+        client.assign_user_role(tenant_id, user_id, role_id)
         LOG.debug("User '%s' was given the '%s' role in project '%s'",
                   username, role_name, tenant_name)
-    except keystone_exception.Conflict:
+    except exceptions.Conflict:
         LOG.debug("(no change) User '%s' already has the '%s' role in"
                   " project '%s'", username, role_name, tenant_name)
 
 
-def create_user_with_tenant(identity_client, username, password, tenant_name):
+def create_user_with_tenant(client, username, password, tenant_name):
     """Create user and tenant if he doesn't exist.
 
     Sets password even for existing user.
@@ -392,23 +420,22 @@ def create_user_with_tenant(identity_client, username, password, tenant_name):
     email = "%s@test.com" % username
     # create tenant
     try:
-        identity_client.tenants.create(tenant_name, tenant_description)
-    except keystone_exception.Conflict:
+        client.create_tenant(tenant_name, description=tenant_description)
+    except exceptions.Conflict:
         LOG.info("(no change) Tenant '%s' already exists", tenant_name)
 
-    tenant = identity_client.tenants.find(name=tenant_name)
+    tenant_id = client.get_tenant_by_name(tenant_name)['id']
     # create user
     try:
-        identity_client.users.create(name=username, password=password,
-                                     email=email, tenant_id=tenant.id)
-    except keystone_exception.Conflict:
+        client.create_user(username, password, tenant_id, email)
+    except exceptions.Conflict:
         LOG.info("User '%s' already exists. Setting password to '%s'",
                  username, password)
-        user = identity_client.users.find(name=username)
-        identity_client.users.update_password(user.id, password)
+        user = client.get_user_by_username(tenant_id, username)
+        client.update_user_password(user['id'], password)
 
 
-def create_tempest_flavors(compute_client, conf, allow_creation):
+def create_tempest_flavors(client, conf, allow_creation):
     """Find or create flavors 'm1.nano' and 'm1.micro' and set them in conf.
 
     If 'flavor_ref' and 'flavor_ref_alt' are specified in conf, it will first
@@ -421,7 +448,7 @@ def create_tempest_flavors(compute_client, conf, allow_creation):
     flavor_id = None
     if conf.has_option('compute', 'flavor_ref'):
         flavor_id = conf.get('compute', 'flavor_ref')
-    flavor_id = find_or_create_flavor(compute_client,
+    flavor_id = find_or_create_flavor(client,
                                       flavor_id, 'm1.nano',
                                       allow_creation, ram=64)
     conf.set('compute', 'flavor_ref', flavor_id)
@@ -430,13 +457,13 @@ def create_tempest_flavors(compute_client, conf, allow_creation):
     alt_flavor_id = None
     if conf.has_option('compute', 'flavor_ref_alt'):
         alt_flavor_id = conf.get('compute', 'flavor_ref_alt')
-    alt_flavor_id = find_or_create_flavor(compute_client,
+    alt_flavor_id = find_or_create_flavor(client,
                                           alt_flavor_id, 'm1.micro',
                                           allow_creation, ram=128)
     conf.set('compute', 'flavor_ref_alt', alt_flavor_id)
 
 
-def find_or_create_flavor(compute_client, flavor_id, flavor_name,
+def find_or_create_flavor(client, flavor_id, flavor_name,
                           allow_creation, ram=64, vcpus=1, disk=0):
     """Try finding flavor by ID or name, create if not found.
 
@@ -449,14 +476,15 @@ def find_or_create_flavor(compute_client, flavor_id, flavor_name,
     :param disk: size of disk for flavor in GB
     """
     flavor = None
+    flavors = client.list_flavors()
     # try finding it by the ID first
     if flavor_id:
-        found = compute_client.flavors.findall(id=flavor_id)
+        found = [f for f in flavors if f['id'] == flavor_id]
         if found:
             flavor = found[0]
     # if not found previously, try finding it by name
     if flavor_name and not flavor:
-        found = compute_client.flavors.findall(name=flavor_name)
+        found = [f for f in flavors if f['name'] == flavor_name]
         if found:
             flavor = found[0]
 
@@ -467,14 +495,14 @@ def find_or_create_flavor(compute_client, flavor_id, flavor_name,
 
     if not flavor:
         LOG.info("Creating flavor '%s'", flavor_name)
-        flavor = compute_client.flavors.create(flavor_name, ram, vcpus, disk)
+        flavor = client.create_flavor(flavor_name, ram, vcpus, disk, None)
     else:
-        LOG.info("(no change) Found flavor '%s'", flavor.name)
+        LOG.info("(no change) Found flavor '%s'", flavor['name'])
 
-    return flavor.id
+    return flavor['id']
 
 
-def create_tempest_images(clients, conf, image_path, allow_creation):
+def create_tempest_images(client, conf, image_path, allow_creation):
     qcow2_img_path = os.path.join(conf.get("scenario", "img_dir"),
                                   conf.get("scenario", "qcow2_img_file"))
     name = image_path[image_path.rfind('/') + 1:]
@@ -482,14 +510,14 @@ def create_tempest_images(clients, conf, image_path, allow_creation):
     image_id = None
     if conf.has_option('compute', 'image_ref'):
         image_id = conf.get('compute', 'image_ref')
-    image_id = find_or_upload_image(clients,
+    image_id = find_or_upload_image(client,
                                     image_id, name, allow_creation,
                                     image_source=image_path,
                                     image_dest=qcow2_img_path)
     alt_image_id = None
     if conf.has_option('compute', 'image_ref_alt'):
         alt_image_id = conf.get('compute', 'image_ref_alt')
-    alt_image_id = find_or_upload_image(clients,
+    alt_image_id = find_or_upload_image(client,
                                         alt_image_id, alt_name, allow_creation,
                                         image_source=image_path,
                                         image_dest=qcow2_img_path)
@@ -498,16 +526,16 @@ def create_tempest_images(clients, conf, image_path, allow_creation):
     conf.set('compute', 'image_ref_alt', alt_image_id)
 
 
-def find_or_upload_image(clients, image_id, image_name, allow_creation,
+def find_or_upload_image(client, image_id, image_name, allow_creation,
                          image_source='', image_dest=''):
-    image = _find_image(clients.image, image_id, image_name)
+    image = _find_image(client, image_id, image_name)
     if not image and not allow_creation:
         raise Exception("Image '%s' not found, but resource creation"
                         " isn't allowed. Either use '--create' or provide"
                         " an existing image_ref" % image_name)
 
     if image:
-        LOG.info("(no change) Found image '%s'", image.name)
+        LOG.info("(no change) Found image '%s'", image['name'])
     else:
         LOG.info("Creating image '%s'", image_name)
         if image_source.startswith("http:") or \
@@ -515,11 +543,8 @@ def find_or_upload_image(clients, image_id, image_name, allow_creation,
                 _download_file(image_source, image_dest)
         else:
             shutil.copyfile(image_source, image_dest)
-        image = _upload_image(clients.image, image_name, image_dest)
-        # Work-around for glance client bug after create. Force reconnect.
-        # https://bugs.launchpad.net/python-glanceclient/+bug/1392853
-        clients._image = None
-    return image.id
+        image = _upload_image(client, image_name, image_dest)
+    return image['id']
 
 
 def create_tempest_networks(clients, conf, has_neutron, public_network_id):
@@ -527,7 +552,7 @@ def create_tempest_networks(clients, conf, has_neutron, public_network_id):
     # TODO(tkammer): separate logic to different func of Nova network
     # vs Neutron
     if has_neutron:
-        client = clients.network
+        client = clients.get_neutron_client()
 
         # if user supplied the network we should use
         if public_network_id:
@@ -564,9 +589,10 @@ def create_tempest_networks(clients, conf, has_neutron, public_network_id):
         conf.set('network', 'public_network_id', public_network_id)
 
     else:
-        networks = clients.compute.networks.list()
+        client = clients.get_nova_net_client()
+        networks = client.list_networks()
         if networks:
-            label = networks[0].label
+            label = networks[0]['label']
 
     if label:
         conf.set('compute', 'fixed_network_name', label)
@@ -670,23 +696,26 @@ def _download_file(url, destination):
         dest.write(data)
 
 
-def _upload_image(image_client, name, path):
+def _upload_image(client, name, path):
     """Upload qcow2 image file from `path` into Glance with `name."""
     LOG.info("Uploading image '%s' from '%s'", name, os.path.abspath(path))
     with open(path) as data:
-        return image_client.images.create(name=name, disk_format="qcow2",
-                                          container_format="bare",
-                                          data=data, is_public="true")
+        image = client.create_image(name=name,
+                                    disk_format="qcow2",
+                                    container_format="bare",
+                                    visibility='public')
+        client.store_image(image['id'], data)
+        return image
 
 
-def _find_image(image_client, image_id, image_name):
+def _find_image(client, image_id, image_name):
     """Find image by ID or name (the image client doesn't have this)."""
     if image_id:
         try:
-            return image_client.images.get(image_id)
-        except glance_client.exc.HTTPNotFound:
+            return client.get_image(image_id)
+        except exceptions.NotFound:
             pass
-    found = filter(lambda x: x.name == image_name, image_client.images.list())
+    found = filter(lambda x: x['name'] == image_name, client.image_list())
     if found:
         return found[0]
     else:
