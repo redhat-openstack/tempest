@@ -52,13 +52,9 @@ def attr(*args, **kwargs):
     def decorator(f):
         if 'type' in kwargs and isinstance(kwargs['type'], str):
             f = testtools.testcase.attr(kwargs['type'])(f)
-            if kwargs['type'] == 'smoke':
-                f = testtools.testcase.attr('gate')(f)
         elif 'type' in kwargs and isinstance(kwargs['type'], list):
             for attr in kwargs['type']:
                 f = testtools.testcase.attr(attr)(f)
-                if attr == 'smoke':
-                    f = testtools.testcase.attr('gate')(f)
         return f
 
     return decorator
@@ -232,6 +228,9 @@ class BaseTestCase(testtools.testcase.WithAttributes,
     setUpClassCalled = False
     _service = None
 
+    # NOTE(andreaf) credentials holds a list of the credentials to be allocated
+    # at class setup time. Credential types can be 'primary', 'alt' or 'admin'
+    credentials = []
     network_resources = {}
 
     # NOTE(sdague): log_format is defined inline here instead of using the oslo
@@ -317,15 +316,37 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         If one is really needed it may be implemented either in the
         resource_setup or at test level.
         """
-        pass
+        if 'admin' in cls.credentials and not credentials.is_admin_available():
+            msg = "Missing Identity Admin API credentials in configuration."
+            raise cls.skipException(msg)
+        if 'alt' is cls.credentials and not credentials.is_alt_available():
+            msg = "Missing a 2nd set of API credentials in configuration."
+            raise cls.skipException(msg)
 
     @classmethod
     def setup_credentials(cls):
-        """Allocate credentials and the client managers from them."""
-        # TODO(andreaf) There is a fair amount of code that could me moved from
-        # base / test classes in here. Ideally tests should be able to only
-        # specify a list of (additional) credentials the need to use.
-        pass
+        """Allocate credentials and the client managers from them.
+        A test class that requires network resources must override
+        setup_credentials and defined the required resources before super
+        is invoked.
+        """
+        for credentials_type in cls.credentials:
+            # This may raise an exception in case credentials are not available
+            # In that case we want to let the exception through and the test
+            # fail accordingly
+            manager = cls.get_client_manager(
+                credential_type=credentials_type)
+            setattr(cls, 'os_%s' % credentials_type, manager)
+            # Setup some common aliases
+            # TODO(andreaf) The aliases below are a temporary hack
+            # to avoid changing too much code in one patch. They should
+            # be removed eventually
+            if credentials_type == 'primary':
+                cls.os = cls.manager = cls.os_primary
+            if credentials_type == 'admin':
+                cls.os_adm = cls.admin_manager = cls.os_admin
+            if credentials_type == 'alt':
+                cls.alt_manager = cls.os_alt
 
     @classmethod
     def setup_clients(cls):
@@ -379,7 +400,8 @@ class BaseTestCase(testtools.testcase.WithAttributes,
                                                    level=None))
 
     @classmethod
-    def get_client_manager(cls, identity_version=None):
+    def get_client_manager(cls, identity_version=None,
+                           credential_type='primary'):
         """
         Returns an OpenStack client manager
         """
@@ -394,7 +416,12 @@ class BaseTestCase(testtools.testcase.WithAttributes,
                 identity_version=identity_version
             )
 
-        creds = cls.isolated_creds.get_primary_creds()
+        credentials_method = 'get_%s_creds' % credential_type
+        if hasattr(cls.isolated_creds, credentials_method):
+            creds = getattr(cls.isolated_creds, credentials_method)()
+        else:
+            raise exceptions.InvalidCredentials(
+                "Invalid credentials type %s" % credential_type)
         os = clients.Manager(credentials=creds, service=cls._service)
         return os
 
@@ -405,15 +432,6 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         """
         if hasattr(cls, 'isolated_creds'):
             cls.isolated_creds.clear_isolated_creds()
-
-    @classmethod
-    def _get_identity_admin_client(cls):
-        """
-        Returns an instance of the Identity Admin API client
-        """
-        os = clients.AdminManager(service=cls._service)
-        admin_client = os.identity_client
-        return admin_client
 
     @classmethod
     def set_network_resources(cls, network=False, router=False, subnet=False,
@@ -445,7 +463,12 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         # Make sure isolated_creds exists and get a network client
         networks_client = cls.get_client_manager().networks_client
         isolated_creds = getattr(cls, 'isolated_creds', None)
-        if credentials.is_admin_available():
+        # In case of nova network, isolated tenants are not able to list the
+        # network configured in fixed_network_name, even if the can use it
+        # for their servers, so using an admin network client to validate
+        # the network name
+        if (not CONF.service_available.neutron and
+                credentials.is_admin_available()):
             admin_creds = isolated_creds.get_admin_creds()
             networks_client = clients.Manager(admin_creds).networks_client
         return fixed_network.get_tenant_network(isolated_creds,
@@ -465,10 +488,8 @@ class NegativeAutoTest(BaseTestCase):
     @classmethod
     def setUpClass(cls):
         super(NegativeAutoTest, cls).setUpClass()
-        os = cls.get_client_manager()
+        os = cls.get_client_manager(credential_type='primary')
         cls.client = os.negative_client
-        os_admin = clients.AdminManager(service=cls._service)
-        cls.admin_client = os_admin.negative_client
 
     @staticmethod
     def load_tests(*args):
@@ -596,7 +617,13 @@ class NegativeAutoTest(BaseTestCase):
                             "mechanism")
 
         if "admin_client" in description and description["admin_client"]:
-            client = self.admin_client
+            if not credentials.is_admin_available():
+                msg = ("Missing Identity Admin API credentials in"
+                       "configuration.")
+                raise self.skipException(msg)
+            creds = self.isolated_creds.get_admin_creds()
+            os_adm = clients.Manager(credentials=creds)
+            client = os_adm.negative_client
         else:
             client = self.client
         resp, resp_body = client.send_request(method, new_url,
@@ -656,7 +683,7 @@ def SimpleNegativeAutoTest(klass):
     """
     This decorator registers a test function on basis of the class name.
     """
-    @attr(type=['negative', 'gate'])
+    @attr(type=['negative'])
     def generic_test(self):
         if hasattr(self, '_schema'):
             self.execute(self._schema)

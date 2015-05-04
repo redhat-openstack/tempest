@@ -23,7 +23,6 @@ from tempest_lib.common.utils import data_utils
 from tempest_lib import exceptions as lib_exc
 
 from tempest import clients
-from tempest.common import credentials
 from tempest.common import fixed_network
 from tempest.common.utils.linux import remote_client
 from tempest import config
@@ -39,16 +38,7 @@ LOG = log.getLogger(__name__)
 class ScenarioTest(tempest.test.BaseTestCase):
     """Base class for scenario tests. Uses tempest own clients. """
 
-    @classmethod
-    def setup_credentials(cls):
-        super(ScenarioTest, cls).setup_credentials()
-        # TODO(andreaf) Some of the code from this resource_setup could be
-        # moved into `BaseTestCase`
-        cls.isolated_creds = credentials.get_isolated_credentials(
-            cls.__name__, network_resources=cls.network_resources)
-        cls.manager = clients.Manager(
-            credentials=cls.credentials()
-        )
+    credentials = ['primary']
 
     @classmethod
     def setup_clients(cls):
@@ -71,21 +61,6 @@ class ScenarioTest(tempest.test.BaseTestCase):
         cls.network_client = cls.manager.network_client
         # Heat client
         cls.orchestration_client = cls.manager.orchestration_client
-
-    @classmethod
-    def credentials(cls):
-        return cls.isolated_creds.get_primary_creds()
-
-    @classmethod
-    def alt_credentials(cls):
-        return cls.isolated_creds.get_alt_creds()
-
-    @classmethod
-    def admin_credentials(cls):
-        try:
-            return cls.isolated_creds.get_admin_creds()
-        except NotImplementedError:
-            raise cls.skipException('Admin Credentials are not available')
 
     # ## Methods to handle sync and async deletes
 
@@ -186,7 +161,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
         if create_kwargs is None:
             create_kwargs = {}
         network = self.get_tenant_network()
-        fixed_network.set_networks_kwarg(network, create_kwargs)
+        create_kwargs = fixed_network.set_networks_kwarg(network,
+                                                         create_kwargs)
 
         LOG.debug("Creating a server (name: %s, image: %s, flavor: %s)",
                   name, image, flavor)
@@ -234,7 +210,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         self.volumes_client.wait_for_volume_status(volume['id'], 'available')
         # The volume retrieved on creation has a non-up-to-date status.
         # Retrieval after it becomes active ensures correct details.
-        volume = self.volumes_client.get_volume(volume['id'])
+        volume = self.volumes_client.show_volume(volume['id'])
         return volume
 
     def _create_loginable_secgroup_rule(self, secgroup_id=None):
@@ -308,20 +284,33 @@ class ScenarioTest(tempest.test.BaseTestCase):
         if isinstance(server_or_ip, six.string_types):
             ip = server_or_ip
         else:
-            addr = server_or_ip['addresses'][CONF.compute.network_for_ssh][0]
-            ip = addr['addr']
+            addrs = server_or_ip['addresses'][CONF.compute.network_for_ssh]
+            try:
+                ip = (addr['addr'] for addr in addrs if
+                      netaddr.valid_ipv4(addr['addr'])).next()
+            except StopIteration:
+                raise lib_exc.NotFound("No IPv4 addresses to use for SSH to "
+                                       "remote server.")
 
         if username is None:
             username = CONF.scenario.ssh_user
-        if private_key is None:
-            private_key = self.keypair['private_key']
+        # Set this with 'keypair' or others to log in with keypair or
+        # username/password.
+        if CONF.compute.ssh_auth_method == 'keypair':
+            password = None
+            if private_key is None:
+                private_key = self.keypair['private_key']
+        else:
+            password = CONF.compute.image_ssh_password
+            private_key = None
         linux_client = remote_client.RemoteClient(ip, username,
-                                                  pkey=private_key)
+                                                  pkey=private_key,
+                                                  password=password)
         try:
             linux_client.validate_authentication()
         except Exception:
             LOG.exception('Initializing SSH connection to %s failed' % ip)
-            # If we don't explicitely set for which servers we want to
+            # If we don't explicitly set for which servers we want to
             # log the console output then all the servers will be logged.
             # See the definition of _log_console_output()
             self._log_console_output(log_console_of_servers)
@@ -401,7 +390,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         # Compute client
         _images_client = self.images_client
         if name is None:
-            name = data_utils.rand_name('scenario-snapshot-')
+            name = data_utils.rand_name('scenario-snapshot')
         LOG.debug("Creating a snapshot image for server: %s", server['name'])
         image = _images_client.create_image(server['id'], name)
         image_id = image.response['location'].split('images/')[1]
@@ -425,14 +414,14 @@ class ScenarioTest(tempest.test.BaseTestCase):
         self.assertEqual(self.volume['id'], volume['id'])
         self.volumes_client.wait_for_volume_status(volume['id'], 'in-use')
         # Refresh the volume after the attachment
-        self.volume = self.volumes_client.get_volume(volume['id'])
+        self.volume = self.volumes_client.show_volume(volume['id'])
 
     def nova_volume_detach(self):
         self.servers_client.detach_volume(self.server['id'], self.volume['id'])
         self.volumes_client.wait_for_volume_status(self.volume['id'],
                                                    'available')
 
-        volume = self.volumes_client.get_volume(self.volume['id'])
+        volume = self.volumes_client.show_volume(self.volume['id'])
         self.assertEqual('available', volume['status'])
 
     def rebuild_server(self, server_id, image=None,
@@ -536,19 +525,13 @@ class NetworkScenarioTest(ScenarioTest):
 
     """
 
+    credentials = ['primary', 'admin']
+
     @classmethod
     def skip_checks(cls):
         super(NetworkScenarioTest, cls).skip_checks()
         if not CONF.service_available.neutron:
             raise cls.skipException('Neutron not available')
-        if not credentials.is_admin_available():
-            msg = ("Missing Identity Admin API credentials in configuration.")
-            raise cls.skipException(msg)
-
-    @classmethod
-    def setup_credentials(cls):
-        super(NetworkScenarioTest, cls).setup_credentials()
-        cls.admin_manager = clients.Manager(cls.admin_credentials())
 
     @classmethod
     def resource_setup(cls):
@@ -680,6 +663,8 @@ class NetworkScenarioTest(ScenarioTest):
 
     def _get_network_by_name(self, network_name):
         net = self._list_networks(name=network_name)
+        self.assertNotEqual(len(net), 0,
+                            "Unable to get network by name: %s" % network_name)
         return net_resources.AttributeDict(net[0])
 
     def create_floating_ip(self, thing, external_network_id=None,
@@ -1049,6 +1034,9 @@ class NetworkScenarioTest(ScenarioTest):
             # not (the current baremetal case). Likely can be removed when
             # test account mgmt is reworked:
             # https://blueprints.launchpad.net/tempest/+spec/test-accounts
+            if not CONF.compute.fixed_network_name:
+                m = 'fixed_network_name must be specified in config'
+                raise exceptions.InvalidConfiguration(m)
             network = self._get_network_by_name(
                 CONF.compute.fixed_network_name)
             router = None
@@ -1151,6 +1139,9 @@ class BaremetalProvisionStates(object):
 
 
 class BaremetalScenarioTest(ScenarioTest):
+
+    credentials = ['primary', 'admin']
+
     @classmethod
     def skip_checks(cls):
         super(BaremetalScenarioTest, cls).skip_checks()
@@ -1160,14 +1151,10 @@ class BaremetalScenarioTest(ScenarioTest):
             raise cls.skipException(msg)
 
     @classmethod
-    def setup_credentials(cls):
-        super(BaremetalScenarioTest, cls).setup_credentials()
+    def setup_clients(cls):
+        super(BaremetalScenarioTest, cls).setup_clients()
 
-        # use an admin client manager for baremetal client
-        manager = clients.Manager(
-            credentials=cls.admin_credentials()
-        )
-        cls.baremetal_client = manager.baremetal_client
+        cls.baremetal_client = cls.admin_manager.baremetal_client
 
     @classmethod
     def resource_setup(cls):
@@ -1289,18 +1276,12 @@ class EncryptionScenarioTest(ScenarioTest):
     Base class for encryption scenario tests
     """
 
-    @classmethod
-    def skip_checks(cls):
-        super(EncryptionScenarioTest, cls).skip_checks()
-        if not credentials.is_admin_available():
-            msg = ("Missing Identity Admin API credentials in configuration.")
-            raise cls.skipException(msg)
+    credentials = ['primary', 'admin']
 
     @classmethod
     def setup_clients(cls):
         super(EncryptionScenarioTest, cls).setup_clients()
-        admin_manager = clients.Manager(cls.admin_credentials())
-        cls.admin_volume_types_client = admin_manager.volume_types_client
+        cls.admin_volume_types_client = cls.os_adm.volume_types_client
 
     def _wait_for_volume_status(self, status):
         self.status_timeout(
@@ -1317,7 +1298,7 @@ class EncryptionScenarioTest(ScenarioTest):
             client = self.admin_volume_types_client
         if not name:
             name = 'generic'
-        randomized_name = data_utils.rand_name('scenario-type-' + name + '-')
+        randomized_name = data_utils.rand_name('scenario-type-' + name)
         LOG.debug("Creating a volume type: %s", randomized_name)
         body = client.create_volume_type(
             randomized_name)

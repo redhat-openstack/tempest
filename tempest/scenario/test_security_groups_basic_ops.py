@@ -92,6 +92,8 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
             its own router connected to the public network
     """
 
+    credentials = ['primary', 'alt', 'admin']
+
     class TenantProperties(object):
         """
         helper class to save tenant details
@@ -125,6 +127,10 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         if CONF.baremetal.driver_enabled:
             msg = ('Not currently supported by baremetal.')
             raise cls.skipException(msg)
+        if CONF.network.port_vnic_type in ['direct', 'macvtap']:
+            msg = ('Not currently supported when using vnic_type'
+                   ' direct or macvtap')
+            raise cls.skipException(msg)
         if not (CONF.network.tenant_networks_reachable or
                 CONF.network.public_network_id):
             msg = ('Either tenant_networks_reachable must be "true", or '
@@ -139,9 +145,6 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         # TODO(mnewby) Consider looking up entities as needed instead
         # of storing them as collections on the class.
 
-        # get credentials for secondary tenant
-        cls.alt_creds = cls.isolated_creds.get_alt_creds()
-        cls.alt_manager = clients.Manager(cls.alt_creds)
         # Credentials from the manager are filled with both IDs and Names
         cls.alt_creds = cls.alt_manager.credentials
 
@@ -150,7 +153,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         super(TestSecurityGroupsBasicOps, cls).resource_setup()
         cls.floating_ips = {}
         cls.tenants = {}
-        creds = cls.credentials()
+        creds = cls.manager.credentials
         cls.primary_tenant = cls.TenantProperties(creds)
         cls.alt_tenant = cls.TenantProperties(cls.alt_creds)
         for tenant in [cls.primary_tenant, cls.alt_tenant]:
@@ -256,7 +259,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
 
     def _create_tenant_servers(self, tenant, num=1):
         for i in range(num):
-            name = 'server-{tenant}-gen-{num}-'.format(
+            name = 'server-{tenant}-gen-{num}'.format(
                    tenant=tenant.creds.tenant_name,
                    num=i
             )
@@ -271,7 +274,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         workaround ip namespace
         """
         secgroups = tenant.security_groups.values()
-        name = 'server-{tenant}-access_point-'.format(
+        name = 'server-{tenant}-access_point'.format(
             tenant=tenant.creds.tenant_name)
         name = data_utils.rand_name(name)
         server = self._create_server(name, tenant,
@@ -434,7 +437,6 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         subnet_id = tenant.subnet.id
         self.assertIn((subnet_id, server_ip, mac_addr), port_detail_list)
 
-    @test.attr(type='smoke')
     @test.idempotent_id('e79f879e-debb-440c-a7e4-efeda05b6848')
     @test.services('compute', 'network')
     def test_cross_tenant_traffic(self):
@@ -456,7 +458,6 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
                 self._log_console_output(servers=tenant.servers)
             raise
 
-    @test.attr(type='smoke')
     @test.idempotent_id('63163892-bbf6-4249-aa12-d5ea1f8f421b')
     @test.services('compute', 'network')
     def test_in_tenant_traffic(self):
@@ -471,7 +472,6 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
                 self._log_console_output(servers=tenant.servers)
             raise
 
-    @test.attr(type='smoke')
     @test.idempotent_id('f4d556d7-1526-42ad-bafb-6bebf48568f6')
     @test.services('compute', 'network')
     def test_port_update_new_security_group(self):
@@ -497,7 +497,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         new_tenant.security_groups.update(new_sg=new_sg)
 
         # Create server with default security group
-        name = 'server-{tenant}-gen-1-'.format(
+        name = 'server-{tenant}-gen-1'.format(
                tenant=new_tenant.creds.tenant_name
         )
         name = data_utils.rand_name(name)
@@ -523,7 +523,6 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
                 self._log_console_output(servers=tenant.servers)
             raise
 
-    @test.attr(type='smoke')
     @test.idempotent_id('d2f77418-fcc4-439d-b935-72eca704e293')
     @test.services('compute', 'network')
     def test_multiple_security_groups(self):

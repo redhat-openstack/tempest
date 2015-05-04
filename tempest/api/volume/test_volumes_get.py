@@ -60,7 +60,7 @@ class VolumesV2GetTest(base.BaseVolumeTest):
         self.assertTrue(volume['id'] is not None,
                         "Field volume id is empty or not found.")
         # Get Volume information
-        fetched_volume = self.client.get_volume(volume['id'])
+        fetched_volume = self.client.show_volume(volume['id'])
         self.assertEqual(v_name,
                          fetched_volume[self.name_field],
                          'The fetched Volume name is different '
@@ -92,8 +92,8 @@ class VolumesV2GetTest(base.BaseVolumeTest):
         # Assert response body for update_volume method
         self.assertEqual(new_v_name, update_volume[self.name_field])
         self.assertEqual(new_desc, update_volume[self.descrip_field])
-        # Assert response body for get_volume method
-        updated_volume = self.client.get_volume(volume['id'])
+        # Assert response body for show_volume method
+        updated_volume = self.client.show_volume(volume['id'])
         self.assertEqual(volume['id'], updated_volume['id'])
         self.assertEqual(new_v_name, updated_volume[self.name_field])
         self.assertEqual(new_desc, updated_volume[self.descrip_field])
@@ -133,7 +133,6 @@ class VolumesV2GetTest(base.BaseVolumeTest):
     def test_volume_create_get_update_delete_from_image(self):
         self._volume_create_get_update_delete(imageRef=CONF.compute.image_ref)
 
-    @test.attr(type='gate')
     @test.idempotent_id('3f591b4a-7dc6-444c-bd51-77469506b3a1')
     def test_volume_create_get_update_delete_as_clone(self):
         origin = self.create_volume()

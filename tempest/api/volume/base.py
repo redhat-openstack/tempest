@@ -17,7 +17,6 @@ from oslo_log import log as logging
 from tempest_lib.common.utils import data_utils
 from tempest_lib import exceptions as lib_exc
 
-from tempest import clients
 from tempest.common import fixed_network
 from tempest import config
 from tempest import exceptions
@@ -32,6 +31,7 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
     """Base test case class for all Cinder API tests."""
 
     _api_version = 2
+    credentials = ['primary']
 
     @classmethod
     def skip_checks(cls):
@@ -56,12 +56,10 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
     def setup_credentials(cls):
         cls.set_network_resources()
         super(BaseVolumeTest, cls).setup_credentials()
-        cls.os = cls.get_client_manager()
 
     @classmethod
     def setup_clients(cls):
         super(BaseVolumeTest, cls).setup_clients()
-
         cls.servers_client = cls.os.servers_client
         cls.networks_client = cls.os.networks_client
 
@@ -174,15 +172,7 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
 class BaseVolumeAdminTest(BaseVolumeTest):
     """Base test case class for all Volume Admin API tests."""
 
-    @classmethod
-    def setup_credentials(cls):
-        super(BaseVolumeAdminTest, cls).setup_credentials()
-        try:
-            cls.adm_creds = cls.isolated_creds.get_admin_creds()
-            cls.os_adm = clients.Manager(credentials=cls.adm_creds)
-        except NotImplementedError:
-            msg = "Missing Volume Admin API credentials in configuration."
-            raise cls.skipException(msg)
+    credentials = ['primary', 'admin']
 
     @classmethod
     def setup_clients(cls):
