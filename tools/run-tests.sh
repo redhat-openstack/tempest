@@ -3,9 +3,11 @@ set -e
 set -o pipefail
 
 usage() {
-    echo "$(basename $0) [--skip-file <file>] [--<any-testr-long-opts>, ...]  [test-regex-to-include ...]"
+    echo "$(basename $0) [--skip-file <file>] [--junitxml] [--<any-testr-long-opts>, ...]  [test-regex-to-include ...]"
     echo ""
-    echo "Format of skip file:\n"
+    echo "Wrapper for calling testr to run tempest."
+    echo ""
+    echo "Format of skip file:"
     echo "Whitelist is applied first. The blacklist is executed against the set
  of tests returned by the whitelist.
 If whitelist is empty, all available tests are fed to blacklist.
@@ -31,17 +33,23 @@ is implemented as:
     +tempest\.scenario
     -tempest\.api\.volume.*
 "
+    echo ""
+    echo "To generate a tempest.xml file with the --junitxml flag you will need to install the subunit-filters package."
     [[ -z "$1" ]] || exit $1;
 }
 
 t2skip_args=()
 skip_file=/dev/null
 testr_args=("--parallel")
+junitxml=false
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -h|--help)
             usage 0
+            ;;
+        --junitxml)
+            junitxml=true;
             ;;
         # testr args (first with value, then bool flags)
         --concurrency|--load-list)
@@ -75,5 +83,15 @@ if [ ! -d .testrepository ]; then
     testr init
 fi
 
-testr run "${testr_args[@]}" --subunit $($(dirname $0)/tests2skip.py "${t2skip_args[@]}") | tee >( subunit2junitxml --output-to=tempest.xml ) | subunit-trace --no-failure-debug -f
-
+if $junitxml; then
+    if ! command -v subunit2junitxml >/dev/null 2>&1 ; then
+        echo "You don't have subunit2junitxml command available, please install the subunit-filters package." >&2
+        exit 1
+    fi
+    testr run "${testr_args[@]}" --subunit $($(dirname $0)/tests2skip.py "${t2skip_args[@]}") | \
+        tee >( subunit2junitxml --output-to=tempest.xml ) | \
+        subunit-trace --no-failure-debug -f
+else
+    testr run "${testr_args[@]}" --subunit $($(dirname $0)/tests2skip.py "${t2skip_args[@]}") | \
+        subunit-trace --no-failure-debug -f
+fi
