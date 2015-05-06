@@ -31,14 +31,12 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
     def _delete_volume_type(self, volume_type_id):
         self.volume_types_client.delete_volume_type(volume_type_id)
 
-    @test.attr(type='smoke')
     @test.idempotent_id('9d9b28e3-1b2e-4483-a2cc-24aa0ea1de54')
     def test_volume_type_list(self):
         # List Volume types.
         body = self.volume_types_client.list_volume_types()
         self.assertIsInstance(body, list)
 
-    @test.attr(type='smoke')
     @test.idempotent_id('c03cc62c-f4e9-4623-91ec-64ce2f9c1260')
     def test_volume_crud_with_volume_type_and_extra_specs(self):
         # Create/update/get/delete volume with volume_type and extra spec.
@@ -77,7 +75,7 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
         self.volumes_client.wait_for_volume_status(volume['id'], 'available')
 
         # Get volume details and Verify
-        fetched_volume = self.volumes_client.get_volume(volume['id'])
+        fetched_volume = self.volumes_client.show_volume(volume['id'])
         self.assertEqual(volume_types[1]['name'],
                          fetched_volume['volume_type'],
                          'The fetched Volume type is different '
@@ -89,7 +87,6 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
                          'The fetched Volume is different '
                          'from the created Volume')
 
-    @test.attr(type='smoke')
     @test.idempotent_id('4e955c3b-49db-4515-9590-0c99f8e471ad')
     def test_volume_type_create_get_delete(self):
         # Create/get volume type.
@@ -110,7 +107,7 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
                          "to the requested name")
         self.assertTrue(body['id'] is not None,
                         "Field volume_type id is empty or not found.")
-        fetched_volume_type = self.volume_types_client.get_volume_type(
+        fetched_volume_type = self.volume_types_client.show_volume_type(
             body['id'])
         self.assertEqual(name, fetched_volume_type['name'],
                          'The fetched Volume_type is different '
@@ -122,7 +119,6 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
                          'The fetched Volume_type is different '
                          'from the created Volume_type')
 
-    @test.attr(type='smoke')
     @test.idempotent_id('7830abd0-ff99-4793-a265-405684a54d46')
     def test_volume_type_encryption_create_get_delete(self):
         # Create/get/delete encryption type.
@@ -146,7 +142,7 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
 
         # Get encryption type
         fetched_encryption_type = (
-            self.volume_types_client.get_encryption_type(
+            self.volume_types_client.show_encryption_type(
                 encryption_type['volume_type_id']))
         self.assertEqual(provider,
                          fetched_encryption_type['provider'],
@@ -164,7 +160,7 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
                     "type": "encryption-type"}
         self.volume_types_client.wait_for_resource_deletion(resource)
         deleted_encryption_type = (
-            self.volume_types_client.get_encryption_type(
+            self.volume_types_client.show_encryption_type(
                 encryption_type['volume_type_id']))
         self.assertEmpty(deleted_encryption_type)
 

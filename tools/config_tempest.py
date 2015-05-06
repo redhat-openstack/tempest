@@ -48,7 +48,8 @@ from tempest_lib import exceptions
 # the path starting at cwd.
 sys.path.insert(0, os.getcwd())
 
-import tempest.auth
+import tempest_lib.auth
+import tempest.config
 from tempest.common import api_discovery
 from tempest.services.compute.json import flavors_client
 from tempest.services.compute.json import networks_client as nova_net_client
@@ -270,7 +271,7 @@ class ClientManager(object):
         }
         compute_params.update(default_params)
 
-        _creds = tempest.auth.KeystoneV2Credentials(
+        _creds = tempest_lib.auth.KeystoneV2Credentials(
             username=username,
             password=password,
             tenant_name=tenant_name)
@@ -280,7 +281,7 @@ class ClientManager(object):
                                    'disable_ssl_certificate_validation'),
             'ca_certs': conf.get_defaulted('identity', 'ca_certificates_file')
         }
-        _auth = tempest.auth.KeystoneV2AuthProvider(
+        _auth = tempest_lib.auth.KeystoneV2AuthProvider(
             _creds, conf.get_defaulted('identity', 'uri'),
             **auth_provider_params)
         self.auth_provider = _auth

@@ -13,7 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest import auth
+from tempest_lib import auth
+
 from tempest.common import cred_provider
 from tempest import config
 from tempest import exceptions
@@ -46,8 +47,14 @@ class Manager(object):
         # Check if passed or default credentials are valid
         if not self.credentials.is_valid():
             raise exceptions.InvalidCredentials()
+        # Tenant isolation creates TestResources, but Accounts and some tests
+        # creates Credentials
+        if isinstance(credentials, cred_provider.TestResources):
+            creds = self.credentials.credentials
+        else:
+            creds = self.credentials
         # Creates an auth provider for the credentials
-        self.auth_provider = get_auth_provider(self.credentials)
+        self.auth_provider = get_auth_provider(creds)
         # FIXME(andreaf) unused
         self.client_attr_names = []
 

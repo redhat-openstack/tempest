@@ -50,7 +50,7 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         if with_detail:
             fetched_snap_list = \
                 self.snapshots_client.\
-                list_snapshots_with_detail(params=params)
+                list_snapshots(detail=True, params=params)
         else:
             fetched_snap_list = \
                 self.snapshots_client.list_snapshots(params=params)
@@ -62,7 +62,6 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
                       ('details' if with_detail else '', key)
                 self.assertEqual(params[key], snap[key], msg)
 
-    @test.attr(type='gate')
     @test.idempotent_id('b467b54c-07a4-446d-a1cf-651dedcc3ff1')
     @test.services('compute')
     def test_snapshot_create_with_volume_in_use(self):
@@ -89,7 +88,6 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         self.snapshots_client.wait_for_resource_deletion(snapshot['id'])
         self.snapshots.remove(snapshot)
 
-    @test.attr(type='gate')
     @test.idempotent_id('2a8abbe4-d871-46db-b049-c41f5af8216e')
     def test_snapshot_create_get_list_update_delete(self):
         # Create a snapshot
@@ -98,7 +96,7 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         snapshot = self.create_snapshot(self.volume_origin['id'], **params)
 
         # Get the snap and check for some of its details
-        snap_get = self.snapshots_client.get_snapshot(snapshot['id'])
+        snap_get = self.snapshots_client.show_snapshot(snapshot['id'])
         self.assertEqual(self.volume_origin['id'],
                          snap_get['volume_id'],
                          "Referred volume origin mismatch")
@@ -119,9 +117,9 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         # Assert response body for update_snapshot method
         self.assertEqual(new_s_name, update_snapshot[self.name_field])
         self.assertEqual(new_desc, update_snapshot[self.descrip_field])
-        # Assert response body for get_snapshot method
+        # Assert response body for show_snapshot method
         updated_snapshot = \
-            self.snapshots_client.get_snapshot(snapshot['id'])
+            self.snapshots_client.show_snapshot(snapshot['id'])
         self.assertEqual(new_s_name, updated_snapshot[self.name_field])
         self.assertEqual(new_desc, updated_snapshot[self.descrip_field])
 
@@ -130,7 +128,6 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
         self.snapshots_client.wait_for_resource_deletion(snapshot['id'])
         self.snapshots.remove(snapshot)
 
-    @test.attr(type='gate')
     @test.idempotent_id('59f41f43-aebf-48a9-ab5d-d76340fab32b')
     def test_snapshots_list_with_params(self):
         """list snapshots with params."""
@@ -152,7 +149,6 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
                   self.name_field: snapshot[self.name_field]}
         self._list_by_param_values_and_assert(params)
 
-    @test.attr(type='gate')
     @test.idempotent_id('220a1022-1fcd-4a74-a7bd-6b859156cda2')
     def test_snapshots_list_details_with_params(self):
         """list snapshot details with params."""
@@ -172,7 +168,6 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
                   self.name_field: snapshot[self.name_field]}
         self._list_by_param_values_and_assert(params, with_detail=True)
 
-    @test.attr(type='gate')
     @test.idempotent_id('677863d1-3142-456d-b6ac-9924f667a7f4')
     def test_volume_from_snapshot(self):
         # Create a temporary snap using wrapper method from base, then
