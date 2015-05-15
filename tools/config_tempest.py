@@ -580,7 +580,6 @@ def create_tempest_networks(clients, conf, has_neutron, public_network_id):
             network_list = client.list_networks()
             for network in network_list['networks']:
                 if network['id'] == public_network_id:
-                    label = network['name']
                     break
             else:
                 raise ValueError('provided network id: {0} was not found.'
@@ -594,7 +593,6 @@ def create_tempest_networks(clients, conf, has_neutron, public_network_id):
                 if network['router:external'] and network['subnets']:
                     LOG.info("Found network, using: {0}".format(network['id']))
                     public_network_id = network['id']
-                    label = network['name']
                     break
 
             # Couldn't find an existing external network
@@ -613,7 +611,7 @@ def create_tempest_networks(clients, conf, has_neutron, public_network_id):
 
     if label:
         conf.set('compute', 'fixed_network_name', label)
-    else:
+    elif not has_neutron:
         raise Exception('fixed_network_name could not be discovered and'
                         ' must be specified')
 
