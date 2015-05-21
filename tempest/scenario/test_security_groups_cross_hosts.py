@@ -15,6 +15,7 @@
 
 import logging
 
+LOG = logging.getLogger(__name__)
 from tempest.scenario import test_security_groups_basic_ops as base
 
 
