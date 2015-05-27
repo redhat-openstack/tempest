@@ -39,18 +39,17 @@ import ConfigParser
 import logging
 import os
 import shutil
-import subprocess
 import sys
 import urllib2
 
+import tempest_lib.auth
 from tempest_lib import exceptions
 # Since tempest can be configured in different directories, we need to use
 # the path starting at cwd.
 sys.path.insert(0, os.getcwd())
 
-import tempest_lib.auth
-import tempest.config
 from tempest.common import api_discovery
+import tempest.config
 from tempest.services.compute.json import flavors_client
 from tempest.services.compute.json import networks_client as nova_net_client
 from tempest.services.compute.json import servers_client
@@ -64,8 +63,8 @@ LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 TEMPEST_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 DEFAULTS_FILE = os.path.join(TEMPEST_DIR, "etc", "default-overrides.conf")
-DEFAULT_IMAGE = "http://download.cirros-cloud.net/0.3.1/" \
-                "cirros-0.3.1-x86_64-disk.img"
+DEFAULT_IMAGE = ("http://download.cirros-cloud.net/0.3.1/"
+                 "cirros-0.3.1-x86_64-disk.img")
 DEFAULT_IMAGE_FORMAT = 'qcow2'
 
 VALID_RELEASES = ["rhelosp7", "rhelosp6", "rhelosp5", "icehouse",
@@ -156,7 +155,6 @@ def main():
 
     configure_discovered_services(conf, services)
     configure_boto(conf, services)
-    configure_cli(conf)
     configure_horizon(conf)
     LOG.info("Creating configuration file %s" % os.path.abspath(args.out))
     with open(args.out, 'w') as f:
@@ -307,8 +305,8 @@ class ClientManager(object):
 
         def create_nova_network_client():
             if self.networks is None:
-                self.networks = \
-                    nova_net_client.NetworksClientJSON(_auth, **compute_params)
+                self.networks = nova_net_client.NetworksClientJSON(
+                    _auth, **compute_params)
             return self.networks
 
         def create_neutron_client():
@@ -624,22 +622,6 @@ def configure_boto(conf, services):
         conf.set('boto', 's3_url', services['s3']['url'])
 
 
-def configure_cli(conf):
-    """Set cli_dir and others for Tempest CLI tests.
-
-    Find locally installed "nova" and "nova-manage" commands and configure CLI
-    based on their availability and paths.
-    """
-    cli_dir = get_program_dir("nova")
-    if cli_dir:
-        conf.set('cli', 'enabled', 'True')
-        conf.set('cli', 'cli_dir', cli_dir)
-    else:
-        conf.set('cli', 'enabled', 'False')
-    nova_manage_found = bool(get_program_dir("nova-manage"))
-    conf.set('cli', 'has_manage', str(nova_manage_found))
-
-
 def configure_horizon(conf):
     """Derive the horizon URIs from the identity's URI."""
     uri = conf.get('identity', 'uri')
@@ -687,20 +669,6 @@ def configure_discovered_services(conf, services):
             is_supported = any(version in item
                                for item in supported_versions)
             conf.set(section, 'api_' + version, str(is_supported))
-
-
-def get_program_dir(program):
-    """Get directory path of the external program.
-
-    :param program: name of program, e.g. 'ls' or 'cat'
-    :returns: None if it wasn't found, '/path/to/it/' if found
-    """
-    devnull = open(os.devnull, 'w')
-    try:
-        path = subprocess.check_output(["which", program], stderr=devnull)
-        return os.path.dirname(path.strip())
-    except subprocess.CalledProcessError:
-        return None
 
 
 def _download_file(url, destination):
