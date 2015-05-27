@@ -45,9 +45,9 @@
 
 # (Optional) Enables or disables syslog rfc5424 format for logging. If
 # enabled, prefixes the MSG part of the syslog message with APP-NAME
-# (RFC5424). The format without the APP-NAME is deprecated in I, and
-# will be removed in J. (boolean value)
-#use_syslog_rfc_format = false
+# (RFC5424). The format without the APP-NAME is deprecated in K, and
+# will be removed in L, along with this option. (boolean value)
+#use_syslog_rfc_format = true
 
 # Syslog facility to receive log lines. (string value)
 #syslog_log_facility = LOG_USER
@@ -201,27 +201,6 @@
 #build_interval = 1
 
 
-[cli]
-
-#
-# From tempest.config
-#
-
-# enable cli tests (boolean value)
-#enabled = true
-
-# directory where python client binaries are located (string value)
-#cli_dir = /usr/local/bin
-
-# Whether the tempest run location has access to the *-manage
-# commands. In a pure blackbox environment it will not. (boolean
-# value)
-#has_manage = true
-
-# Number of seconds to wait on a CLI timeout (integer value)
-#timeout = 15
-
-
 [compute]
 
 #
@@ -260,9 +239,6 @@
 # that do not define build_timeout will inherit this value. (integer
 # value)
 #build_timeout = 300
-
-# Should the tests ssh to instances? (boolean value)
-#run_ssh = false
 
 # Auth method used for authenticate to the instance. Valid choices
 # are: keypair, configured, adminpass and disabled. Keypair: start the
@@ -310,7 +286,7 @@
 #fixed_network_name = <None>
 
 # Network used for SSH connections. Ignored if
-# use_floatingip_for_ssh=true or run_ssh=false. (string value)
+# use_floatingip_for_ssh=true or run_validation=false. (string value)
 #network_for_ssh = public
 
 # IP version used for SSH connections. (integer value)
@@ -395,6 +371,11 @@
 # volumes. Note, libvirt doesn't support this, see
 # https://bugs.launchpad.net/nova/+bug/1398999 (boolean value)
 #block_migrate_cinder_iscsi = false
+
+# Does the test system allow live-migration of paused instances? Note,
+# this is more than just the ANDing of paused and live_migrate, but
+# all 3 should be set to True to run those tests (boolean value)
+#live_migrate_paused_instances = false
 
 # Enable VNC console. This configuration value should be same as
 # [nova.vnc]->vnc_enabled in nova.conf (boolean value)
@@ -589,6 +570,9 @@
 # Admin domain name for authentication (Keystone V3).The same domain
 # applies to user and project (string value)
 #admin_domain_name = <None>
+
+# ID of the default domain (string value)
+#default_domain_id = default
 
 
 [identity-feature-enabled]
@@ -954,6 +938,10 @@
 # Image container format (string value)
 #img_container_format = bare
 
+# Glance image properties. Use for custom images which require them
+# (dict value)
+#img_properties = <None>
+
 # AMI image file name (string value)
 #ami_img_file = cirros-0.3.1-x86_64-blank.img
 
@@ -1087,6 +1075,11 @@
 # From tempest.config
 #
 
+# Enable ssh on created servers and creation of additional validation
+# resources to enable remote access (boolean value)
+# Deprecated group/name - [compute]/run_ssh
+#run_validation = false
+
 # Default IP type used for validation: -fixed: uses the first IP
 # belonging to the fixed network -floating: creates and uses a
 # floating IP (string value)
@@ -1185,3 +1178,7 @@
 
 # Is the v2 volume API enabled (boolean value)
 #api_v2 = true
+
+# Update bootable status of a volume Not implemented on icehouse
+# (boolean value)
+#bootable = false
