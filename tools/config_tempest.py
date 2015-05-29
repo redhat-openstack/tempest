@@ -551,6 +551,9 @@ def find_or_upload_image(client, image_id, image_name, allow_creation,
 
     if image:
         LOG.info("(no change) Found image '%s'", image['name'])
+        path = os.path.abspath(image_dest)
+        if not os.path.isfile(path):
+            _download_image(client, image['id'], path)
     else:
         LOG.info("Creating image '%s'", image_name)
         if image_source.startswith("http:") or \
@@ -677,6 +680,16 @@ def _download_file(url, destination):
     data = f.read()
     with open(destination, "wb") as dest:
         dest.write(data)
+
+
+def _download_image(client, id, path):
+    """Download file from glance."""
+    LOG.info("Downloading image %s to %s" % (id, path))
+    body = client.get_image_file(id)
+    LOG.debug(type(body.data))
+    exit()
+    with open(path, 'wb') as out:
+        out.write(body.data)
 
 
 def _upload_image(client, name, path, disk_format):
