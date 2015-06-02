@@ -100,8 +100,8 @@ SERVICE_VERSIONS = {
 # This is necessary because the configuration file is inconsistent - it uses
 # different option names for service extension depending on the service.
 SERVICE_EXTENSION_KEY = {
-    'compute': 'discoverable_apis',
-    'object-storage': 'discoverable_apis',
+    'compute': 'api_extensions',
+    'object-store': 'discoverable_apis',
     'network': 'api_extensions',
     'volume': 'api_extensions',
 }
@@ -662,6 +662,10 @@ def configure_discovered_services(conf, services):
     for service, ext_key in SERVICE_EXTENSION_KEY.iteritems():
         if service in services:
             extensions = ','.join(services[service]['extensions'])
+            if service == 'object-store':
+                # tempest.conf is inconsistent and uses 'object-store' for the
+                # catalog name but 'object-storage-feature-enabled'
+                service = 'object-storage'
             conf.set(service + '-feature-enabled', ext_key, extensions)
 
     # set supported API versions for services with more of them
