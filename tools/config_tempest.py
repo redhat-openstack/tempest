@@ -67,10 +67,6 @@ DEFAULT_IMAGE = ("http://download.cirros-cloud.net/0.3.1/"
                  "cirros-0.3.1-x86_64-disk.img")
 DEFAULT_IMAGE_FORMAT = 'qcow2'
 
-VALID_RELEASES = ["rhelosp7", "rhelosp6", "rhelosp5", "icehouse",
-                  "juno", "kilo"]
-DEFAULT_RELEASE = "rhelosp7"
-
 # services and their codenames
 SERVICE_NAMES = {
     'baremetal': 'ironic',
@@ -164,11 +160,6 @@ def main():
 def parse_arguments():
     # TODO(tkammer): add mutual exclusion groups
     parser = argparse.ArgumentParser(__doc__)
-    parser.add_argument('--release', default=DEFAULT_RELEASE,
-                        choices=VALID_RELEASES,
-                        help="""The OpenStack release to be tested.
-                                The default is %s.
-                                """ % DEFAULT_RELEASE)
     parser.add_argument('--create', action='store_true', default=False,
                         help='create default tempest resources')
     parser.add_argument('--out', default="etc/tempest.conf",
