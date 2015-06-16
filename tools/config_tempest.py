@@ -691,7 +691,6 @@ def _download_image(client, id, path):
     LOG.info("Downloading image %s to %s" % (id, path))
     body = client.get_image_file(id)
     LOG.debug(type(body.data))
-    exit()
     with open(path, 'wb') as out:
         out.write(body.data)
 
