@@ -24,7 +24,7 @@ created. The config_tempest.py script can make configuration easier. Using the
 --create option will create needed resources and requires admin credentials. It is not recommended to include admin credentials in the tempest.conf file if
 running against a production cloud.
 
-run_tests.sh -- This script is a wrapper around the 'testr' test runner that
+run-tests.sh -- This script is a wrapper around the 'testr' test runner that
 provides for a file with a set of tests to skip as well as producing optional
 xunit output. All of the long arguments to testr can be used with this script.
 See the testr documentation for more details. A sampling of regexps that are
