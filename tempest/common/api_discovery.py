@@ -17,9 +17,11 @@
 import httplib2
 import json
 import logging
+import re
 import urlparse
 
 LOG = logging.getLogger(__name__)
+MULTIPLE_SLASH = re.compile(r'/+')
 
 
 class ServiceError(Exception):
@@ -33,10 +35,13 @@ class Service(object):
         self.headers = {'Accept': 'application/json', 'X-Auth-Token': token}
 
     def do_get(self, url, top_level=False, top_level_path=""):
+        parts = list(urlparse.urlparse(url))
+        # 2 is the path offset
         if top_level:
-            parts = urlparse.urlparse(url)
-            if parts.path != '':
-                url = url.replace(parts.path, '/') + top_level_path
+            parts[2] = '/' + top_level_path
+
+        parts[2] = MULTIPLE_SLASH.sub('/', parts[2])
+        url = urlparse.urlunparse(parts)
 
         try:
             r, body = httplib2.Http().request(url, 'GET', headers=self.headers)
