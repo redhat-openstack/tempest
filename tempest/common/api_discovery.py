@@ -79,7 +79,7 @@ class ImageService(VersionedService):
 
 class NetworkService(VersionedService):
     def get_extensions(self):
-        body = self.do_get(self.service_url + 'v2.0/extensions.json')
+        body = self.do_get(self.service_url + '/v2.0/extensions.json')
         body = json.loads(body)
         return map(lambda x: x['alias'], body['extensions'])
 
