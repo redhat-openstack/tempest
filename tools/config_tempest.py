@@ -39,18 +39,17 @@ import ConfigParser
 import logging
 import os
 import shutil
-import subprocess
 import sys
 import urllib2
 
+import tempest_lib.auth
 from tempest_lib import exceptions
 # Since tempest can be configured in different directories, we need to use
 # the path starting at cwd.
 sys.path.insert(0, os.getcwd())
 
-import tempest_lib.auth
-import tempest.config
 from tempest.common import api_discovery
+import tempest.config
 from tempest.services.compute.json import flavors_client
 from tempest.services.compute.json import networks_client as nova_net_client
 from tempest.services.compute.json import servers_client
@@ -64,13 +63,9 @@ LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 TEMPEST_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
 DEFAULTS_FILE = os.path.join(TEMPEST_DIR, "etc", "default-overrides.conf")
-DEFAULT_IMAGE = "http://download.cirros-cloud.net/0.3.1/" \
-                "cirros-0.3.1-x86_64-disk.img"
+DEFAULT_IMAGE = ("http://download.cirros-cloud.net/0.3.1/"
+                 "cirros-0.3.1-x86_64-disk.img")
 DEFAULT_IMAGE_FORMAT = 'qcow2'
-
-VALID_RELEASES = ["rhelosp7", "rhelosp6", "rhelosp5", "icehouse",
-                  "juno", "kilo"]
-DEFAULT_RELEASE = "rhelosp7"
 
 # services and their codenames
 SERVICE_NAMES = {
@@ -101,8 +96,8 @@ SERVICE_VERSIONS = {
 # This is necessary because the configuration file is inconsistent - it uses
 # different option names for service extension depending on the service.
 SERVICE_EXTENSION_KEY = {
-    'compute': 'discoverable_apis',
-    'object-storage': 'discoverable_apis',
+    'compute': 'api_extensions',
+    'object-store': 'discoverable_apis',
     'network': 'api_extensions',
     'volume': 'api_extensions',
 }
@@ -156,7 +151,6 @@ def main():
 
     configure_discovered_services(conf, services)
     configure_boto(conf, services)
-    configure_cli(conf)
     configure_horizon(conf)
     LOG.info("Creating configuration file %s" % os.path.abspath(args.out))
     with open(args.out, 'w') as f:
@@ -166,11 +160,6 @@ def main():
 def parse_arguments():
     # TODO(tkammer): add mutual exclusion groups
     parser = argparse.ArgumentParser(__doc__)
-    parser.add_argument('--release', default=DEFAULT_RELEASE,
-                        choices=VALID_RELEASES,
-                        help="""The OpenStack release to be tested.
-                                The default is %s.
-                                """ % DEFAULT_RELEASE)
     parser.add_argument('--create', action='store_true', default=False,
                         help='create default tempest resources')
     parser.add_argument('--out', default="etc/tempest.conf",
@@ -307,8 +296,8 @@ class ClientManager(object):
 
         def create_nova_network_client():
             if self.networks is None:
-                self.networks = \
-                    nova_net_client.NetworksClientJSON(_auth, **compute_params)
+                self.networks = nova_net_client.NetworksClientJSON(
+                    _auth, **compute_params)
             return self.networks
 
         def create_neutron_client():
@@ -553,6 +542,9 @@ def find_or_upload_image(client, image_id, image_name, allow_creation,
 
     if image:
         LOG.info("(no change) Found image '%s'", image['name'])
+        path = os.path.abspath(image_dest)
+        if not os.path.isfile(path):
+            _download_image(client, image['id'], path)
     else:
         LOG.info("Creating image '%s'", image_name)
         if image_source.startswith("http:") or \
@@ -624,22 +616,6 @@ def configure_boto(conf, services):
         conf.set('boto', 's3_url', services['s3']['url'])
 
 
-def configure_cli(conf):
-    """Set cli_dir and others for Tempest CLI tests.
-
-    Find locally installed "nova" and "nova-manage" commands and configure CLI
-    based on their availability and paths.
-    """
-    cli_dir = get_program_dir("nova")
-    if cli_dir:
-        conf.set('cli', 'enabled', 'True')
-        conf.set('cli', 'cli_dir', cli_dir)
-    else:
-        conf.set('cli', 'enabled', 'False')
-    nova_manage_found = bool(get_program_dir("nova-manage"))
-    conf.set('cli', 'has_manage', str(nova_manage_found))
-
-
 def configure_horizon(conf):
     """Derive the horizon URIs from the identity's URI."""
     uri = conf.get('identity', 'uri')
@@ -677,6 +653,10 @@ def configure_discovered_services(conf, services):
     for service, ext_key in SERVICE_EXTENSION_KEY.iteritems():
         if service in services:
             extensions = ','.join(services[service]['extensions'])
+            if service == 'object-store':
+                # tempest.conf is inconsistent and uses 'object-store' for the
+                # catalog name but 'object-storage-feature-enabled'
+                service = 'object-storage'
             conf.set(service + '-feature-enabled', ext_key, extensions)
 
     # set supported API versions for services with more of them
@@ -689,26 +669,21 @@ def configure_discovered_services(conf, services):
             conf.set(section, 'api_' + version, str(is_supported))
 
 
-def get_program_dir(program):
-    """Get directory path of the external program.
-
-    :param program: name of program, e.g. 'ls' or 'cat'
-    :returns: None if it wasn't found, '/path/to/it/' if found
-    """
-    devnull = open(os.devnull, 'w')
-    try:
-        path = subprocess.check_output(["which", program], stderr=devnull)
-        return os.path.dirname(path.strip())
-    except subprocess.CalledProcessError:
-        return None
-
-
 def _download_file(url, destination):
     LOG.info("Downloading '%s' and saving as '%s'", url, destination)
     f = urllib2.urlopen(url)
     data = f.read()
     with open(destination, "wb") as dest:
         dest.write(data)
+
+
+def _download_image(client, id, path):
+    """Download file from glance."""
+    LOG.info("Downloading image %s to %s" % (id, path))
+    body = client.get_image_file(id)
+    LOG.debug(type(body.data))
+    with open(path, 'wb') as out:
+        out.write(body.data)
 
 
 def _upload_image(client, name, path, disk_format):

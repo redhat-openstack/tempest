@@ -13,9 +13,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import logging
+from oslo_log import log as logging
 
 from tempest.scenario import test_security_groups_basic_ops as base
+
+LOG = logging.getLogger(__name__)
 
 
 class TestCrossHost(base.TestSecurityGroupsBasicOps):
@@ -47,7 +49,7 @@ class TestCrossHost(base.TestSecurityGroupsBasicOps):
     def _create_server(self, name, tenant, security_groups=None):
         server = super(TestCrossHost, self)._create_server(name, tenant,
                                                            security_groups)
-        _, serv_adm_data = self.admin_manager.servers_client.get_server(
+        serv_adm_data = self.admin_manager.servers_client.get_server(
             server['id'])
         self.servers.append(serv_adm_data)
         host = self.gethost(serv_adm_data)
@@ -63,7 +65,7 @@ class TestCrossHost(base.TestSecurityGroupsBasicOps):
     def update_servers(self, servers, client=None):
         if not client:
             client = self.admin_manager.servers_client
-        return [serv for _, serv in
+        return [serv for serv in
                 (self.admin_manager.servers_client.get_server(s['id'])
                  for s in servers)]
 
