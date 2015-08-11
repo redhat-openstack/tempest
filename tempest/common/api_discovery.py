@@ -128,7 +128,7 @@ def get_service_class(service_name):
     return service_dict.get(service_name, Service)
 
 
-def discover(auth_provider, region):
+def discover(auth_provider, region, object_store_discovery=True):
     """
     Returns a dict with discovered apis.
     :param auth_provider: An AuthProvider to obtain service urls.
@@ -152,6 +152,9 @@ def discover(auth_provider, region):
 
         service_class = get_service_class(name)
         service = service_class(name, services[name]['url'], token)
-        services[name]['extensions'] = service.get_extensions()
+        if name == 'object-store' and not object_store_discovery:
+            services[name]['extensions'] = []
+        else:
+            services[name]['extensions'] = service.get_extensions()
         services[name]['versions'] = service.get_versions()
     return services

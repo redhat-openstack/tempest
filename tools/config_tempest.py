@@ -136,8 +136,12 @@ def main():
         conf.set("identity", "admin_password", "")
         conf.set("auth", "allow_tenant_isolation", "False")
     clients = ClientManager(conf, not args.non_admin)
-    services = api_discovery.discover(clients.auth_provider,
-                                      clients.identity_region)
+    swift_discover = conf.get_defaulted('object-storage-feature-enabled',
+                                        'discoverability')
+    services = api_discovery.discover(
+        clients.auth_provider,
+        clients.identity_region,
+        object_store_discovery=conf.get_bool_value(swift_discover))
     if args.create:
         create_tempest_users(clients.identity, conf, services)
     create_tempest_flavors(clients.flavors, conf, args.create)
@@ -329,6 +333,15 @@ class TempestConf(ConfigParser.SafeConfigParser):
     priority_sectionkeys = set()
 
     CONF = tempest.config.TempestConfigPrivate(parse_conf=False)
+
+    def get_bool_value(self, value):
+        strval = str(value).lower()
+        if strval == 'true':
+            return True
+        elif strval == 'false':
+            return False
+        else:
+            raise ValueError("'%s' is not a boolean" % value)
 
     def get_defaulted(self, section, key):
         if self.has_option(section, key):
