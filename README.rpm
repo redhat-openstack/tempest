@@ -1,0 +1,32 @@
+Here are instructions for configuring and running tempest installed from the
+tempest rpm. Tempest should not be run from the /usr/share directory where
+the tempest code is installed.
+
+# Set up the current directory to run tempest
+/usr/share/openstack-tempest-kilo/tools/configure-tempest-directory
+# Configure tempest
+tools/config_tempest.py --create --debug identity.uri http://<your keystone endpoint>:5000/v2.0/ identity.admin_password "<your admin password>"
+# Run tempest
+tools/run-tests.sh <your-regexp>
+
+The following is a brief summary of each of these scripts. You can get more 
+details by running them with '-h'.
+
+configure-tempest-directory -- Tempest expects the tests it discovers to be in
+the current working directory. This script will add symlinks and other
+files to the current directory so you can run tempest against some cloud. You
+can run this script in different directories to run tempest against different
+clouds from the same machine.
+
+config_tempest.py -- Tempest can be difficult to configure. Various options
+must be set, and various users and tenants, flavors, images, need to be
+created. The config_tempest.py script can make configuration easier. Using the
+--create option will create needed resources and requires admin credentials. It is not recommended to include admin credentials in the tempest.conf file if
+running against a production cloud.
+
+run-tests.sh -- This script is a wrapper around the 'testr' test runner that
+provides for a file with a set of tests to skip as well as producing optional
+xunit output. All of the long arguments to testr can be used with this script.
+See the testr documentation for more details. A sampling of regexps that are
+used in upstream OpenStack testing can be found in the tox.ini file.
+
