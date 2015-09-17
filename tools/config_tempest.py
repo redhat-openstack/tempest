@@ -731,7 +731,7 @@ def _find_image(client, image_id, image_name):
             return client.get_image(image_id)
         except exceptions.NotFound:
             pass
-    found = filter(lambda x: x['name'] == image_name, client.image_list())
+    found = filter(lambda x: x['name'] == image_name, client.list_images())
     if found:
         return found[0]
     else:
