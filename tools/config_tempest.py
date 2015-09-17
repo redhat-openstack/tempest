@@ -492,7 +492,7 @@ def find_or_create_flavor(client, flavor_id, flavor_name,
     :param disk: size of disk for flavor in GB
     """
     flavor = None
-    flavors = client.list_flavors()
+    flavors = client.list_flavors()['flavors']
     # try finding it by the ID first
     if flavor_id:
         found = [f for f in flavors if f['id'] == flavor_id]
