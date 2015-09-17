@@ -696,7 +696,7 @@ def _download_file(url, destination):
 def _download_image(client, id, path):
     """Download file from glance."""
     LOG.info("Downloading image %s to %s" % (id, path))
-    body = client.get_image_file(id)
+    body = client.load_image_file(id)
     LOG.debug(type(body.data))
     with open(path, 'wb') as out:
         out.write(body.data)
