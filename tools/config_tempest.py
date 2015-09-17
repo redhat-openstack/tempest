@@ -278,35 +278,35 @@ class ClientManager(object):
             _creds, conf.get_defaulted('identity', 'uri'),
             **auth_provider_params)
         self.auth_provider = _auth
-        self.identity = identity_client.IdentityClientJSON(
+        self.identity = identity_client.IdentityClient(
             _auth,
             conf.get_defaulted('identity', 'catalog_type'),
             self.identity_region,
             endpoint_type='adminURL',
             **default_params)
 
-        self.images = image_client.ImageClientV2JSON(
+        self.images = image_client.ImageClientV2(
             _auth,
             conf.get_defaulted('image', 'catalog_type'),
             self.identity_region,
             conf.get_defaulted('image', 'endpoint_type'),
             **default_params)
-        self.servers = servers_client.ServersClientJSON(_auth,
+        self.servers = servers_client.ServersClient(_auth,
                                                         **compute_params)
-        self.flavors = flavors_client.FlavorsClientJSON(_auth,
+        self.flavors = flavors_client.FlavorsClient(_auth,
                                                         **compute_params)
 
         self.networks = None
 
         def create_nova_network_client():
             if self.networks is None:
-                self.networks = nova_net_client.NetworksClientJSON(
+                self.networks = nova_net_client.NetworksClient(
                     _auth, **compute_params)
             return self.networks
 
         def create_neutron_client():
             if self.networks is None:
-                self.networks = network_client.NetworkClientJSON(
+                self.networks = network_client.NetworkClient(
                     _auth,
                     conf.get_defaulted('network', 'catalog_type'),
                     self.identity_region,
