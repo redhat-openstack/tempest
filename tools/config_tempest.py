@@ -723,7 +723,7 @@ def _upload_image(client, name, path, disk_format):
                                     container_format='bare',
                                     visibility="public",
                                     properties=properties)
-        client.store_image(image['id'], data)
+        client.store_image_file(image['id'], data)
         return image
 
 
