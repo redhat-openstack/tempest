@@ -514,6 +514,7 @@ def find_or_create_flavor(client, flavor_id, flavor_name,
         flavor = client.create_flavor(name=flavor_name,
                                       ram=ram, vcpus=vcpus,
                                       disk=disk, flavor_id=None)
+        return flavor['flavor']['id']
     else:
         LOG.info("(no change) Found flavor '%s'", flavor['name'])
 
