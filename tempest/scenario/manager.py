@@ -61,6 +61,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         cls.interface_client = cls.manager.interfaces_client
         # Neutron network client
         cls.network_client = cls.manager.network_client
+        cls.networks_client = cls.manager.networks_client
         # Heat client
         cls.orchestration_client = cls.manager.orchestration_client
 
@@ -557,6 +558,29 @@ class ScenarioTest(tempest.test.BaseTestCase):
             floating_ip['ip'], thing['id'])
         return floating_ip
 
+    def create_timestamp(self, server_or_ip, dev_name=None, mount_path='/mnt'):
+        ssh_client = self.get_remote_client(server_or_ip)
+        if dev_name is not None:
+            ssh_client.make_fs(dev_name)
+            ssh_client.mount(dev_name)
+        cmd_timestamp = 'sudo sh -c "date > %s/timestamp; sync"' % mount_path
+        ssh_client.exec_command(cmd_timestamp)
+        timestamp = ssh_client.exec_command('sudo cat %s/timestamp'
+                                            % mount_path)
+        if dev_name is not None:
+            ssh_client.umount(mount_path)
+        return timestamp
+
+    def get_timestamp(self, server_or_ip, dev_name=None, mount_path='/mnt'):
+        ssh_client = self.get_remote_client(server_or_ip)
+        if dev_name is not None:
+            ssh_client.mount(dev_name)
+        timestamp = ssh_client.exec_command('sudo cat %s/timestamp'
+                                            % mount_path)
+        if dev_name is not None:
+            ssh_client.umount(mount_path)
+        return timestamp
+
 
 class NetworkScenarioTest(ScenarioTest):
     """Base class for network scenario tests.
@@ -582,23 +606,25 @@ class NetworkScenarioTest(ScenarioTest):
         super(NetworkScenarioTest, cls).resource_setup()
         cls.tenant_id = cls.manager.identity_client.tenant_id
 
-    def _create_network(self, client=None, tenant_id=None,
-                        namestart='network-smoke-'):
+    def _create_network(self, client=None, networks_client=None,
+                        tenant_id=None, namestart='network-smoke-'):
         if not client:
             client = self.network_client
+        if not networks_client:
+            networks_client = self.networks_client
         if not tenant_id:
             tenant_id = client.tenant_id
         name = data_utils.rand_name(namestart)
-        result = client.create_network(name=name, tenant_id=tenant_id)
-        network = net_resources.DeletableNetwork(client=client,
-                                                 **result['network'])
+        result = networks_client.create_network(name=name, tenant_id=tenant_id)
+        network = net_resources.DeletableNetwork(
+            networks_client=networks_client, **result['network'])
         self.assertEqual(network.name, name)
         self.addCleanup(self.delete_wrapper, network.delete)
         return network
 
     def _list_networks(self, *args, **kwargs):
         """List networks using admin creds """
-        networks_list = self.admin_manager.network_client.list_networks(
+        networks_list = self.admin_manager.networks_client.list_networks(
             *args, **kwargs)
         return networks_list['networks']
 
@@ -1035,8 +1061,8 @@ class NetworkScenarioTest(ScenarioTest):
         router.update(admin_state_up=admin_state_up)
         self.assertEqual(admin_state_up, router.admin_state_up)
 
-    def create_networks(self, client=None, tenant_id=None,
-                        dns_nameservers=None):
+    def create_networks(self, client=None, networks_client=None,
+                        tenant_id=None, dns_nameservers=None):
         """Create a network with a subnet connected to a router.
 
         The baremetal driver is a special case since all nodes are
@@ -1061,7 +1087,9 @@ class NetworkScenarioTest(ScenarioTest):
             router = None
             subnet = None
         else:
-            network = self._create_network(client=client, tenant_id=tenant_id)
+            network = self._create_network(
+                client=client, networks_client=networks_client,
+                tenant_id=tenant_id)
             router = self._get_router(client=client, tenant_id=tenant_id)
 
             subnet_kwargs = dict(network=network, client=client)
@@ -1074,9 +1102,12 @@ class NetworkScenarioTest(ScenarioTest):
 
     def create_server(self, name=None, image=None, flavor=None,
                       wait_on_boot=True, wait_on_delete=True,
-                      network_client=None, create_kwargs=None):
+                      network_client=None, networks_client=None,
+                      create_kwargs=None):
         if network_client is None:
             network_client = self.network_client
+        if networks_client is None:
+            networks_client = self.networks_client
 
         vnic_type = CONF.network.port_vnic_type
 
@@ -1112,7 +1143,7 @@ class NetworkScenarioTest(ScenarioTest):
             # as we would expect when passing the call to the clients
             # with no networks
             if not networks:
-                networks = network_client.list_networks(filters={
+                networks = networks_client.list_networks(filters={
                     'router:external': False})
                 self.assertEqual(1, len(networks),
                                  "There is more than one"
