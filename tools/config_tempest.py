@@ -407,9 +407,11 @@ def give_role_to_user(client, username, tenant_name, role_name,
                       role_required=True):
     """Give the user a role in the project (tenant)."""
     tenant_id = client.get_tenant_by_name(tenant_name)['id']
-    user_ids = [u['id'] for u in client.get_users() if u['name'] == username]
+    users = client.get_users()
+    user_ids = [u['id'] for u in users['users'] if u['name'] == username]
     user_id = user_ids[0]
-    role_ids = [r['id'] for r in client.list_roles() if r['name'] == role_name]
+    roles = client.list_roles()
+    role_ids = [r['id'] for r in roles['roles'] if r['name'] == role_name]
     if not role_ids:
         if role_required:
             raise Exception("required role %s not found" % role_name)
