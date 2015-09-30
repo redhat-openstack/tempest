@@ -55,7 +55,7 @@ from tempest.services.compute.json import networks_client as nova_net_client
 from tempest.services.compute.json import servers_client
 from tempest.services.identity.v2.json import identity_client
 from tempest.services.image.v2.json import image_client
-from tempest.services.network.json import network_client
+from tempest.services.network.json import networks_client
 
 LOG = logging.getLogger(__name__)
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -306,7 +306,7 @@ class ClientManager(object):
 
         def create_neutron_client():
             if self.networks is None:
-                self.networks = network_client.NetworkClient(
+                self.networks = networks_client.NetworksClient(
                     _auth,
                     conf.get_defaulted('network', 'catalog_type'),
                     self.identity_region,
