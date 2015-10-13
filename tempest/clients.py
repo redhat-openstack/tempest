@@ -16,6 +16,7 @@
 import copy
 
 from oslo_log import log as logging
+from tempest_lib.services.compute.agents_client import AgentsClient
 from tempest_lib.services.identity.v2.token_client import TokenClient
 from tempest_lib.services.identity.v3.token_client import V3TokenClient
 
@@ -27,8 +28,6 @@ from tempest import manager
 from tempest.services.baremetal.v1.json.baremetal_client import \
     BaremetalClient
 from tempest.services import botoclients
-from tempest.services.compute.json.agents_client import \
-    AgentsClient
 from tempest.services.compute.json.aggregates_client import \
     AggregatesClient
 from tempest.services.compute.json.availability_zone_client import \
@@ -74,15 +73,15 @@ from tempest.services.compute.json.server_groups_client import \
     ServerGroupsClient
 from tempest.services.compute.json.servers_client import ServersClient
 from tempest.services.compute.json.services_client import ServicesClient
-from tempest.services.compute.json.snapshots_extensions_client import \
-    SnapshotsExtensionsClient
+from tempest.services.compute.json.snapshots_client import \
+    SnapshotsClient as ComputeSnapshotsClient
 from tempest.services.compute.json.tenant_networks_client import \
     TenantNetworksClient
 from tempest.services.compute.json.tenant_usages_client import \
     TenantUsagesClient
 from tempest.services.compute.json.versions_client import VersionsClient
-from tempest.services.compute.json.volumes_extensions_client import \
-    VolumesExtensionsClient
+from tempest.services.compute.json.volumes_client import \
+    VolumesClient as ComputeVolumesClient
 from tempest.services.data_processing.v1_1.data_processing_client import \
     DataProcessingClient
 from tempest.services.database.json.flavors_client import \
@@ -334,11 +333,11 @@ class Manager(manager.Manager):
             'build_interval': CONF.volume.build_interval,
             'build_timeout': CONF.volume.build_timeout
         })
-        self.volumes_extensions_client = VolumesExtensionsClient(
+        self.volumes_extensions_client = ComputeVolumesClient(
             self.auth_provider, **params_volume)
         self.compute_versions_client = VersionsClient(self.auth_provider,
                                                       **params_volume)
-        self.snapshots_extensions_client = SnapshotsExtensionsClient(
+        self.snapshots_extensions_client = ComputeSnapshotsClient(
             self.auth_provider, **params_volume)
 
     def _set_database_clients(self):

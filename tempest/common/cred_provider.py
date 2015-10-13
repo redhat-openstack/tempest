@@ -26,7 +26,7 @@ LOG = logging.getLogger(__name__)
 
 # Type of credentials available from configuration
 CREDENTIAL_TYPES = {
-    'identity_admin': ('identity', 'admin'),
+    'identity_admin': ('auth', 'admin'),
     'user': ('identity', None),
     'alt_user': ('identity', 'alt')
 }
@@ -128,7 +128,7 @@ class CredentialProvider(object):
         return
 
     @abc.abstractmethod
-    def clear_isolated_creds(self):
+    def clear_creds(self):
         return
 
     @abc.abstractmethod
