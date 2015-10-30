@@ -135,6 +135,8 @@ def main():
         conf.set("identity", "admin_tenant_name", "")
         conf.set("identity", "admin_password", "")
         conf.set("auth", "allow_tenant_isolation", "False")
+    if args.use_test_accounts:
+        conf.set("auth", "allow_tenant_isolation", "True")
     clients = ClientManager(conf, not args.non_admin)
     swift_discover = conf.get_defaulted('object-storage-feature-enabled',
                                         'discoverability')
@@ -142,7 +144,7 @@ def main():
         clients.auth_provider,
         clients.identity_region,
         object_store_discovery=conf.get_bool_value(swift_discover))
-    if args.create:
+    if args.create and not args.use_test_accounts:
         create_tempest_users(clients.identity, conf, services)
     create_tempest_flavors(clients.flavors, conf, args.create)
     create_tempest_images(clients.images, conf, args.image, args.create,
@@ -188,6 +190,8 @@ def parse_arguments():
                         help='Print more information about the execution')
     parser.add_argument('--non-admin', action='store_true', default=False,
                         help='Run without admin creds')
+    parser.add_argument('--use-test-accounts', action='store_true',
+                        default=False, help='Use accounts from accounts.yaml')
     parser.add_argument('--image-disk-format', default=DEFAULT_IMAGE_FORMAT,
                         help="""a format of an image to be uploaded to glance.
                                 Default is '%s'""" % DEFAULT_IMAGE_FORMAT)
@@ -292,9 +296,9 @@ class ClientManager(object):
             conf.get_defaulted('image', 'endpoint_type'),
             **default_params)
         self.servers = servers_client.ServersClient(_auth,
-                                                        **compute_params)
+                                                    **compute_params)
         self.flavors = flavors_client.FlavorsClient(_auth,
-                                                        **compute_params)
+                                                    **compute_params)
 
         self.networks = None
 
