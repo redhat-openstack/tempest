@@ -13,8 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import base64
-
 import netaddr
 import testtools
 
@@ -42,6 +40,7 @@ class ServersTestJSON(base.BaseV2ComputeTest):
         cls.client = cls.servers_client
         cls.network_client = cls.os.network_client
         cls.networks_client = cls.os.networks_client
+        cls.subnets_client = cls.os.subnets_client
 
     @classmethod
     def resource_setup(cls):
@@ -51,9 +50,6 @@ class ServersTestJSON(base.BaseV2ComputeTest):
         cls.accessIPv4 = '1.1.1.1'
         cls.accessIPv6 = '0000:0000:0000:0000:0000:babe:220.12.22.2'
         cls.name = data_utils.rand_name('server')
-        file_contents = 'This is a test file.'
-        personality = [{'path': '/test.txt',
-                       'contents': base64.b64encode(file_contents)}]
         disk_config = cls.disk_config
         cls.server_initial = cls.create_test_server(
             validatable=True,
@@ -62,7 +58,6 @@ class ServersTestJSON(base.BaseV2ComputeTest):
             metadata=cls.meta,
             accessIPv4=cls.accessIPv4,
             accessIPv6=cls.accessIPv6,
-            personality=personality,
             disk_config=disk_config)
         cls.password = cls.server_initial['adminPass']
         cls.server = (cls.client.show_server(cls.server_initial['id'])
@@ -74,11 +69,11 @@ class ServersTestJSON(base.BaseV2ComputeTest):
         self.addCleanup(self.networks_client.delete_network,
                         net['network']['id'])
 
-        subnet = self.network_client.create_subnet(
+        subnet = self.subnets_client.create_subnet(
             network_id=net['network']['id'],
             cidr=cidr,
             ip_version=4)
-        self.addCleanup(self.network_client.delete_subnet,
+        self.addCleanup(self.subnets_client.delete_subnet,
                         subnet['subnet']['id'])
         return net
 

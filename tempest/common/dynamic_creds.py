@@ -30,25 +30,27 @@ LOG = logging.getLogger(__name__)
 
 class DynamicCredentialProvider(cred_provider.CredentialProvider):
 
-    def __init__(self, identity_version=None, name=None,
-                 network_resources=None):
+    def __init__(self, identity_version, name=None, network_resources=None,
+                 credentials_domain=None, admin_role=None):
         super(DynamicCredentialProvider, self).__init__(
-            identity_version, name, network_resources)
-        self.network_resources = network_resources
+            identity_version=identity_version, name=name,
+            network_resources=network_resources,
+            credentials_domain=credentials_domain, admin_role=admin_role)
         self._creds = {}
         self.ports = []
         self.default_admin_creds = cred_provider.get_configured_credentials(
             'identity_admin', fill_in=True,
             identity_version=self.identity_version)
         (self.identity_admin_client, self.network_admin_client,
-         self.networks_admin_client) = self._get_admin_clients()
-        # Domain where dynamic credentials are provisioned (v3 only).
+         self.networks_admin_client,
+         self.subnets_admin_client) = self._get_admin_clients()
+        # Domain where isolated credentials are provisioned (v3 only).
         # Use that of the admin account is None is configured.
         self.creds_domain_name = None
         if self.identity_version == 'v3':
             self.creds_domain_name = (
                 self.default_admin_creds.project_domain_name or
-                CONF.auth.default_credentials_domain_name)
+                self.credentials_domain)
         self.creds_client = cred_client.get_creds_client(
             self.identity_admin_client, self.creds_domain_name)
 
@@ -61,9 +63,11 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
         """
         os = clients.Manager(self.default_admin_creds)
         if self.identity_version == 'v2':
-            return os.identity_client, os.network_client, os.networks_client
+            return (os.identity_client, os.network_client, os.networks_client,
+                    os.subnets_client)
         else:
-            return os.identity_v3_client, os.network_client, os.networks_client
+            return (os.identity_v3_client, os.network_client,
+                    os.networks_client, os.subnets_client)
 
     def _create_creds(self, suffix="", admin=False, roles=None):
         """Create random credentials under the following schema.
@@ -95,7 +99,7 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
         role_assigned = False
         if admin:
             self.creds_client.assign_user_role(user, project,
-                                               CONF.identity.admin_role)
+                                               self.admin_role)
             role_assigned = True
         # Add roles specified in config file
         for conf_role in CONF.auth.tempest_roles:
@@ -168,7 +172,7 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
         for subnet_cidr in base_cidr.subnet(mask_bits):
             try:
                 if self.network_resources:
-                    resp_body = self.network_admin_client.\
+                    resp_body = self.subnets_admin_client.\
                         create_subnet(
                             network_id=network_id, cidr=str(subnet_cidr),
                             name=subnet_name,
@@ -176,7 +180,7 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
                             enable_dhcp=self.network_resources['dhcp'],
                             ip_version=4)
                 else:
-                    resp_body = self.network_admin_client.\
+                    resp_body = self.subnets_admin_client.\
                         create_subnet(network_id=network_id,
                                       cidr=str(subnet_cidr),
                                       name=subnet_name,
@@ -260,9 +264,9 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
                      router_name)
 
     def _clear_isolated_subnet(self, subnet_id, subnet_name):
-        net_client = self.network_admin_client
+        client = self.subnets_admin_client
         try:
-            net_client.delete_subnet(subnet_id)
+            client.delete_subnet(subnet_id)
         except lib_exc.NotFound:
             LOG.warn('subnet with name: %s not found for delete' %
                      subnet_name)

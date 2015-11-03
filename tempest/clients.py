@@ -17,6 +17,24 @@ import copy
 
 from oslo_log import log as logging
 from tempest_lib.services.compute.agents_client import AgentsClient
+from tempest_lib.services.compute.aggregates_client import AggregatesClient
+from tempest_lib.services.compute.availability_zone_client import \
+    AvailabilityZoneClient
+from tempest_lib.services.compute.baremetal_nodes_client import \
+    BaremetalNodesClient
+from tempest_lib.services.compute.certificates_client import \
+    CertificatesClient
+from tempest_lib.services.compute.extensions_client import \
+    ExtensionsClient
+from tempest_lib.services.compute.fixed_ips_client import FixedIPsClient
+from tempest_lib.services.compute.flavors_client import FlavorsClient
+from tempest_lib.services.compute.floating_ip_pools_client import \
+    FloatingIPPoolsClient
+from tempest_lib.services.compute.floating_ips_bulk_client import \
+    FloatingIPsBulkClient
+from tempest_lib.services.compute.hosts_client import HostsClient
+from tempest_lib.services.compute.hypervisor_client import \
+    HypervisorClient
 from tempest_lib.services.identity.v2.token_client import TokenClient
 from tempest_lib.services.identity.v3.token_client import V3TokenClient
 
@@ -28,27 +46,8 @@ from tempest import manager
 from tempest.services.baremetal.v1.json.baremetal_client import \
     BaremetalClient
 from tempest.services import botoclients
-from tempest.services.compute.json.aggregates_client import \
-    AggregatesClient
-from tempest.services.compute.json.availability_zone_client import \
-    AvailabilityZoneClient
-from tempest.services.compute.json.baremetal_nodes_client import \
-    BaremetalNodesClient
-from tempest.services.compute.json.certificates_client import \
-    CertificatesClient
-from tempest.services.compute.json.extensions_client import \
-    ExtensionsClient
-from tempest.services.compute.json.fixed_ips_client import FixedIPsClient
-from tempest.services.compute.json.flavors_client import FlavorsClient
-from tempest.services.compute.json.floating_ip_pools_client import \
-    FloatingIPPoolsClient
-from tempest.services.compute.json.floating_ips_bulk_client import \
-    FloatingIPsBulkClient
 from tempest.services.compute.json.floating_ips_client import \
     FloatingIPsClient
-from tempest.services.compute.json.hosts_client import HostsClient
-from tempest.services.compute.json.hypervisor_client import \
-    HypervisorClient
 from tempest.services.compute.json.images_client import ImagesClient
 from tempest.services.compute.json.instance_usage_audit_log_client import \
     InstanceUsagesAuditLogClient
@@ -108,6 +107,7 @@ from tempest.services.messaging.json.messaging_client import \
     MessagingClient
 from tempest.services.network.json.network_client import NetworkClient
 from tempest.services.network.json.networks_client import NetworksClient
+from tempest.services.network.json.subnets_client import SubnetsClient
 from tempest.services.object_storage.account_client import AccountClient
 from tempest.services.object_storage.container_client import ContainerClient
 from tempest.services.object_storage.object_client import ObjectClient
@@ -198,6 +198,14 @@ class Manager(manager.Manager):
             build_timeout=CONF.network.build_timeout,
             **self.default_params)
         self.networks_client = NetworksClient(
+            self.auth_provider,
+            CONF.network.catalog_type,
+            CONF.network.region or CONF.identity.region,
+            endpoint_type=CONF.network.endpoint_type,
+            build_interval=CONF.network.build_interval,
+            build_timeout=CONF.network.build_timeout,
+            **self.default_params)
+        self.subnets_client = SubnetsClient(
             self.auth_provider,
             CONF.network.catalog_type,
             CONF.network.region or CONF.identity.region,

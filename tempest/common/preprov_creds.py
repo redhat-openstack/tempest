@@ -18,6 +18,7 @@ import os
 from oslo_concurrency import lockutils
 from oslo_log import log as logging
 import six
+from tempest_lib import auth
 import yaml
 
 from tempest import clients
@@ -38,9 +39,11 @@ def read_accounts_yaml(path):
 
 class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
 
-    def __init__(self, identity_version=None, name=None):
+    def __init__(self, identity_version, name=None, credentials_domain=None,
+                 admin_role=None):
         super(PreProvisionedCredentialProvider, self).__init__(
-            identity_version=identity_version, name=name)
+            identity_version=identity_version, name=name,
+            credentials_domain=credentials_domain, admin_role=admin_role)
         if (CONF.auth.test_accounts_file and
                 os.path.isfile(CONF.auth.test_accounts_file)):
             accounts = read_accounts_yaml(CONF.auth.test_accounts_file)
@@ -48,7 +51,7 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
         else:
             accounts = {}
             self.use_default_creds = True
-        self.hash_dict = self.get_hash_dict(accounts)
+        self.hash_dict = self.get_hash_dict(accounts, admin_role)
         self.accounts_dir = os.path.join(lockutils.get_lock_path(CONF),
                                          'test_accounts')
         self._creds = {}
@@ -62,7 +65,7 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
         return hash_dict
 
     @classmethod
-    def get_hash_dict(cls, accounts):
+    def get_hash_dict(cls, accounts, admin_role):
         hash_dict = {'roles': {}, 'creds': {}, 'networks': {}}
         # Loop over the accounts read from the yaml file
         for account in accounts:
@@ -86,8 +89,8 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
             # subdict with the hash
             for type in types:
                 if type == 'admin':
-                    hash_dict = cls._append_role(CONF.identity.admin_role,
-                                                 temp_hash_key, hash_dict)
+                    hash_dict = cls._append_role(admin_role, temp_hash_key,
+                                                 hash_dict)
                 elif type == 'operator':
                     hash_dict = cls._append_role(
                         CONF.object_storage.operator_role, temp_hash_key,
@@ -172,9 +175,9 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
         # privlege set which could potentially cause issues on tests where that
         # is not expected. So unless the admin role isn't specified do not
         # allocate admin.
-        admin_hashes = self.hash_dict['roles'].get(CONF.identity.admin_role,
+        admin_hashes = self.hash_dict['roles'].get(self.admin_role,
                                                    None)
-        if ((not roles or CONF.identity.admin_role not in roles) and
+        if ((not roles or self.admin_role not in roles) and
                 admin_hashes):
             useable_hashes = [x for x in hashes if x not in admin_hashes]
         else:
@@ -216,7 +219,7 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
             if ('user_domain_name' in init_attributes and 'user_domain_name'
                     not in hash_attributes):
                 # Allow for the case of domain_name populated from config
-                domain_name = CONF.auth.default_credentials_domain_name
+                domain_name = self.credentials_domain
                 hash_attributes['user_domain_name'] = domain_name
             if all([getattr(creds, k) == hash_attributes[k] for
                    k in init_attributes]):
@@ -265,7 +268,7 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
             self.remove_credentials(creds)
 
     def get_admin_creds(self):
-        return self.get_creds_by_roles([CONF.identity.admin_role])
+        return self.get_creds_by_roles([self.admin_role])
 
     def is_role_available(self, role):
         if self.use_default_creds:
@@ -276,11 +279,16 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
             return False
 
     def admin_available(self):
-        return self.is_role_available(CONF.identity.admin_role)
+        return self.is_role_available(self.admin_role)
 
     def _wrap_creds_with_network(self, hash):
         creds_dict = self.hash_dict['creds'][hash]
-        credential = cred_provider.get_credentials(
+        # Make sure a domain scope if defined for users in case of V3
+        creds_dict = self._extend_credentials(creds_dict)
+        # This just builds a Credentials object, it does not validate
+        # nor fill  with missing fields.
+        credential = auth.get_credentials(
+            auth_url=None, fill_in=False,
             identity_version=self.identity_version, **creds_dict)
         net_creds = cred_provider.TestResources(credential)
         net_clients = clients.Manager(credentials=credential)
@@ -293,6 +301,15 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
             network = {}
         net_creds.set_resources(network=network)
         return net_creds
+
+    def _extend_credentials(self, creds_dict):
+        # In case of v3, adds a user_domain_name field to the creds
+        # dict if not defined
+        if self.identity_version == 'v3':
+            user_domain_fields = set(['user_domain_name', 'user_domain_id'])
+            if not user_domain_fields.intersection(set(creds_dict.keys())):
+                creds_dict['user_domain_name'] = self.credentials_domain
+        return creds_dict
 
 
 class NonLockingCredentialProvider(PreProvisionedCredentialProvider):
@@ -323,7 +340,8 @@ class NonLockingCredentialProvider(PreProvisionedCredentialProvider):
         if self._creds.get('primary'):
             return self._creds.get('primary')
         primary_credential = cred_provider.get_configured_credentials(
-            credential_type='user', identity_version=self.identity_version)
+            fill_in=False, credential_type='user',
+            identity_version=self.identity_version)
         self._creds['primary'] = cred_provider.TestResources(
             primary_credential)
         return self._creds['primary']
@@ -332,7 +350,7 @@ class NonLockingCredentialProvider(PreProvisionedCredentialProvider):
         if self._creds.get('alt'):
             return self._creds.get('alt')
         alt_credential = cred_provider.get_configured_credentials(
-            credential_type='alt_user',
+            fill_in=False, credential_type='alt_user',
             identity_version=self.identity_version)
         self._creds['alt'] = cred_provider.TestResources(
             alt_credential)

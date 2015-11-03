@@ -117,11 +117,11 @@ from oslo_utils import timeutils
 import six
 from tempest_lib import auth
 from tempest_lib import exceptions as lib_exc
+from tempest_lib.services.compute import flavors_client
 import yaml
 
 from tempest.common import waiters
 from tempest import config
-from tempest.services.compute.json import flavors_client
 from tempest.services.compute.json import floating_ips_client
 from tempest.services.compute.json import security_group_rules_client
 from tempest.services.compute.json import security_groups_client
@@ -129,6 +129,7 @@ from tempest.services.compute.json import servers_client
 from tempest.services.identity.v2.json import identity_client
 from tempest.services.image.v2.json import image_client
 from tempest.services.network.json import network_client
+from tempest.services.network.json import subnets_client
 from tempest.services.object_storage import container_client
 from tempest.services.object_storage import object_client
 from tempest.services.telemetry.json import telemetry_client
@@ -233,6 +234,14 @@ class OSClient(object):
             build_timeout=CONF.volume.build_timeout,
             **default_params)
         self.networks = network_client.NetworkClient(
+            _auth,
+            CONF.network.catalog_type,
+            CONF.network.region or CONF.identity.region,
+            endpoint_type=CONF.network.endpoint_type,
+            build_interval=CONF.network.build_interval,
+            build_timeout=CONF.network.build_timeout,
+            **default_params)
+        self.subnets = subnets_client.SubnetsClient(
             _auth,
             CONF.network.catalog_type,
             CONF.network.region or CONF.identity.region,
@@ -769,9 +778,9 @@ def destroy_subnets(subnets):
     LOG.info("Destroying subnets")
     for subnet in subnets:
         client = client_for_user(subnet['owner'])
-        subnet_id = _get_resource_by_name(client.networks,
+        subnet_id = _get_resource_by_name(client.subnets,
                                           'subnets', subnet['name'])['id']
-        client.networks.delete_subnet(subnet_id)
+        client.subnets.delete_subnet(subnet_id)
 
 
 def create_routers(routers):

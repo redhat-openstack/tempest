@@ -32,26 +32,34 @@ def get_credentials_provider(name, network_resources=None,
     # dynamic credentials. A new account will be produced only for that test.
     # In case admin credentials are not available for the account creation,
     # the test should be skipped else it would fail.
+    identity_version = identity_version or CONF.identity.auth_version
     if CONF.auth.use_dynamic_credentials or force_tenant_isolation:
         return dynamic_creds.DynamicCredentialProvider(
             name=name,
             network_resources=network_resources,
-            identity_version=identity_version)
+            identity_version=identity_version,
+            credentials_domain=CONF.auth.default_credentials_domain_name,
+            admin_role=CONF.identity.admin_role)
     else:
         if (CONF.auth.test_accounts_file and
                 os.path.isfile(CONF.auth.test_accounts_file)):
             # Most params are not relevant for pre-created accounts
             return preprov_creds.PreProvisionedCredentialProvider(
-                name=name, identity_version=identity_version)
+                name=name, identity_version=identity_version,
+                credentials_domain=CONF.auth.default_credentials_domain_name,
+                admin_role=CONF.identity.admin_role)
         else:
             return preprov_creds.NonLockingCredentialProvider(
-                name=name, identity_version=identity_version)
+                name=name, identity_version=identity_version,
+                admin_role=CONF.identity.admin_role)
 
 
 # We want a helper function here to check and see if admin credentials
 # are available so we can do a single call from skip_checks if admin
-# creds area vailable.
-def is_admin_available():
+# creds area available.
+# This depends on identity_version as there may be admin credentials
+# available for v2 but not for v3.
+def is_admin_available(identity_version):
     is_admin = True
     # If dynamic credentials is enabled admin will be available
     if CONF.auth.use_dynamic_credentials:
@@ -60,13 +68,15 @@ def is_admin_available():
     elif (CONF.auth.test_accounts_file and
             os.path.isfile(CONF.auth.test_accounts_file)):
         check_accounts = preprov_creds.PreProvisionedCredentialProvider(
-            name='check_admin')
+            identity_version=identity_version, name='check_admin',
+            admin_role=CONF.identity.admin_role)
         if not check_accounts.admin_available():
             is_admin = False
     else:
         try:
-            cred_provider.get_configured_credentials('identity_admin',
-                                                     fill_in=False)
+            cred_provider.get_configured_credentials(
+                'identity_admin', fill_in=False,
+                identity_version=identity_version)
         except exceptions.InvalidConfiguration:
             is_admin = False
     return is_admin
@@ -74,19 +84,23 @@ def is_admin_available():
 
 # We want a helper function here to check and see if alt credentials
 # are available so we can do a single call from skip_checks if alt
-# creds area vailable.
-def is_alt_available():
-    # If dynamic credentials is enabled admin will be available
+# creds area available.
+# This depends on identity_version as there may be alt credentials
+# available for v2 but not for v3.
+def is_alt_available(identity_version):
+    # If dynamic credentials is enabled alt will be available
     if CONF.auth.use_dynamic_credentials:
         return True
     # Check whether test accounts file has the admin specified or not
     if (CONF.auth.test_accounts_file and
             os.path.isfile(CONF.auth.test_accounts_file)):
         check_accounts = preprov_creds.PreProvisionedCredentialProvider(
-            name='check_alt')
+            identity_version=identity_version, name='check_alt',
+            admin_role=CONF.identity.admin_role)
     else:
         check_accounts = preprov_creds.NonLockingCredentialProvider(
-            name='check_alt')
+            identity_version=identity_version, name='check_alt',
+            admin_role=CONF.identity.admin_role)
     try:
         if not check_accounts.is_multi_user():
             return False
