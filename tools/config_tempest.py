@@ -44,13 +44,13 @@ import urllib2
 
 import tempest_lib.auth
 from tempest_lib import exceptions
+from tempest_lib.services.compute import flavors_client
 # Since tempest can be configured in different directories, we need to use
 # the path starting at cwd.
 sys.path.insert(0, os.getcwd())
 
 from tempest.common import api_discovery
 import tempest.config
-from tempest.services.compute.json import flavors_client
 from tempest.services.compute.json import networks_client as nova_net_client
 from tempest.services.compute.json import servers_client
 from tempest.services.identity.v2.json import identity_client
