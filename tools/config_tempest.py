@@ -621,7 +621,7 @@ def create_tempest_networks(clients, conf, has_neutron, public_network_id):
         client = clients.get_nova_net_client()
         networks = client.list_networks()
         if networks:
-            label = networks[0]['label']
+            label = networks['networks'][0]['label']
 
     if label:
         conf.set('compute', 'fixed_network_name', label)
