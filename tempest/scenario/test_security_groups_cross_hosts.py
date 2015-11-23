@@ -37,8 +37,8 @@ class TestCrossHost(base.TestSecurityGroupsBasicOps):
     def resource_setup(cls):
         super(TestCrossHost, cls).resource_setup()
         hypervisor_list = \
-            cls.admin_manager.hypervisor_client.get_hypervisor_list()
-        if len(hypervisor_list) < 2:
+            cls.admin_manager.hypervisor_client.list_hypervisors()
+        if len(hypervisor_list['hypervisors']) < 2:
             raise cls.skipException("Need at least 2 compute nodes to run")
         LOG.info("Verified multiple Hypervisors exist")
 
@@ -49,25 +49,23 @@ class TestCrossHost(base.TestSecurityGroupsBasicOps):
     def _create_server(self, name, tenant, security_groups=None):
         server = super(TestCrossHost, self)._create_server(name, tenant,
                                                            security_groups)
-        serv_adm_data = self.admin_manager.servers_client.get_server(
-            server['id'])
-        self.servers.append(serv_adm_data)
-        host = self.gethost(serv_adm_data)
-        LOG.info("Server %s deployed on host %s", server, host)
+        self.servers.append(server)
+        host = self.gethost(server)
+        LOG.info("Server %s deployed on host %s", server['name'], host)
         if len(self.servers) > 1:
             self.servers = self._distribute_servers()
             LOG.info("2 Servers on 2 Hypervisors")
         return server
 
     def gethost(self, server):
-        return server['OS-EXT-SRV-ATTR:host']
+        client = self.admin_manager.servers_client
+        server_details = client.show_server(server['id'])['server']
+        return server_details['OS-EXT-SRV-ATTR:host']
 
     def update_servers(self, servers, client=None):
         if not client:
             client = self.admin_manager.servers_client
-        return [serv for serv in
-                (self.admin_manager.servers_client.get_server(s['id'])
-                 for s in servers)]
+        return [serv for serv in servers]
 
     def _distribute_servers(self):
         """
