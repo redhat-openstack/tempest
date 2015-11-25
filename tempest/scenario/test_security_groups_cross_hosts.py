@@ -15,6 +15,7 @@
 
 from oslo_log import log as logging
 
+from tempest.common import waiters
 from tempest.scenario import test_security_groups_basic_ops as base
 
 LOG = logging.getLogger(__name__)
@@ -78,10 +79,10 @@ class TestCrossHost(base.TestSecurityGroupsBasicOps):
             return [serv_a, serv_b]
 
         self.admin_manager.servers_client.migrate_server(serv_b['id'])
-        self.admin_manager.servers_client.wait_for_server_status(
+        waiters.wait_for_server_status(
             serv_b['id'],
             'VERIFY_RESIZE')
-        self.admin_manager.servers_client.confirm_resize(serv_b['id'])
+        self.admin_manager.servers_client.confirm_resize_server(serv_b['id'])
         serv_a, serv_b = self.update_servers(self.servers)
         host = self.gethost(serv_b)
         LOG.info("Server %s migrated to host %s", serv_b, host)
