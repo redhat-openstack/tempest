@@ -27,7 +27,7 @@ import six
 from six.moves.urllib import parse as urlparse
 from tempest_lib import exceptions as lib_exc
 
-import tempest.clients
+from tempest.common import credentials_factory as credentials
 from tempest.common.utils import file_utils
 from tempest import config
 from tempest import exceptions
@@ -67,7 +67,7 @@ def decision_maker():
         raise Exception("Unknown (Authentication?) Error")
     # NOTE(andreaf) Setting up an extra manager here is redundant,
     # and should be removed.
-    openstack = tempest.clients.Manager()
+    openstack = credentials.ConfiguredUserManager()
     try:
         if urlparse.urlparse(CONF.boto.ec2_url).hostname is None:
             raise Exception("Failed to get hostname from the ec2_url")
@@ -110,8 +110,10 @@ class BotoExceptionMatcher(object):
     CODE_RE = '.*'  # regexp makes sense in group match
 
     def match(self, exc):
-        """:returns: Returns with an error string if it does not match,
-               returns with None when it matches.
+        """Check boto exception
+
+        :returns: Returns with an error string if it does not match,
+                  returns with None when it matches.
         """
         if not isinstance(exc, exception.BotoServerError):
             return "%r not an BotoServerError instance" % exc
@@ -136,9 +138,9 @@ class ServerError(BotoExceptionMatcher):
 
 
 def _add_matcher_class(error_cls, error_data, base=BotoExceptionMatcher):
-    """
-        Usable for adding an ExceptionMatcher(s) into the exception tree.
-        The not leaf elements does wildcard match
+    """Usable for adding an ExceptionMatcher(s) into the exception tree.
+
+       The not leaf elements does wildcard match
     """
     # in error_code just literal and '.' characters expected
     if not isinstance(error_data, six.string_types):
@@ -227,6 +229,7 @@ class BotoTestCase(tempest.test.BaseTestCase):
     @classmethod
     def addResourceCleanUp(cls, function, *args, **kwargs):
         """Adds CleanUp callable, used by tearDownClass.
+
         Recommended to a use (deep)copy on the mutable args.
         """
         cls._sequence = cls._sequence + 1
@@ -242,6 +245,7 @@ class BotoTestCase(tempest.test.BaseTestCase):
     def assertBotoError(self, excMatcher, callableObj,
                         *args, **kwargs):
         """Example usage:
+
             self.assertBotoError(self.ec2_error_code.client.
                                  InvalidKeyPair.Duplicate,
                                  self.client.create_keypair,
@@ -258,7 +262,8 @@ class BotoTestCase(tempest.test.BaseTestCase):
 
     @classmethod
     def resource_cleanup(cls):
-        """Calls the callables added by addResourceCleanUp,
+        """Calls the callables added by addResourceCleanUp
+
         when you overwrite this function don't forget to call this too.
         """
         fail_count = 0
@@ -302,10 +307,9 @@ class BotoTestCase(tempest.test.BaseTestCase):
 
     @classmethod
     def get_lfunction_gone(cls, obj):
-        """If the object is instance of a well know type returns back with
-            with the corresponding function otherwise it assumes the obj itself
-            is the function.
-            """
+        # NOTE: If the object is instance of a well know type returns back with
+        # with the corresponding function otherwise it assumes the obj itself
+        # is the function.
         ec = cls.ec2_error_code
         if isinstance(obj, ec2.instance.Instance):
             colusure_matcher = ec.client.InvalidInstanceID.NotFound
@@ -489,6 +493,7 @@ class BotoTestCase(tempest.test.BaseTestCase):
     @classmethod
     def destroy_security_group_wait(cls, group):
         """Delete group.
+
            Use just for teardown!
         """
         # NOTE(afazekas): should wait/try until all related instance terminates
@@ -497,6 +502,7 @@ class BotoTestCase(tempest.test.BaseTestCase):
     @classmethod
     def destroy_volume_wait(cls, volume):
         """Delete volume, tries to detach first.
+
            Use just for teardown!
         """
         exc_num = 0

@@ -22,7 +22,6 @@ from tempest.common import compute
 from tempest.common.utils import data_utils
 from tempest.common import waiters
 from tempest import config
-from tempest import exceptions
 import tempest.test
 
 CONF = config.CONF
@@ -30,10 +29,9 @@ CONF = config.CONF
 LOG = logging.getLogger(__name__)
 
 
-class BaseComputeTest(tempest.test.BaseTestCase):
+class BaseV2ComputeTest(tempest.test.BaseTestCase):
     """Base test case class for all Compute API tests."""
 
-    _api_version = 2
     force_tenant_isolation = False
 
     # TODO(andreaf) We should care also for the alt_manager here
@@ -42,29 +40,25 @@ class BaseComputeTest(tempest.test.BaseTestCase):
 
     @classmethod
     def skip_checks(cls):
-        super(BaseComputeTest, cls).skip_checks()
+        super(BaseV2ComputeTest, cls).skip_checks()
         if not CONF.service_available.nova:
             raise cls.skipException("Nova is not available")
-        if cls._api_version != 2:
-            msg = ("Unexpected API version is specified (%s)" %
-                   cls._api_version)
-            raise exceptions.InvalidConfiguration(message=msg)
 
     @classmethod
     def setup_credentials(cls):
         cls.set_network_resources()
-        super(BaseComputeTest, cls).setup_credentials()
+        super(BaseV2ComputeTest, cls).setup_credentials()
 
     @classmethod
     def setup_clients(cls):
-        super(BaseComputeTest, cls).setup_clients()
+        super(BaseV2ComputeTest, cls).setup_clients()
         cls.servers_client = cls.os.servers_client
         cls.server_groups_client = cls.os.server_groups_client
         cls.flavors_client = cls.os.flavors_client
         cls.images_client = cls.os.images_client
         cls.extensions_client = cls.os.extensions_client
         cls.floating_ip_pools_client = cls.os.floating_ip_pools_client
-        cls.floating_ips_client = cls.os.floating_ips_client
+        cls.floating_ips_client = cls.os.compute_floating_ips_client
         cls.keypairs_client = cls.os.keypairs_client
         cls.security_group_rules_client = cls.os.security_group_rules_client
         cls.security_groups_client = cls.os.security_groups_client
@@ -96,7 +90,7 @@ class BaseComputeTest(tempest.test.BaseTestCase):
 
     @classmethod
     def resource_setup(cls):
-        super(BaseComputeTest, cls).resource_setup()
+        super(BaseV2ComputeTest, cls).resource_setup()
         cls.build_interval = CONF.compute.build_interval
         cls.build_timeout = CONF.compute.build_timeout
         cls.ssh_user = CONF.compute.ssh_user
@@ -117,7 +111,7 @@ class BaseComputeTest(tempest.test.BaseTestCase):
         cls.clear_servers()
         cls.clear_security_groups()
         cls.clear_server_groups()
-        super(BaseComputeTest, cls).resource_cleanup()
+        super(BaseV2ComputeTest, cls).resource_cleanup()
 
     @classmethod
     def clear_servers(cls):
@@ -144,10 +138,11 @@ class BaseComputeTest(tempest.test.BaseTestCase):
     @classmethod
     def server_check_teardown(cls):
         """Checks is the shared server clean enough for subsequent test.
+
            Method will delete the server when it's dirty.
            The setUp method is responsible for creating a new server.
            Exceptions raised in tearDown class are fails the test case,
-           This method supposed to use only by tierDown methods, when
+           This method supposed to use only by tearDown methods, when
            the shared server_id is stored in the server_id of the class.
         """
         if getattr(cls, 'server_id', None) is not None:
@@ -356,22 +351,13 @@ class BaseComputeTest(tempest.test.BaseTestCase):
         return ip_or_server
 
 
-class BaseV2ComputeTest(BaseComputeTest):
-    _api_version = 2
-
-
-class BaseComputeAdminTest(BaseComputeTest):
+class BaseV2ComputeAdminTest(BaseV2ComputeTest):
     """Base test case class for Compute Admin API tests."""
 
     credentials = ['primary', 'admin']
 
     @classmethod
     def setup_clients(cls):
-        super(BaseComputeAdminTest, cls).setup_clients()
+        super(BaseV2ComputeAdminTest, cls).setup_clients()
         cls.availability_zone_admin_client = (
             cls.os_adm.availability_zone_client)
-
-
-class BaseV2ComputeAdminTest(BaseComputeAdminTest):
-    """Base test case class for Compute Admin V2 API tests."""
-    _api_version = 2

@@ -153,7 +153,7 @@ class ImageClientV2(service_client.ServiceClient):
         self.expected_success(204, resp.status)
         return service_client.ResponseBody(resp, body)
 
-    def load_image_file(self, image_id):
+    def show_image_file(self, image_id):
         url = 'v2/images/%s/file' % image_id
         resp, body = self.get(url)
         self.expected_success(200, resp.status)
@@ -178,17 +178,17 @@ class ImageClientV2(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def add_image_member(self, image_id, member_id):
+    def add_image_member(self, image_id, **kwargs):
         url = 'v2/images/%s/members' % image_id
-        data = json.dumps({'member': member_id})
+        data = json.dumps(kwargs)
         resp, body = self.post(url, data)
         self.expected_success(200, resp.status)
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def update_image_member(self, image_id, member_id, body):
+    def update_image_member(self, image_id, member_id, **kwargs):
         url = 'v2/images/%s/members/%s' % (image_id, member_id)
-        data = json.dumps(body)
+        data = json.dumps(kwargs)
         resp, body = self.put(url, data)
         self.expected_success(200, resp.status)
         body = json.loads(body)
@@ -200,7 +200,7 @@ class ImageClientV2(service_client.ServiceClient):
         self.expected_success(200, resp.status)
         return service_client.ResponseBody(resp, json.loads(body))
 
-    def remove_image_member(self, image_id, member_id):
+    def delete_image_member(self, image_id, member_id):
         url = 'v2/images/%s/members/%s' % (image_id, member_id)
         resp, _ = self.delete(url)
         self.expected_success(204, resp.status)
@@ -220,19 +220,13 @@ class ImageClientV2(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def create_namespaces(self, namespace, **kwargs):
-        params = {
-            "namespace": namespace,
-        }
+    def create_namespace(self, **kwargs):
+        """Create a namespace.
 
-        for option in kwargs:
-            value = kwargs.get(option)
-            if isinstance(value, dict) or isinstance(value, tuple):
-                params.update(value)
-            else:
-                params[option] = value
-
-        data = json.dumps(params)
+        Available params: see http://developer.openstack.org/
+                              api-ref-image-v2.html#createNamespace-v2
+        """
+        data = json.dumps(kwargs)
         self._validate_schema(data)
 
         resp, body = self.post('/v2/metadefs/namespaces', data)
@@ -240,25 +234,23 @@ class ImageClientV2(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def show_namespaces(self, namespace):
+    def show_namespace(self, namespace):
         url = '/v2/metadefs/namespaces/%s' % namespace
         resp, body = self.get(url)
         self.expected_success(200, resp.status)
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def update_namespaces(self, namespace, visibility, **kwargs):
-        params = {
-            "namespace": namespace,
-            "visibility": visibility
-        }
-        for option in kwargs:
-            value = kwargs.get(option)
-            if isinstance(value, dict) or isinstance(value, tuple):
-                params.update(value)
-            else:
-                params[option] = value
+    def update_namespace(self, namespace, **kwargs):
+        """Update a namespace.
 
+        Available params: see http://developer.openstack.org/
+                              api-ref-image-v2.html#updateNamespace-v2
+        """
+        # NOTE: On Glance API, we need to pass namespace on both URI
+        # and a request body.
+        params = {'namespace': namespace}
+        params.update(kwargs)
         data = json.dumps(params)
         self._validate_schema(data)
         url = '/v2/metadefs/namespaces/%s' % namespace
@@ -267,7 +259,7 @@ class ImageClientV2(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def delete_namespaces(self, namespace):
+    def delete_namespace(self, namespace):
         url = '/v2/metadefs/namespaces/%s' % namespace
         resp, _ = self.delete(url)
         self.expected_success(204, resp.status)

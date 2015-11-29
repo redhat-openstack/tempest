@@ -19,11 +19,9 @@ import six
 from tempest.services.baremetal.v1.json import baremetal_client
 from tempest.services.compute.json import floating_ips_client
 from tempest.services.compute.json import interfaces_client
-from tempest.services.compute.json import quota_classes_client
 from tempest.services.compute.json import security_group_rules_client
 from tempest.services.compute.json import server_groups_client
 from tempest.services.compute.json import servers_client
-from tempest.services.compute.json import services_client
 from tempest.services.compute.json import volumes_client \
     as compute_volumes_client
 from tempest.services.data_processing.v1_1 import data_processing_client
@@ -46,6 +44,7 @@ from tempest.services.object_storage import account_client
 from tempest.services.object_storage import container_client
 from tempest.services.object_storage import object_client
 from tempest.services.orchestration.json import orchestration_client
+from tempest.services.telemetry.json import alarming_client
 from tempest.services.telemetry.json import telemetry_client
 from tempest.services.volume.json.admin import volume_hosts_client
 from tempest.services.volume.json.admin import volume_quotas_client
@@ -89,11 +88,9 @@ class TestServiceClient(base.TestCase):
             baremetal_client.BaremetalClient,
             floating_ips_client.FloatingIPsClient,
             interfaces_client.InterfacesClient,
-            quota_classes_client.QuotaClassesClient,
             security_group_rules_client.SecurityGroupRulesClient,
             server_groups_client.ServerGroupsClient,
             servers_client.ServersClient,
-            services_client.ServicesClient,
             compute_volumes_client.VolumesClient,
             data_processing_client.DataProcessingClient,
             db_flavor_client.DatabaseFlavorsClient,
@@ -105,6 +102,7 @@ class TestServiceClient(base.TestCase):
             object_client.ObjectClient,
             orchestration_client.OrchestrationClient,
             telemetry_client.TelemetryClient,
+            alarming_client.AlarmingClient,
             qos_client.QosSpecsClient,
             volume_hosts_client.VolumeHostsClient,
             volume_quotas_client.VolumeQuotasClient,

@@ -31,19 +31,36 @@ LOG = logging.getLogger(__name__)
 class DynamicCredentialProvider(cred_provider.CredentialProvider):
 
     def __init__(self, identity_version, name=None, network_resources=None,
-                 credentials_domain=None, admin_role=None):
+                 credentials_domain=None, admin_role=None, admin_creds=None):
+        """Creates credentials dynamically for tests
+
+        A credential provider that, based on an initial set of
+        admin credentials, creates new credentials on the fly for
+        tests to use and then discard.
+
+        :param str identity_version: identity API version to use `v2` or `v3`
+        :param str admin_role: name of the admin role added to admin users
+        :param str name: names of dynamic resources include this parameter
+                         when specified
+        :param str credentials_domain: name of the domain where the users
+                                       are created. If not defined, the project
+                                       domain from admin_credentials is used
+        :param dict network_resources: network resources to be created for
+                                       the created credentials
+        :param Credentials admin_creds: initial admin credentials
+        """
         super(DynamicCredentialProvider, self).__init__(
-            identity_version=identity_version, name=name,
-            network_resources=network_resources,
-            credentials_domain=credentials_domain, admin_role=admin_role)
+            identity_version=identity_version, admin_role=admin_role,
+            name=name, credentials_domain=credentials_domain,
+            network_resources=network_resources)
+        self.network_resources = network_resources
         self._creds = {}
         self.ports = []
-        self.default_admin_creds = cred_provider.get_configured_credentials(
-            'identity_admin', fill_in=True,
-            identity_version=self.identity_version)
+        self.default_admin_creds = admin_creds
         (self.identity_admin_client, self.network_admin_client,
          self.networks_admin_client,
-         self.subnets_admin_client) = self._get_admin_clients()
+         self.subnets_admin_client,
+         self.ports_admin_client) = self._get_admin_clients()
         # Domain where isolated credentials are provisioned (v3 only).
         # Use that of the admin account is None is configured.
         self.creds_domain_name = None
@@ -55,19 +72,19 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
             self.identity_admin_client, self.creds_domain_name)
 
     def _get_admin_clients(self):
-        """
-        Returns a tuple with instances of the following admin clients (in this
-        order):
+        """Returns a tuple with instances of the following admin clients
+
+        (in this order):
             identity
             network
         """
         os = clients.Manager(self.default_admin_creds)
         if self.identity_version == 'v2':
             return (os.identity_client, os.network_client, os.networks_client,
-                    os.subnets_client)
+                    os.subnets_client, os.ports_client)
         else:
             return (os.identity_v3_client, os.network_client,
-                    os.networks_client, os.subnets_client)
+                    os.networks_client, os.subnets_client, os.ports_client)
 
     def _create_creds(self, suffix="", admin=False, roles=None):
         """Create random credentials under the following schema.

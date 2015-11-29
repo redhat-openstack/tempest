@@ -89,6 +89,7 @@ import os
 from oslo_log import log as logging
 import yaml
 
+from tempest.common import identity
 from tempest import config
 from tempest import exceptions as exc
 from tempest.services.identity.v2.json import identity_client
@@ -188,13 +189,14 @@ def create_resources(opts, resources):
     LOG.info('Tenants created')
     for u in resources['users']:
         try:
-            tenant = identity_admin.get_tenant_by_name(u['tenant'])
+            tenant = identity.get_tenant_by_name(identity_admin, u['tenant'])
         except tempest_lib.exceptions.NotFound:
             LOG.error("Tenant: %s - not found" % u['tenant'])
             continue
         while True:
             try:
-                identity_admin.get_user_by_username(tenant['id'], u['name'])
+                identity.get_user_by_username(identity_admin,
+                                              tenant['id'], u['name'])
             except tempest_lib.exceptions.NotFound:
                 identity_admin.create_user(
                     u['name'], u['pass'], tenant['id'],
@@ -209,7 +211,7 @@ def create_resources(opts, resources):
     LOG.info('Users created')
     if neutron_iso_networks:
         for u in resources['users']:
-            tenant = identity_admin.get_tenant_by_name(u['tenant'])
+            tenant = identity.get_tenant_by_name(identity_admin, u['tenant'])
             network_name, router_name = create_network_resources(
                 network_admin, networks_admin, subnets_admin, tenant['id'],
                 u['name'])
@@ -218,13 +220,13 @@ def create_resources(opts, resources):
         LOG.info('Networks created')
     for u in resources['users']:
         try:
-            tenant = identity_admin.get_tenant_by_name(u['tenant'])
+            tenant = identity.get_tenant_by_name(identity_admin, u['tenant'])
         except tempest_lib.exceptions.NotFound:
             LOG.error("Tenant: %s - not found" % u['tenant'])
             continue
         try:
-            user = identity_admin.get_user_by_username(tenant['id'],
-                                                       u['name'])
+            user = identity.get_user_by_username(identity_admin,
+                                                 tenant['id'], u['name'])
         except tempest_lib.exceptions.NotFound:
             LOG.error("User: %s - not found" % u['user'])
             continue

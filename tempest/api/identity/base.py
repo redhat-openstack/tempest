@@ -16,7 +16,7 @@
 from oslo_log import log as logging
 from tempest_lib import exceptions as lib_exc
 
-from tempest.common import cred_provider
+from tempest.common import credentials_factory as common_creds
 from tempest.common.utils import data_utils
 from tempest import config
 import tempest.test
@@ -39,7 +39,7 @@ class BaseIdentityTest(tempest.test.BaseTestCase):
 
     @classmethod
     def get_user_by_name(cls, name):
-        users = cls.client.get_users()['users']
+        users = cls.client.list_users()['users']
         user = [u for u in users if u['name'] == name]
         if len(user) > 0:
             return user[0]
@@ -120,11 +120,6 @@ class BaseIdentityV3Test(BaseIdentityTest):
         super(BaseIdentityV3Test, cls).setup_clients()
         cls.non_admin_client = cls.os.identity_v3_client
         cls.non_admin_token = cls.os.token_v3_client
-        cls.non_admin_endpoints_client = cls.os.endpoints_client
-        cls.non_admin_region_client = cls.os.region_client
-        cls.non_admin_service_client = cls.os.service_client
-        cls.non_admin_policy_client = cls.os.policy_client
-        cls.non_admin_creds_client = cls.os.credentials_client
 
     @classmethod
     def resource_cleanup(cls):
@@ -142,10 +137,12 @@ class BaseIdentityV3AdminTest(BaseIdentityV3Test):
         cls.token = cls.os_adm.token_v3_client
         cls.endpoints_client = cls.os_adm.endpoints_client
         cls.region_client = cls.os_adm.region_client
-        cls.data = DataGenerator(cls.client)
         cls.service_client = cls.os_adm.service_client
         cls.policy_client = cls.os_adm.policy_client
         cls.creds_client = cls.os_adm.credentials_client
+        cls.groups_client = cls.os_adm.groups_client
+
+        cls.data = DataGenerator(cls.client)
 
     @classmethod
     def resource_cleanup(cls):
@@ -154,7 +151,7 @@ class BaseIdentityV3AdminTest(BaseIdentityV3Test):
 
     @classmethod
     def get_user_by_name(cls, name):
-        users = cls.client.get_users()['users']
+        users = cls.client.list_users()['users']
         user = [u for u in users if u['name'] == name]
         if len(user) > 0:
             return user[0]
@@ -195,11 +192,11 @@ class DataGenerator(object):
 
         @property
         def test_credentials(self):
-            return cred_provider.get_credentials(username=self.test_user,
-                                                 user_id=self.user['id'],
-                                                 password=self.test_password,
-                                                 tenant_name=self.test_tenant,
-                                                 tenant_id=self.tenant['id'])
+            return common_creds.get_credentials(username=self.test_user,
+                                                user_id=self.user['id'],
+                                                password=self.test_password,
+                                                tenant_name=self.test_tenant,
+                                                tenant_id=self.tenant['id'])
 
         def setup_test_user(self):
             """Set up a test user."""

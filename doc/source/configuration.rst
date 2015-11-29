@@ -127,16 +127,16 @@ to the tests using the credentials, and failure to do this will likely cause
 unexpected failures in some tests.
 
 
-Non-locking test accounts (aka credentials config options)
-""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+Legacy test accounts (aka credentials config options)
+"""""""""""""""""""""""""""""""""""""""""""""""""""""
 **Starting in the Liberty release this mechanism was deprecated and will be
 removed in a future release**
 
 When Tempest was refactored to allow for locking test accounts, the original
 non-tenant isolated case was converted to internally work similarly to the
-accounts.yaml file. This mechanism was then called the non-locking test accounts
-provider. To use the non-locking test accounts provider you can specify the sets
-of credentials in the configuration file like detailed above with following 9
+accounts.yaml file. This mechanism was then called the legacy test accounts
+provider. To use the legacy test accounts provider you can specify the sets of
+credentials in the configuration file like detailed above with following 9
 options in the identity section:
 
  #. username
@@ -363,6 +363,17 @@ communication to a particular service. It is only if you are either not using
 the same *catalog_type* as devstack or you want Tempest to talk to a different
 endpoint type instead of publicURL for a service that these need to be changed.
 
+.. note::
+
+    Tempest does not serve all kind of fancy URLs in the service catalog.
+    Service catalog should be in a standard format (which is going to be
+    standardized at keystone level).
+    Tempest expects URLs in the Service catalog in below format:
+     * http://example.com:1234/<version-info>
+    Examples:
+     * Good - http://example.com:1234/v2.0
+     * Wouldn’t work -  http://example.com:1234/xyz/v2.0/
+       (adding prefix/suffix around version etc)
 
 Service feature configuration
 -----------------------------

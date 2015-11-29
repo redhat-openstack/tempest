@@ -28,9 +28,7 @@ CONF = config.CONF
 
 
 class NetworksTest(base.BaseNetworkTest):
-    """
-    Tests the following operations in the Neutron API using the REST client for
-    Neutron:
+    """Tests the following operations in the Neutron API:
 
         create a network for a tenant
         list tenant's networks
@@ -95,9 +93,8 @@ class NetworksTest(base.BaseNetworkTest):
 
     @classmethod
     def _create_subnet_with_last_subnet_block(cls, network, ip_version):
-        """Derive last subnet CIDR block from tenant CIDR and
-           create the subnet with that derived CIDR
-        """
+        # Derive last subnet CIDR block from tenant CIDR and
+        # create the subnet with that derived CIDR
         if ip_version == 4:
             cidr = netaddr.IPNetwork(CONF.network.tenant_network_cidr)
             mask_bits = CONF.network.tenant_network_mask_bits
@@ -133,9 +130,8 @@ class NetworksTest(base.BaseNetworkTest):
         return [{'start': str(gateway + 2), 'end': str(gateway + 3)}]
 
     def subnet_dict(self, include_keys):
-        """Return a subnet dict which has include_keys and their corresponding
-           value from self._subnet_data
-        """
+        # Return a subnet dict which has include_keys and their corresponding
+        # value from self._subnet_data
         return dict((key, self._subnet_data[self._ip_version][key])
                     for key in include_keys)
 
@@ -405,9 +401,7 @@ class NetworksTest(base.BaseNetworkTest):
 
 
 class BulkNetworkOpsTestJSON(base.BaseNetworkTest):
-    """
-    Tests the following operations in the Neutron API using the REST client for
-    Neutron:
+    """Tests the following operations in the Neutron API:
 
         bulk network creation
         bulk subnet creation
@@ -444,9 +438,9 @@ class BulkNetworkOpsTestJSON(base.BaseNetworkTest):
 
     def _delete_ports(self, created_ports):
         for n in created_ports:
-            self.client.delete_port(n['id'])
+            self.ports_client.delete_port(n['id'])
         # Asserting that the ports are not found in the list after deletion
-        body = self.client.list_ports()
+        body = self.ports_client.list_ports()
         ports_list = [port['id'] for port in body['ports']]
         for n in created_ports:
             self.assertNotIn(n['id'], ports_list)
@@ -522,7 +516,7 @@ class BulkNetworkOpsTestJSON(base.BaseNetworkTest):
         created_ports = body['ports']
         self.addCleanup(self._delete_ports, created_ports)
         # Asserting that the ports are found in the list after creation
-        body = self.client.list_ports()
+        body = self.ports_client.list_ports()
         ports_list = [port['id'] for port in body['ports']]
         for n in created_ports:
             self.assertIsNotNone(n['id'])

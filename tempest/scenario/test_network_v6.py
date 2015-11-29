@@ -70,12 +70,13 @@ class TestGettingAddress(manager.NetworkScenarioTest):
             'security_groups': [{'name': self.sec_grp['name']}]}
 
     def prepare_network(self, address6_mode, n_subnets6=1, dualnet=False):
-        """Creates network with
-         given number of IPv6 subnets in the given mode and
-         one IPv4 subnet
-         Creates router with ports on all subnets
-         if dualnet - create IPv6 subnets on a different network
-         :return: list of created networks
+        """Prepare network
+
+        Creates network with given number of IPv6 subnets in the given mode and
+        one IPv4 subnet.
+        Creates router with ports on all subnets.
+        if dualnet - create IPv6 subnets on a different network
+        :return: list of created networks
         """
         self.network = self._create_network(tenant_id=self.tenant_id)
         if dualnet:
@@ -147,7 +148,7 @@ class TestGettingAddress(manager.NetworkScenarioTest):
                                   "ports: %s")
                          % (self.network_v6, ports))
         mac6 = ports[0]
-        ssh.turn_nic_on(ssh.get_nic_name(mac6))
+        ssh.set_nic_state(ssh.get_nic_name(mac6))
 
     def _prepare_and_test(self, address6_mode, n_subnets6=1, dualnet=False):
         net_list = self.prepare_network(address6_mode=address6_mode,
@@ -188,21 +189,15 @@ class TestGettingAddress(manager.NetworkScenarioTest):
         self._check_connectivity(sshv4_1, ips_from_api_2['4'])
         self._check_connectivity(sshv4_2, ips_from_api_1['4'])
 
-        # Some VM (like cirros) may not have ping6 utility
-        result = sshv4_1.exec_command('whereis ping6')
-        is_ping6 = False if result == 'ping6:\n' else True
-        if is_ping6:
-            for i in range(n_subnets6):
-                self._check_connectivity(sshv4_1,
-                                         ips_from_api_2['6'][i])
-                self._check_connectivity(sshv4_1,
-                                         self.subnets_v6[i].gateway_ip)
-                self._check_connectivity(sshv4_2,
-                                         ips_from_api_1['6'][i])
-                self._check_connectivity(sshv4_2,
-                                         self.subnets_v6[i].gateway_ip)
-        else:
-            LOG.warning('Ping6 is not available, skipping')
+        for i in range(n_subnets6):
+            self._check_connectivity(sshv4_1,
+                                     ips_from_api_2['6'][i])
+            self._check_connectivity(sshv4_1,
+                                     self.subnets_v6[i].gateway_ip)
+            self._check_connectivity(sshv4_2,
+                                     ips_from_api_1['6'][i])
+            self._check_connectivity(sshv4_2,
+                                     self.subnets_v6[i].gateway_ip)
 
     def _check_connectivity(self, source, dest):
         self.assertTrue(

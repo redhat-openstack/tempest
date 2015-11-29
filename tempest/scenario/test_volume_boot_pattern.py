@@ -11,7 +11,6 @@
 #    under the License.
 
 from oslo_log import log
-from tempest_lib import decorators
 
 from tempest.common.utils import data_utils
 from tempest.common import waiters
@@ -26,8 +25,7 @@ LOG = log.getLogger(__name__)
 
 class TestVolumeBootPattern(manager.ScenarioTest):
 
-    """
-    This test case attempts to reproduce the following steps:
+    """This test case attempts to reproduce the following steps:
 
      * Create in Cinder some bootable volume importing a Glance image
      * Boot an instance from the bootable volume
@@ -96,31 +94,9 @@ class TestVolumeBootPattern(manager.ScenarioTest):
         vol_name = data_utils.rand_name('volume')
         return self.create_volume(name=vol_name, snapshot_id=snap_id)
 
-    def _ssh_to_server(self, server, keypair):
-        if CONF.compute.use_floatingip_for_ssh:
-            ip = self.create_floating_ip(server)['ip']
-        else:
-            ip = server
-
-        return self.get_remote_client(ip, private_key=keypair['private_key'],
-                                      log_console_of_servers=[server])
-
-    def _get_content(self, ssh_client):
-        return ssh_client.exec_command('cat /tmp/text')
-
-    def _write_text(self, ssh_client):
-        text = data_utils.rand_name('text')
-        ssh_client.exec_command('echo "%s" > /tmp/text; sync' % (text))
-
-        return self._get_content(ssh_client)
-
     def _delete_server(self, server):
         self.servers_client.delete_server(server['id'])
         waiters.wait_for_server_termination(self.servers_client, server['id'])
-
-    def _check_content_of_written_file(self, ssh_client, expected):
-        actual = self._get_content(ssh_client)
-        self.assertEqual(expected, actual)
 
     @test.idempotent_id('557cd2c2-4eb8-4dce-98be-f86765ff311b')
     @test.attr(type='smoke')
@@ -135,9 +111,9 @@ class TestVolumeBootPattern(manager.ScenarioTest):
                                                        keypair, security_group)
 
         # write content to volume on instance
-        ssh_client_for_instance_1st = self._ssh_to_server(instance_1st,
-                                                          keypair)
-        text = self._write_text(ssh_client_for_instance_1st)
+        ip_instance_1st = self.get_server_or_ip(instance_1st)
+        timestamp = self.create_timestamp(ip_instance_1st,
+                                          private_key=keypair['private_key'])
 
         # delete instance
         self._delete_server(instance_1st)
@@ -147,24 +123,26 @@ class TestVolumeBootPattern(manager.ScenarioTest):
                                                        keypair, security_group)
 
         # check the content of written file
-        ssh_client_for_instance_2nd = self._ssh_to_server(instance_2nd,
-                                                          keypair)
-        self._check_content_of_written_file(ssh_client_for_instance_2nd, text)
+        ip_instance_2nd = self.get_server_or_ip(instance_2nd)
+        timestamp2 = self.get_timestamp(ip_instance_2nd,
+                                        private_key=keypair['private_key'])
+        self.assertEqual(timestamp, timestamp2)
 
         # snapshot a volume
         snapshot = self._create_snapshot_from_volume(volume_origin['id'])
 
         # create a 3rd instance from snapshot
         volume = self._create_volume_from_snapshot(snapshot['id'])
-        instance_from_snapshot = (
+        server_from_snapshot = (
             self._boot_instance_from_volume(volume['id'],
                                             keypair, security_group))
 
         # check the content of written file
-        ssh_client = self._ssh_to_server(instance_from_snapshot, keypair)
-        self._check_content_of_written_file(ssh_client, text)
+        server_from_snapshot_ip = self.get_server_or_ip(server_from_snapshot)
+        timestamp3 = self.get_timestamp(server_from_snapshot_ip,
+                                        private_key=keypair['private_key'])
+        self.assertEqual(timestamp, timestamp3)
 
-    @decorators.skip_because(bug='1489581')
     @test.idempotent_id('36c34c67-7b54-4b59-b188-02a2f458a63b')
     @test.services('compute', 'volume', 'image')
     def test_create_ebs_image_and_check_boot(self):

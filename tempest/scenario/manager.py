@@ -47,7 +47,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
         super(ScenarioTest, cls).setup_clients()
         # Clients (in alphabetical order)
         cls.flavors_client = cls.manager.flavors_client
-        cls.floating_ips_client = cls.manager.floating_ips_client
+        cls.compute_floating_ips_client = (
+            cls.manager.compute_floating_ips_client)
         # Glance image client v1
         cls.image_client = cls.manager.image_client
         # Compute image client
@@ -62,7 +63,9 @@ class ScenarioTest(tempest.test.BaseTestCase):
         # Neutron network client
         cls.network_client = cls.manager.network_client
         cls.networks_client = cls.manager.networks_client
+        cls.ports_client = cls.manager.ports_client
         cls.subnets_client = cls.manager.subnets_client
+        cls.floating_ips_client = cls.manager.floating_ips_client
         # Heat client
         cls.orchestration_client = cls.manager.orchestration_client
 
@@ -129,14 +132,13 @@ class ScenarioTest(tempest.test.BaseTestCase):
         self.cleanup_waits.append(wait_dict)
 
     def _wait_for_cleanups(self):
-        """To handle async delete actions, a list of waits is added
-        which will be iterated over as the last step of clearing the
-        cleanup queue. That way all the delete calls are made up front
-        and the tests won't succeed unless the deletes are eventually
-        successful. This is the same basic approach used in the api tests to
-        limit cleanup execution time except here it is multi-resource,
-        because of the nature of the scenario tests.
-        """
+        # To handle async delete actions, a list of waits is added
+        # which will be iterated over as the last step of clearing the
+        # cleanup queue. That way all the delete calls are made up front
+        # and the tests won't succeed unless the deletes are eventually
+        # successful. This is the same basic approach used in the api tests to
+        # limit cleanup execution time except here it is multi-resource,
+        # because of the nature of the scenario tests.
         for wait in self.cleanup_waits:
             waiter_callable = wait.pop('waiter_callable')
             waiter_callable(**wait)
@@ -379,20 +381,22 @@ class ScenarioTest(tempest.test.BaseTestCase):
                   (img_path, img_container_format, img_disk_format,
                    img_properties, ami_img_path, ari_img_path, aki_img_path))
         try:
-            self.image = self._image_create('scenario-img',
-                                            img_container_format,
-                                            img_path,
-                                            disk_format=img_disk_format,
-                                            properties=img_properties)
+            image = self._image_create('scenario-img',
+                                       img_container_format,
+                                       img_path,
+                                       disk_format=img_disk_format,
+                                       properties=img_properties)
         except IOError:
             LOG.debug("A qcow2 image was not found. Try to get a uec image.")
             kernel = self._image_create('scenario-aki', 'aki', aki_img_path)
             ramdisk = self._image_create('scenario-ari', 'ari', ari_img_path)
             properties = {'kernel_id': kernel, 'ramdisk_id': ramdisk}
-            self.image = self._image_create('scenario-ami', 'ami',
-                                            path=ami_img_path,
-                                            properties=properties)
-        LOG.debug("image:%s" % self.image)
+            image = self._image_create('scenario-ami', 'ami',
+                                       path=ami_img_path,
+                                       properties=properties)
+        LOG.debug("image:%s" % image)
+
+        return image
 
     def _log_console_output(self, servers=None):
         if not CONF.compute_feature_enabled.console_output:
@@ -517,7 +521,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
                               username=None,
                               private_key=None,
                               should_connect=True):
-        """
+        """Check server connectivity
+
         :param ip_address: server to test against
         :param username: server's ssh username
         :param private_key: server's ssh private key to be used
@@ -560,16 +565,14 @@ class ScenarioTest(tempest.test.BaseTestCase):
             raise
 
     def create_floating_ip(self, thing, pool_name=None):
-        """Creates a floating IP and associates to a server using
-        Nova clients
-        """
+        """Create a floating IP and associates to a server on Nova"""
 
-        floating_ip = (self.floating_ips_client.create_floating_ip(pool_name)
-                       ['floating_ip'])
+        floating_ip = (self.compute_floating_ips_client.
+                       create_floating_ip(pool_name)['floating_ip'])
         self.addCleanup(self.delete_wrapper,
-                        self.floating_ips_client.delete_floating_ip,
+                        self.compute_floating_ips_client.delete_floating_ip,
                         floating_ip['id'])
-        self.floating_ips_client.associate_floating_ip_to_server(
+        self.compute_floating_ips_client.associate_floating_ip_to_server(
             floating_ip['ip'], thing['id'])
         return floating_ip
 
@@ -600,9 +603,17 @@ class ScenarioTest(tempest.test.BaseTestCase):
             ssh_client.umount(mount_path)
         return timestamp
 
+    def get_server_or_ip(self, server):
+        if CONF.validation.connect_method == 'floating':
+            ip = self.create_floating_ip(server)['ip']
+        else:
+            ip = server
+        return ip
+
 
 class NetworkScenarioTest(ScenarioTest):
     """Base class for network scenario tests.
+
     This class provide helpers for network scenario tests, using the neutron
     API. Helpers from ancestor which use the nova network API are overridden
     with the neutron API.
@@ -661,7 +672,7 @@ class NetworkScenarioTest(ScenarioTest):
 
     def _list_ports(self, *args, **kwargs):
         """List ports using admin creds """
-        ports_list = self.admin_manager.network_client.list_ports(
+        ports_list = self.admin_manager.ports_client.list_ports(
             *args, **kwargs)
         return ports_list['ports']
 
@@ -673,9 +684,9 @@ class NetworkScenarioTest(ScenarioTest):
 
     def _create_subnet(self, network, client=None, subnets_client=None,
                        namestart='subnet-smoke', **kwargs):
-        """
-        Create a subnet for the given network within the cidr block
-        configured for tenant networks.
+        """Create a subnet for the given network
+
+        within the cidr block configured for tenant networks.
         """
         if not client:
             client = self.network_client
@@ -683,7 +694,8 @@ class NetworkScenarioTest(ScenarioTest):
             subnets_client = self.subnets_client
 
         def cidr_in_use(cidr, tenant_id):
-            """
+            """Check cidr existence
+
             :return True if subnet with cidr already exist in tenant
                 False else
             """
@@ -735,14 +747,14 @@ class NetworkScenarioTest(ScenarioTest):
     def _create_port(self, network_id, client=None, namestart='port-quotatest',
                      **kwargs):
         if not client:
-            client = self.network_client
+            client = self.ports_client
         name = data_utils.rand_name(namestart)
         result = client.create_port(
             name=name,
             network_id=network_id,
             **kwargs)
         self.assertIsNotNone(result, 'Unable to allocate port')
-        port = net_resources.DeletablePort(client=client,
+        port = net_resources.DeletablePort(ports_client=client,
                                            **result['port'])
         self.addCleanup(self.delete_wrapper, port.delete)
         return port
@@ -757,6 +769,8 @@ class NetworkScenarioTest(ScenarioTest):
                     for fxip in p["fixed_ips"]
                     if netaddr.valid_ipv4(fxip["ip_address"])]
 
+        self.assertNotEqual(0, len(port_map),
+                            "No IPv4 addresses found in: %s" % ports)
         self.assertEqual(len(port_map), 1,
                          "Found multiple IPv4 addresses: %s. "
                          "Unable to determine which port to target."
@@ -771,13 +785,11 @@ class NetworkScenarioTest(ScenarioTest):
 
     def create_floating_ip(self, thing, external_network_id=None,
                            port_id=None, client=None):
-        """Creates a floating IP and associates to a resource/port using
-        Neutron client
-        """
+        """Create a floating IP and associates to a resource/port on Neutron"""
         if not external_network_id:
             external_network_id = CONF.network.public_network_id
         if not client:
-            client = self.network_client
+            client = self.floating_ips_client
         if not port_id:
             port_id, ip4 = self._get_server_port_id_and_ip4(thing)
         else:
@@ -801,9 +813,7 @@ class NetworkScenarioTest(ScenarioTest):
         return floating_ip
 
     def _disassociate_floating_ip(self, floating_ip):
-        """
-        :param floating_ip: type DeletableFloatingIp
-        """
+        """:param floating_ip: type DeletableFloatingIp"""
         floating_ip.update(port_id=None)
         self.assertIsNone(floating_ip.port_id)
         return floating_ip
@@ -855,19 +865,20 @@ class NetworkScenarioTest(ScenarioTest):
             self._log_net_info(e)
             raise
 
-    def _check_remote_connectivity(self, source, dest, should_succeed=True):
-        """
-        check ping server via source ssh connection
+    def _check_remote_connectivity(self, source, dest, should_succeed=True,
+                                   nic=None):
+        """check ping server via source ssh connection
 
         :param source: RemoteClient: an ssh connection from which to ping
         :param dest: and IP to ping against
         :param should_succeed: boolean should ping succeed or not
+        :param nic: specific network interface to ping from
         :returns: boolean -- should_succeed == ping
         :returns: ping is false if ping failed
         """
         def ping_remote():
             try:
-                source.ping_host(dest)
+                source.ping_host(dest, nic=nic)
             except lib_exc.SSHExecCommandFailed:
                 LOG.warn('Failed to ping IP: %s via a ssh connection from: %s.'
                          % (dest, source.ssh_client.host))
@@ -988,7 +999,9 @@ class NetworkScenarioTest(ScenarioTest):
         return sg_rule
 
     def _create_loginable_secgroup_rule(self, client=None, secgroup=None):
-        """These rules are intended to permit inbound ssh and icmp
+        """Create loginable security group rule
+
+        These rules are intended to permit inbound ssh and icmp
         traffic from all sources, so no group_id is provided.
         Setting a group_id would only permit traffic from ports
         belonging to the same security group.
@@ -1127,11 +1140,13 @@ class NetworkScenarioTest(ScenarioTest):
     def create_server(self, name=None, image=None, flavor=None,
                       wait_on_boot=True, wait_on_delete=True,
                       network_client=None, networks_client=None,
-                      create_kwargs=None):
+                      ports_client=None, create_kwargs=None):
         if network_client is None:
             network_client = self.network_client
         if networks_client is None:
             networks_client = self.networks_client
+        if ports_client is None:
+            ports_client = self.ports_client
 
         vnic_type = CONF.network.port_vnic_type
 
@@ -1175,7 +1190,7 @@ class NetworkScenarioTest(ScenarioTest):
             for net in networks:
                 net_id = net['uuid']
                 port = self._create_port(network_id=net_id,
-                                         client=network_client,
+                                         client=ports_client,
                                          **create_port_body)
                 ports.append({'port': port.id})
             if ports:
@@ -1347,9 +1362,7 @@ class BaremetalScenarioTest(ScenarioTest):
 
 
 class EncryptionScenarioTest(ScenarioTest):
-    """
-    Base class for encryption scenario tests
-    """
+    """Base class for encryption scenario tests"""
 
     credentials = ['primary', 'admin']
 
@@ -1360,16 +1373,6 @@ class EncryptionScenarioTest(ScenarioTest):
             cls.admin_volume_types_client = cls.os_adm.volume_types_client
         else:
             cls.admin_volume_types_client = cls.os_adm.volume_types_v2_client
-
-    def _wait_for_volume_status(self, status):
-        self.status_timeout(
-            self.volume_client.volumes, self.volume.id, status)
-
-    def nova_boot(self):
-        self.keypair = self.create_keypair()
-        create_kwargs = {'key_name': self.keypair['name']}
-        self.server = self.create_server(image=self.image,
-                                         create_kwargs=create_kwargs)
 
     def create_volume_type(self, client=None, name=None):
         if not client:
@@ -1399,8 +1402,7 @@ class EncryptionScenarioTest(ScenarioTest):
 
 
 class ObjectStorageScenarioTest(ScenarioTest):
-    """
-    Provide harness to do Object Storage scenario tests.
+    """Provide harness to do Object Storage scenario tests.
 
     Subclasses implement the tests that use the methods provided by this
     class.
@@ -1468,10 +1470,8 @@ class ObjectStorageScenarioTest(ScenarioTest):
     def list_and_check_container_objects(self, container_name,
                                          present_obj=None,
                                          not_present_obj=None):
-        """
-        List objects for a given container and assert which are present and
-        which are not.
-        """
+        # List objects for a given container and assert which are present and
+        # which are not.
         if present_obj is None:
             present_obj = []
         if not_present_obj is None:

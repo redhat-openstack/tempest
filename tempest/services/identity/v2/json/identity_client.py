@@ -11,7 +11,6 @@
 #    under the License.
 
 from oslo_serialization import jsonutils as json
-from tempest_lib import exceptions as lib_exc
 
 from tempest.common import service_client
 
@@ -19,28 +18,13 @@ from tempest.common import service_client
 class IdentityClient(service_client.ServiceClient):
     api_version = "v2.0"
 
-    def get_api_description(self):
+    def show_api_description(self):
         """Retrieves info about the v2.0 Identity API"""
         url = ''
         resp, body = self.get(url)
         self.expected_success([200, 203], resp.status)
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
-
-    def has_admin_extensions(self):
-        """
-        Returns True if the KSADM Admin Extensions are supported
-        False otherwise
-        """
-        if hasattr(self, '_has_admin_extensions'):
-            return self._has_admin_extensions
-        # Try something that requires admin
-        try:
-            self.list_roles()
-            self._has_admin_extensions = True
-        except Exception:
-            self._has_admin_extensions = False
-        return self._has_admin_extensions
 
     def create_role(self, name):
         """Create a role."""
@@ -53,7 +37,7 @@ class IdentityClient(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def get_role(self, role_id):
+    def show_role(self, role_id):
         """Get a role by its id."""
         resp, body = self.get('OS-KSADM/roles/%s' % role_id)
         self.expected_success(200, resp.status)
@@ -61,8 +45,8 @@ class IdentityClient(service_client.ServiceClient):
         return service_client.ResponseBody(resp, body)
 
     def create_tenant(self, name, **kwargs):
-        """
-        Create a tenant
+        """Create a tenant
+
         name (required): New tenant name
         description: Description of new tenant (default is none)
         enabled <true|false>: Initial tenant status (default is true)
@@ -100,7 +84,7 @@ class IdentityClient(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def remove_user_role(self, tenant_id, user_id, role_id):
+    def delete_user_role(self, tenant_id, user_id, role_id):
         """Removes a role assignment for a user on a tenant."""
         resp, body = self.delete('/tenants/%s/users/%s/roles/OS-KSADM/%s' %
                                  (tenant_id, user_id, role_id))
@@ -113,7 +97,7 @@ class IdentityClient(service_client.ServiceClient):
         self.expected_success(204, resp.status)
         return service_client.ResponseBody(resp, body)
 
-    def get_tenant(self, tenant_id):
+    def show_tenant(self, tenant_id):
         """Get tenant details."""
         resp, body = self.get('tenants/%s' % str(tenant_id))
         self.expected_success(200, resp.status)
@@ -134,16 +118,9 @@ class IdentityClient(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def get_tenant_by_name(self, tenant_name):
-        tenants = self.list_tenants()['tenants']
-        for tenant in tenants:
-            if tenant['name'] == tenant_name:
-                return tenant
-        raise lib_exc.NotFound('No such tenant')
-
     def update_tenant(self, tenant_id, **kwargs):
         """Updates a tenant."""
-        body = self.get_tenant(tenant_id)['tenant']
+        body = self.show_tenant(tenant_id)['tenant']
         name = kwargs.get('name', body['name'])
         desc = kwargs.get('description', body['description'])
         en = kwargs.get('enabled', body['enabled'])
@@ -184,7 +161,7 @@ class IdentityClient(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def get_user(self, user_id):
+    def show_user(self, user_id):
         """GET a user."""
         resp, body = self.get("users/%s" % user_id)
         self.expected_success(200, resp.status)
@@ -197,7 +174,7 @@ class IdentityClient(service_client.ServiceClient):
         self.expected_success(204, resp.status)
         return service_client.ResponseBody(resp, body)
 
-    def get_users(self):
+    def list_users(self):
         """Get the list of users."""
         resp, body = self.get("users")
         self.expected_success(200, resp.status)
@@ -215,7 +192,7 @@ class IdentityClient(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def get_token(self, token_id):
+    def show_token(self, token_id):
         """Get token details."""
         resp, body = self.get("tokens/%s" % token_id)
         self.expected_success(200, resp.status)
@@ -228,19 +205,12 @@ class IdentityClient(service_client.ServiceClient):
         self.expected_success(204, resp.status)
         return service_client.ResponseBody(resp, body)
 
-    def list_users_for_tenant(self, tenant_id):
+    def list_tenant_users(self, tenant_id):
         """List users for a Tenant."""
         resp, body = self.get('/tenants/%s/users' % tenant_id)
         self.expected_success(200, resp.status)
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
-
-    def get_user_by_username(self, tenant_id, username):
-        users = self.list_users_for_tenant(tenant_id)['users']
-        for user in users:
-            if user['name'] == username:
-                return user
-        raise lib_exc.NotFound('No such user')
 
     def create_service(self, name, type, **kwargs):
         """Create a service."""
@@ -255,7 +225,7 @@ class IdentityClient(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def get_service(self, service_id):
+    def show_service(self, service_id):
         """Get Service."""
         url = '/OS-KSADM/services/%s' % service_id
         resp, body = self.get(url)

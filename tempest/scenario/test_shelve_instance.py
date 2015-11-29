@@ -27,8 +27,8 @@ LOG = log.getLogger(__name__)
 
 
 class TestShelveInstance(manager.ScenarioTest):
-    """
-    This test shelves then unshelves a Nova instance
+    """This test shelves then unshelves a Nova instance
+
     The following is the scenario outline:
      * boot an instance and create a timestamp file in it
      * shelve the instance
@@ -78,30 +78,17 @@ class TestShelveInstance(manager.ScenarioTest):
             server = self.create_server(image=CONF.compute.image_ref,
                                         create_kwargs=create_kwargs)
 
-        if CONF.compute.use_floatingip_for_ssh:
-            floating_ip = (self.floating_ips_client.create_floating_ip()
-                           ['floating_ip'])
-            self.addCleanup(self.delete_wrapper,
-                            self.floating_ips_client.delete_floating_ip,
-                            floating_ip['id'])
-            self.floating_ips_client.associate_floating_ip_to_server(
-                floating_ip['ip'], server['id'])
-            timestamp = self.create_timestamp(
-                floating_ip['ip'], private_key=keypair['private_key'])
-        else:
-            timestamp = self.create_timestamp(
-                server, private_key=keypair['private_key'])
+        instance_ip = self.get_server_or_ip(server)
+        timestamp = self.create_timestamp(instance_ip,
+                                          private_key=keypair['private_key'])
 
         # Prevent bug #1257594 from coming back
         # Unshelve used to boot the instance with the original image, not
         # with the instance snapshot
         self._shelve_then_unshelve_server(server)
-        if CONF.compute.use_floatingip_for_ssh:
-            timestamp2 = self.get_timestamp(floating_ip['ip'],
-                                            private_key=keypair['private_key'])
-        else:
-            timestamp2 = self.get_timestamp(server,
-                                            private_key=keypair['private_key'])
+
+        timestamp2 = self.get_timestamp(instance_ip,
+                                        private_key=keypair['private_key'])
         self.assertEqual(timestamp, timestamp2)
 
     @test.idempotent_id('1164e700-0af0-4a4c-8792-35909a88743c')

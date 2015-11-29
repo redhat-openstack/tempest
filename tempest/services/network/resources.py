@@ -19,10 +19,7 @@ import six
 
 
 class AttributeDict(dict):
-
-    """
-    Provide attribute access (dict.key) to dictionary values.
-    """
+    """Provide attribute access (dict.key) to dictionary values."""
 
     def __getattr__(self, name):
         """Allow attribute access for all keys in the dict."""
@@ -33,10 +30,9 @@ class AttributeDict(dict):
 
 @six.add_metaclass(abc.ABCMeta)
 class DeletableResource(AttributeDict):
+    """Support deletion of neutron resources (networks, subnets)
 
-    """
-    Support deletion of neutron resources (networks, subnets) via a
-    delete() method, as is supported by keystone and nova resources.
+    via a delete() method, as is supported by keystone and nova resources.
     """
 
     def __init__(self, *args, **kwargs):
@@ -44,6 +40,7 @@ class DeletableResource(AttributeDict):
         self.network_client = kwargs.pop('network_client', None)
         self.networks_client = kwargs.pop('networks_client', None)
         self.subnets_client = kwargs.pop('subnets_client', None)
+        self.ports_client = kwargs.pop('ports_client', None)
         super(DeletableResource, self).__init__(*args, **kwargs)
 
     def __str__(self):
@@ -152,7 +149,7 @@ class DeletableFloatingIp(DeletableResource):
 class DeletablePort(DeletableResource):
 
     def delete(self):
-        self.client.delete_port(self.id)
+        self.ports_client.delete_port(self.id)
 
 
 class DeletableSecurityGroup(DeletableResource):

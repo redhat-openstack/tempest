@@ -118,13 +118,14 @@ import six
 from tempest_lib import auth
 from tempest_lib import exceptions as lib_exc
 from tempest_lib.services.compute import flavors_client
+from tempest_lib.services.compute import security_groups_client
 import yaml
 
+from tempest.common import identity
 from tempest.common import waiters
 from tempest import config
 from tempest.services.compute.json import floating_ips_client
 from tempest.services.compute.json import security_group_rules_client
-from tempest.services.compute.json import security_groups_client
 from tempest.services.compute.json import servers_client
 from tempest.services.identity.v2.json import identity_client
 from tempest.services.image.v2.json import image_client
@@ -132,6 +133,7 @@ from tempest.services.network.json import network_client
 from tempest.services.network.json import subnets_client
 from tempest.services.object_storage import container_client
 from tempest.services.object_storage import object_client
+from tempest.services.telemetry.json import alarming_client
 from tempest.services.telemetry.json import telemetry_client
 from tempest.services.volume.json import volumes_client
 
@@ -225,6 +227,12 @@ class OSClient(object):
             CONF.identity.region,
             endpoint_type=CONF.telemetry.endpoint_type,
             **default_params_with_timeout_values)
+        self.alarming = alarming_client.AlarmingClient(
+            _auth,
+            CONF.alarm.catalog_type,
+            CONF.identity.region,
+            endpoint_type=CONF.alarm.endpoint_type,
+            **default_params_with_timeout_values)
         self.volumes = volumes_client.VolumesClient(
             _auth,
             CONF.volume.catalog_type,
@@ -295,7 +303,7 @@ def create_tenants(tenants):
 def destroy_tenants(tenants):
     admin = keystone_admin()
     for tenant in tenants:
-        tenant_id = admin.identity.get_tenant_by_name(tenant)['id']
+        tenant_id = identity.get_tenant_by_name(admin.identity, tenant)['id']
         admin.identity.delete_tenant(tenant_id)
 
 ##############
@@ -347,12 +355,13 @@ def create_users(users):
     admin = keystone_admin()
     for u in users:
         try:
-            tenant = admin.identity.get_tenant_by_name(u['tenant'])
+            tenant = identity.get_tenant_by_name(admin.identity, u['tenant'])
         except lib_exc.NotFound:
             LOG.error("Tenant: %s - not found" % u['tenant'])
             continue
         try:
-            admin.identity.get_user_by_username(tenant['id'], u['name'])
+            identity.get_user_by_username(admin.identity,
+                                          tenant['id'], u['name'])
             LOG.warn("User '%s' already exists in this environment"
                      % u['name'])
         except lib_exc.NotFound:
@@ -365,9 +374,10 @@ def create_users(users):
 def destroy_users(users):
     admin = keystone_admin()
     for user in users:
-        tenant_id = admin.identity.get_tenant_by_name(user['tenant'])['id']
-        user_id = admin.identity.get_user_by_username(tenant_id,
-                                                      user['name'])['id']
+        tenant_id = identity.get_tenant_by_name(admin.identity,
+                                                user['tenant'])['id']
+        user_id = identity.get_user_by_username(admin.identity,
+                                                tenant_id, user['name'])['id']
         admin.identity.delete_user(user_id)
 
 
@@ -376,10 +386,11 @@ def collect_users(users):
     LOG.info("Collecting users")
     admin = keystone_admin()
     for u in users:
-        tenant = admin.identity.get_tenant_by_name(u['tenant'])
+        tenant = identity.get_tenant_by_name(admin.identity, u['tenant'])
         u['tenant_id'] = tenant['id']
         USERS[u['name']] = u
-        body = admin.identity.get_user_by_username(tenant['id'], u['name'])
+        body = identity.get_user_by_username(admin.identity,
+                                             tenant['id'], u['name'])
         USERS[u['name']]['id'] = body['id']
 
 
@@ -432,7 +443,7 @@ class JavelinCheck(unittest.TestCase):
         LOG.info("checking users")
         for name, user in six.iteritems(self.users):
             client = keystone_admin()
-            found = client.identity.get_user(user['id'])['user']
+            found = client.identity.show_user(user['id'])['user']
             self.assertEqual(found['name'], user['name'])
             self.assertEqual(found['tenantId'], user['tenant_id'])
 

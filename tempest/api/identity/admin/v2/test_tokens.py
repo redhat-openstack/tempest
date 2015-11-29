@@ -41,7 +41,7 @@ class TokensTestJSON(base.BaseIdentityV2AdminTest):
                          tenant['name'])
         # Perform GET Token
         token_id = body['token']['id']
-        token_details = self.client.get_token(token_id)['access']
+        token_details = self.client.show_token(token_id)['access']
         self.assertEqual(token_id, token_details['token']['id'])
         self.assertEqual(user['id'], token_details['user']['id'])
         self.assertEqual(user_name, token_details['user']['name'])
@@ -52,8 +52,9 @@ class TokensTestJSON(base.BaseIdentityV2AdminTest):
 
     @test.idempotent_id('25ba82ee-8a32-4ceb-8f50-8b8c71e8765e')
     def test_rescope_token(self):
-        """An unscoped token can be requested, that token can be used to
-           request a scoped token.
+        """An unscoped token can be requested
+
+        That token can be used to request a scoped token.
         """
 
         # Create a user.

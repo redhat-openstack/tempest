@@ -106,10 +106,12 @@ class TestCreateResources(JavelinUnitTest):
         self.assertFalse(mocked_function.called)
 
     def test_create_users(self):
-        self.fake_client.identity.get_tenant_by_name.return_value = \
-            self.fake_object['tenant']
-        self.fake_client.identity.get_user_by_username.side_effect = \
-            lib_exc.NotFound("user is not found")
+        self.useFixture(mockpatch.Patch(
+                        'tempest.common.identity.get_tenant_by_name',
+                        return_value=self.fake_object['tenant']))
+        self.useFixture(mockpatch.Patch(
+                        'tempest.common.identity.get_user_by_username',
+                        side_effect=lib_exc.NotFound("user is not found")))
         self.useFixture(mockpatch.PatchObject(javelin, "keystone_admin",
                                               return_value=self.fake_client))
 
@@ -125,8 +127,9 @@ class TestCreateResources(JavelinUnitTest):
                                                 enabled=True)
 
     def test_create_user_missing_tenant(self):
-        self.fake_client.identity.get_tenant_by_name.side_effect = \
-            lib_exc.NotFound("tenant is not found")
+        self.useFixture(mockpatch.Patch(
+                        'tempest.common.identity.get_tenant_by_name',
+                        side_effect=lib_exc.NotFound("tenant is not found")))
         self.useFixture(mockpatch.PatchObject(javelin, "keystone_admin",
                                               return_value=self.fake_client))
 
@@ -289,8 +292,9 @@ class TestDestroyResources(JavelinUnitTest):
 
         fake_tenant = self.fake_object['tenant']
         fake_auth = self.fake_client
-        fake_auth.identity.get_tenant_by_name.return_value = fake_tenant
-
+        self.useFixture(mockpatch.Patch(
+                        'tempest.common.identity.get_tenant_by_name',
+                        return_value=fake_tenant))
         self.useFixture(mockpatch.PatchObject(javelin, "keystone_admin",
                                               return_value=fake_auth))
         javelin.destroy_tenants([fake_tenant])
@@ -304,9 +308,13 @@ class TestDestroyResources(JavelinUnitTest):
         fake_tenant = self.fake_object['tenant']
 
         fake_auth = self.fake_client
-        fake_auth.identity.get_tenant_by_name.return_value = fake_tenant
-        fake_auth.identity.get_user_by_username.return_value = fake_user
+        fake_auth.identity.list_tenants.return_value = \
+            {'tenants': [fake_tenant]}
+        fake_auth.identity.list_users.return_value = {'users': [fake_user]}
 
+        self.useFixture(mockpatch.Patch(
+                        'tempest.common.identity.get_user_by_username',
+                        return_value=fake_user))
         self.useFixture(mockpatch.PatchObject(javelin, "keystone_admin",
                                               return_value=fake_auth))
 

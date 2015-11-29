@@ -29,14 +29,25 @@ LOG = logging.getLogger(__name__)
 
 class TestMinimumBasicScenario(manager.ScenarioTest):
 
-    """
-    This is a basic minimum scenario test.
+    """This is a basic minimum scenario test.
 
     This test below:
     * across the multiple components
     * as a regular user
     * with and without optional parameters
     * check command outputs
+
+    Steps:
+    1. Create image
+    2. Create keypair
+    3. Boot instance with keypair and get list of instances
+    4. Create volume and show list of volumes
+    5. Attach volume to instance and getlist of volumes
+    6. Add IP to instance
+    7. Create and add security group to instance
+    8. Check SSH connection to instance
+    9. Reboot instance
+    10. Check SSH connection to instance after reboot
 
     """
 
@@ -46,11 +57,6 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
         # original function from scenario tests here
         waiters.wait_for_server_status(self.servers_client,
                                        server_id, status)
-
-    def nova_boot(self, keypair):
-        create_kwargs = {'key_name': keypair['name']}
-        return self.create_server(image=self.image,
-                                  create_kwargs=create_kwargs)
 
     def nova_list(self):
         servers = self.servers_client.list_servers()
@@ -108,11 +114,12 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
     @test.idempotent_id('bdbb5441-9204-419d-a225-b4fdbfb1a1a8')
     @test.services('compute', 'volume', 'image', 'network')
     def test_minimum_basic_scenario(self):
-        self.glance_image_create()
-
+        image = self.glance_image_create()
         keypair = self.create_keypair()
 
-        server = self.nova_boot(keypair)
+        create_kwargs = {'key_name': keypair['name']}
+        server = self.create_server(image=image,
+                                    create_kwargs=create_kwargs)
         servers = self.nova_list()
         self.assertIn(server['id'], [x['id'] for x in servers])
 
@@ -131,10 +138,15 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
         floating_ip = self.create_floating_ip(server)
         self.create_and_add_security_group_to_server(server)
 
+        # check that we can SSH to the server before reboot
         self.linux_client = self.get_remote_client(
             floating_ip['ip'], private_key=keypair['private_key'])
+
         self.nova_reboot(server)
 
+        # check that we can SSH to the server after reboot
+        # (both connections are part of the scenario)
         self.linux_client = self.get_remote_client(
             floating_ip['ip'], private_key=keypair['private_key'])
+
         self.check_partitions()
