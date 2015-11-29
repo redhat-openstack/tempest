@@ -22,10 +22,9 @@ LOG = logging.getLogger(__name__)
 
 
 class TestCrossHost(base.TestSecurityGroupsBasicOps):
-    """
-    Runs tests in test_security_groups_basic_ops while enforcing VMs are
-    created on different compute nodes.
+    """Runs tests in test_security_group_basic_ops
 
+    It enforces that VMs are created on different compute nodes.
     If both VMs are deployed on the same host, try to migrate one of
     them.
 
@@ -37,8 +36,8 @@ class TestCrossHost(base.TestSecurityGroupsBasicOps):
     @classmethod
     def resource_setup(cls):
         super(TestCrossHost, cls).resource_setup()
-        hypervisor_list = \
-            cls.admin_manager.hypervisor_client.list_hypervisors()
+        h_client = cls.admin_manager.hypervisor_client
+        hypervisor_list = h_client.list_hypervisors()
         if len(hypervisor_list['hypervisors']) < 2:
             raise cls.skipException("Need at least 2 compute nodes to run")
         LOG.info("Verified multiple Hypervisors exist")
@@ -69,7 +68,8 @@ class TestCrossHost(base.TestSecurityGroupsBasicOps):
         return [serv for serv in servers]
 
     def _distribute_servers(self):
-        """
+        """Distribute servers between compute nodes.
+
         if both servers are on the same compute node, move one to another node
         @return: updated list of servers
         """

@@ -129,8 +129,8 @@ def get_service_class(service_name):
 
 
 def discover(auth_provider, region, object_store_discovery=True):
-    """
-    Returns a dict with discovered apis.
+    """Returns a dict with discovered apis.
+
     :param auth_provider: An AuthProvider to obtain service urls.
     :param region: A specific region to use. If the catalog has only one region
     then that region will be used.
