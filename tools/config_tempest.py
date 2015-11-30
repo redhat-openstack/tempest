@@ -51,6 +51,7 @@ from tempest_lib.services.compute import networks_client as nova_net_client
 sys.path.insert(0, os.getcwd())
 
 from tempest.common import api_discovery
+from tempest.common import identity
 import tempest.config
 from tempest.services.compute.json import servers_client
 from tempest.services.identity.v2.json import identity_client
@@ -324,7 +325,8 @@ class ClientManager(object):
 
         # Set admin tenant id needed for keystone v3 tests.
         if admin:
-            tenant_id = self.identity.get_tenant_by_name(tenant_name)['id']
+            tenant_id = identity.get_tenant_by_name(self.identity,
+                                                    tenant_name)['id']
             conf.set('identity', 'admin_tenant_id', tenant_id)
 
 
@@ -410,8 +412,8 @@ def create_tempest_users(identity_client, conf, services):
 def give_role_to_user(client, username, tenant_name, role_name,
                       role_required=True):
     """Give the user a role in the project (tenant)."""
-    tenant_id = client.get_tenant_by_name(tenant_name)['id']
-    users = client.get_users()
+    tenant_id = identity.get_tenant_by_name(client, tenant_name)['id']
+    users = client.list_users()
     user_ids = [u['id'] for u in users['users'] if u['name'] == username]
     user_id = user_ids[0]
     roles = client.list_roles()
@@ -446,14 +448,14 @@ def create_user_with_tenant(client, username, password, tenant_name):
     except exceptions.Conflict:
         LOG.info("(no change) Tenant '%s' already exists", tenant_name)
 
-    tenant_id = client.get_tenant_by_name(tenant_name)['id']
+    tenant_id = identity.get_tenant_by_name(client, tenant_name)['id']
     # create user
     try:
         client.create_user(username, password, tenant_id, email)
     except exceptions.Conflict:
         LOG.info("User '%s' already exists. Setting password to '%s'",
                  username, password)
-        user = client.get_user_by_username(tenant_id, username)
+        user = identity.get_user_by_username(client, tenant_id, username)
         client.update_user_password(user['id'], password)
 
 
@@ -705,7 +707,7 @@ def _download_file(url, destination):
 def _download_image(client, id, path):
     """Download file from glance."""
     LOG.info("Downloading image %s to %s" % (id, path))
-    body = client.load_image_file(id)
+    body = client.show_image_file(id)
     LOG.debug(type(body.data))
     with open(path, 'wb') as out:
         out.write(body.data)
