@@ -80,6 +80,7 @@ class TestCrossHost(base.TestSecurityGroupsBasicOps):
 
         self.admin_manager.servers_client.migrate_server(serv_b['id'])
         waiters.wait_for_server_status(
+            self.admin_manager.servers_client,
             serv_b['id'],
             'VERIFY_RESIZE')
         self.admin_manager.servers_client.confirm_resize_server(serv_b['id'])
