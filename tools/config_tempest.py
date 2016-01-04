@@ -46,6 +46,7 @@ import tempest_lib.auth
 from tempest_lib import exceptions
 from tempest_lib.services.compute import flavors_client
 from tempest_lib.services.compute import networks_client as nova_net_client
+from tempest_lib.services.compute import servers_client
 # Since tempest can be configured in different directories, we need to use
 # the path starting at cwd.
 sys.path.insert(0, os.getcwd())
@@ -53,9 +54,10 @@ sys.path.insert(0, os.getcwd())
 from tempest.common import api_discovery
 from tempest.common import identity
 import tempest.config
-from tempest.services.compute.json import servers_client
 from tempest.services.identity.v2.json import identity_client
-from tempest.services.image.v2.json import image_client
+from tempest.services.identity.v2.json import roles_client
+from tempest.services.identity.v2.json import tenants_client
+from tempest.services.image.v2.json import images_client
 from tempest.services.network.json import networks_client
 
 LOG = logging.getLogger(__name__)
@@ -128,7 +130,6 @@ def main():
                 conf.set(section, key, value, priority=True)
     for section, key, value in args.overrides:
         conf.set(section, key, value, priority=True)
-
     uri = conf.get("identity", "uri")
     conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
     if args.non_admin:
@@ -146,7 +147,8 @@ def main():
         clients.identity_region,
         object_store_discovery=conf.get_bool_value(swift_discover))
     if args.create and not args.use_test_accounts:
-        create_tempest_users(clients.identity, conf, services)
+        create_tempest_users(clients.identity, clients.tenants, clients.roles,
+                             conf, services)
     create_tempest_flavors(clients.flavors, conf, args.create)
     create_tempest_images(clients.images, conf, args.image, args.create,
                           args.image_disk_format)
@@ -290,7 +292,21 @@ class ClientManager(object):
             endpoint_type='adminURL',
             **default_params)
 
-        self.images = image_client.ImageClientV2(
+        self.tenants = tenants_client.TenantsClient(
+            _auth,
+            conf.get_defaulted('identity', 'catalog_type'),
+            self.identity_region,
+            endpoint_type='adminURL',
+            **default_params)
+
+        self.roles = roles_client.RolesClient(
+            _auth,
+            conf.get_defaulted('identity', 'catalog_type'),
+            self.identity_region,
+            endpoint_type='adminURL',
+            **default_params)
+
+        self.images = images_client.ImagesClientV2(
             _auth,
             conf.get_defaulted('image', 'catalog_type'),
             self.identity_region,
@@ -325,7 +341,7 @@ class ClientManager(object):
 
         # Set admin tenant id needed for keystone v3 tests.
         if admin:
-            tenant_id = identity.get_tenant_by_name(self.identity,
+            tenant_id = identity.get_tenant_by_name(self.tenants,
                                                     tenant_name)['id']
             conf.set('identity', 'admin_tenant_id', tenant_id)
 
@@ -381,14 +397,15 @@ class TempestConf(ConfigParser.SafeConfigParser):
         return True
 
 
-def create_tempest_users(identity_client, conf, services):
+def create_tempest_users(identity_client, tenants_client, roles_client,
+                         conf, services):
     """Create users necessary for Tempest if they don't exist already."""
-    create_user_with_tenant(identity_client,
+    create_user_with_tenant(identity_client, tenants_client,
                             conf.get('identity', 'username'),
                             conf.get('identity', 'password'),
                             conf.get('identity', 'tenant_name'))
 
-    give_role_to_user(identity_client,
+    give_role_to_user(identity_client, tenants_client, roles_client,
                       conf.get('identity', 'admin_username'),
                       conf.get('identity', 'tenant_name'),
                       role_name='admin')
@@ -397,26 +414,26 @@ def create_tempest_users(identity_client, conf, services):
     # the heat_stack_owner role to use heat stack apis. We assign that role
     # to the user if the role is present.
     if 'orchestration' in services:
-        give_role_to_user(identity_client,
+        give_role_to_user(identity_client, tenants_client, roles_client,
                           conf.get('identity', 'username'),
                           conf.get('identity', 'tenant_name'),
                           role_name='heat_stack_owner',
                           role_required=False)
 
-    create_user_with_tenant(identity_client,
+    create_user_with_tenant(identity_client, tenants_client,
                             conf.get('identity', 'alt_username'),
                             conf.get('identity', 'alt_password'),
                             conf.get('identity', 'alt_tenant_name'))
 
 
-def give_role_to_user(client, username, tenant_name, role_name,
-                      role_required=True):
+def give_role_to_user(client, tenants_client, roles_client, username,
+                      tenant_name, role_name, role_required=True):
     """Give the user a role in the project (tenant)."""
-    tenant_id = identity.get_tenant_by_name(client, tenant_name)['id']
+    tenant_id = identity.get_tenant_by_name(tenants_client, tenant_name)['id']
     users = client.list_users()
     user_ids = [u['id'] for u in users['users'] if u['name'] == username]
     user_id = user_ids[0]
-    roles = client.list_roles()
+    roles = roles_client.list_roles()
     role_ids = [r['id'] for r in roles['roles'] if r['name'] == role_name]
     if not role_ids:
         if role_required:
@@ -425,7 +442,7 @@ def give_role_to_user(client, username, tenant_name, role_name,
         return
     role_id = role_ids[0]
     try:
-        client.assign_user_role(tenant_id, user_id, role_id)
+        roles_client.assign_user_role(tenant_id, user_id, role_id)
         LOG.debug("User '%s' was given the '%s' role in project '%s'",
                   username, role_name, tenant_name)
     except exceptions.Conflict:
@@ -433,7 +450,8 @@ def give_role_to_user(client, username, tenant_name, role_name,
                   " project '%s'", username, role_name, tenant_name)
 
 
-def create_user_with_tenant(client, username, password, tenant_name):
+def create_user_with_tenant(client, tenants_client, username, password,
+                            tenant_name):
     """Create user and tenant if he doesn't exist.
 
     Sets password even for existing user.
@@ -444,19 +462,21 @@ def create_user_with_tenant(client, username, password, tenant_name):
     email = "%s@test.com" % username
     # create tenant
     try:
-        client.create_tenant(tenant_name, description=tenant_description)
+        tenants_client.create_tenant(tenant_name,
+                                     description=tenant_description)
     except exceptions.Conflict:
         LOG.info("(no change) Tenant '%s' already exists", tenant_name)
 
-    tenant_id = identity.get_tenant_by_name(client, tenant_name)['id']
+    tenant_id = identity.get_tenant_by_name(tenants_client, tenant_name)['id']
     # create user
     try:
         client.create_user(username, password, tenant_id, email)
     except exceptions.Conflict:
         LOG.info("User '%s' already exists. Setting password to '%s'",
                  username, password)
-        user = identity.get_user_by_username(client, tenant_id, username)
-        client.update_user_password(user['id'], password)
+        user = identity.get_user_by_username(tenants_client, tenant_id,
+                                             username)
+        client.update_user_password(user['id'], password=password)
 
 
 def create_tempest_flavors(client, conf, allow_creation):
@@ -729,8 +749,7 @@ def _upload_image(client, name, path, disk_format):
         image = client.create_image(name=name,
                                     disk_format=disk_format,
                                     container_format='bare',
-                                    visibility="public",
-                                    properties=properties)
+                                    visibility="public")
         client.store_image_file(image['id'], data)
         return image
 
