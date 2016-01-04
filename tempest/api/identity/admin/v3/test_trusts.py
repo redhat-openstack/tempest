@@ -55,7 +55,7 @@ class BaseTrustsV3Test(base.BaseIdentityV3AdminTest):
         self.trustor_username = data_utils.rand_name('user')
         u_desc = self.trustor_username + 'description'
         u_email = self.trustor_username + '@testmail.xx'
-        self.trustor_password = data_utils.rand_name('pass')
+        self.trustor_password = data_utils.rand_password()
         user = self.client.create_user(
             self.trustor_username,
             description=u_desc,
@@ -69,10 +69,10 @@ class BaseTrustsV3Test(base.BaseIdentityV3AdminTest):
         self.delegated_role = data_utils.rand_name('DelegatedRole')
         self.not_delegated_role = data_utils.rand_name('NotDelegatedRole')
 
-        role = self.client.create_role(self.delegated_role)['role']
+        role = self.client.create_role(name=self.delegated_role)['role']
         self.delegated_role_id = role['id']
 
-        role = self.client.create_role(self.not_delegated_role)['role']
+        role = self.client.create_role(name=self.not_delegated_role)['role']
         self.not_delegated_role_id = role['id']
 
         # Assign roles to trustor
@@ -115,7 +115,7 @@ class BaseTrustsV3Test(base.BaseIdentityV3AdminTest):
             trustor_user_id=self.trustor_user_id,
             trustee_user_id=self.trustee_user_id,
             project_id=self.trustor_project_id,
-            role_names=[self.delegated_role],
+            roles=[{'name': self.delegated_role}],
             impersonation=impersonate,
             expires_at=expires)['trust']
         self.trust_id = trust_create['id']

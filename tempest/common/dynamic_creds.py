@@ -57,10 +57,13 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
         self._creds = {}
         self.ports = []
         self.default_admin_creds = admin_creds
-        (self.identity_admin_client, self.network_admin_client,
+        (self.identity_admin_client, self.tenants_admin_client,
+         self.roles_admin_client,
+         self.network_admin_client,
          self.networks_admin_client,
          self.subnets_admin_client,
-         self.ports_admin_client) = self._get_admin_clients()
+         self.ports_admin_client,
+         self.security_groups_admin_client) = self._get_admin_clients()
         # Domain where isolated credentials are provisioned (v3 only).
         # Use that of the admin account is None is configured.
         self.creds_domain_name = None
@@ -69,7 +72,10 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
                 self.default_admin_creds.project_domain_name or
                 self.credentials_domain)
         self.creds_client = cred_client.get_creds_client(
-            self.identity_admin_client, self.creds_domain_name)
+            self.identity_admin_client,
+            self.tenants_admin_client,
+            self.roles_admin_client,
+            self.creds_domain_name)
 
     def _get_admin_clients(self):
         """Returns a tuple with instances of the following admin clients
@@ -80,11 +86,13 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
         """
         os = clients.Manager(self.default_admin_creds)
         if self.identity_version == 'v2':
-            return (os.identity_client, os.network_client, os.networks_client,
-                    os.subnets_client, os.ports_client)
+            return (os.identity_client, os.tenants_client, os.roles_client,
+                    os.network_client, os.networks_client, os.subnets_client,
+                    os.ports_client, os.security_groups_client)
         else:
-            return (os.identity_v3_client, os.network_client,
-                    os.networks_client, os.subnets_client, os.ports_client)
+            return (os.identity_v3_client, None, None, os.network_client,
+                    os.networks_client, os.subnets_client, os.ports_client,
+                    os.security_groups_client)
 
     def _create_creds(self, suffix="", admin=False, roles=None):
         """Create random credentials under the following schema.
@@ -297,13 +305,13 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
                      network_name)
 
     def _cleanup_default_secgroup(self, tenant):
-        net_client = self.network_admin_client
-        resp_body = net_client.list_security_groups(tenant_id=tenant,
+        nsg_client = self.security_groups_admin_client
+        resp_body = nsg_client.list_security_groups(tenant_id=tenant,
                                                     name="default")
         secgroups_to_delete = resp_body['security_groups']
         for secgroup in secgroups_to_delete:
             try:
-                net_client.delete_security_group(secgroup['id'])
+                nsg_client.delete_security_group(secgroup['id'])
             except lib_exc.NotFound:
                 LOG.warn('Security group %s, id %s not found for clean-up' %
                          (secgroup['name'], secgroup['id']))

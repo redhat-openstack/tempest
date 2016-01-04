@@ -29,7 +29,7 @@ class TokensV3TestJSON(base.BaseIdentityV3AdminTest):
         u_name = data_utils.rand_name('user')
         u_desc = '%s-description' % u_name
         u_email = '%s@testmail.tm' % u_name
-        u_password = data_utils.rand_name('pass')
+        u_password = data_utils.rand_password()
         user = self.client.create_user(
             u_name, description=u_desc, password=u_password,
             email=u_email)['user']
@@ -60,7 +60,7 @@ class TokensV3TestJSON(base.BaseIdentityV3AdminTest):
 
         # Create a user.
         user_name = data_utils.rand_name(name='user')
-        user_password = data_utils.rand_name(name='pass')
+        user_password = data_utils.rand_password()
         user = self.client.create_user(user_name,
                                        password=user_password)['user']
         self.addCleanup(self.client.delete_user, user['id'])
@@ -76,7 +76,7 @@ class TokensV3TestJSON(base.BaseIdentityV3AdminTest):
 
         # Create a role
         role_name = data_utils.rand_name(name='role')
-        role = self.client.create_role(role_name)['role']
+        role = self.client.create_role(name=role_name)['role']
         self.addCleanup(self.client.delete_role, role['id'])
 
         # Grant the user the role on both projects.

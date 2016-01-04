@@ -81,13 +81,13 @@ class IdentityV3Client(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def update_user_password(self, user_id, password, original_password):
-        """Updates a user password."""
-        update_user = {
-            'password': password,
-            'original_password': original_password
-        }
-        update_user = json.dumps({'user': update_user})
+    def update_user_password(self, user_id, **kwargs):
+        """Update a user password
+
+        Available params: see http://developer.openstack.org/
+                              api-ref-identity-v3.html#changeUserPassword
+        """
+        update_user = json.dumps({'user': kwargs})
         resp, _ = self.post('users/%s/password' % user_id, update_user)
         self.expected_success(204, resp.status)
         return service_client.ResponseBody(resp)
@@ -180,12 +180,13 @@ class IdentityV3Client(service_client.ServiceClient):
         self.expected_success(204, resp.status)
         return service_client.ResponseBody(resp, body)
 
-    def create_role(self, name):
-        """Create a Role."""
-        post_body = {
-            'name': name
-        }
-        post_body = json.dumps({'role': post_body})
+    def create_role(self, **kwargs):
+        """Create a Role.
+
+        Available params: see http://developer.openstack.org/
+                              api-ref-identity-v3.html#createRole
+        """
+        post_body = json.dumps({'role': kwargs})
         resp, body = self.post('roles', post_body)
         self.expected_success(201, resp.status)
         body = json.loads(body)
@@ -205,12 +206,13 @@ class IdentityV3Client(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def update_role(self, name, role_id):
-        """Create a Role."""
-        post_body = {
-            'name': name
-        }
-        post_body = json.dumps({'role': post_body})
+    def update_role(self, role_id, **kwargs):
+        """Update a Role.
+
+        Available params: see http://developer.openstack.org/
+                          api-ref-identity-v3.html#updateRole
+        """
+        post_body = json.dumps({'role': kwargs})
         resp, body = self.patch('roles/%s' % str(role_id), post_body)
         self.expected_success(200, resp.status)
         body = json.loads(body)
@@ -394,19 +396,13 @@ class IdentityV3Client(service_client.ServiceClient):
         self.expected_success(204, resp.status)
         return service_client.ResponseBody(resp, body)
 
-    def create_trust(self, trustor_user_id, trustee_user_id, project_id,
-                     role_names, impersonation, expires_at):
-        """Creates a trust."""
-        roles = [{'name': n} for n in role_names]
-        post_body = {
-            'trustor_user_id': trustor_user_id,
-            'trustee_user_id': trustee_user_id,
-            'project_id': project_id,
-            'impersonation': impersonation,
-            'roles': roles,
-            'expires_at': expires_at
-        }
-        post_body = json.dumps({'trust': post_body})
+    def create_trust(self, **kwargs):
+        """Creates a trust.
+
+        Available params: see http://developer.openstack.org/
+                              api-ref-identity-v3-ext.html#createTrust
+        """
+        post_body = json.dumps({'trust': kwargs})
         resp, body = self.post('OS-TRUST/trusts', post_body)
         self.expected_success(201, resp.status)
         body = json.loads(body)

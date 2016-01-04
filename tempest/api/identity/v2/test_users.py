@@ -51,14 +51,10 @@ class IdentityUsersTest(base.BaseIdentityV2Test):
         # to change password back. important for allow_tenant_isolation = false
         self.addCleanup(
             self.non_admin_client_for_cleanup.update_user_own_password,
-            user_id=user_id,
-            new_pass=old_pass,
-            old_pass=new_pass)
-
+            user_id, original_password=new_pass, password=old_pass)
         # user updates own password
-        resp = self.non_admin_client.update_user_own_password(
-            user_id=user_id, new_pass=new_pass, old_pass=old_pass)['access']
-
+        self.non_admin_client.update_user_own_password(
+            user_id, password=new_pass, original_password=old_pass)
         # TODO(lbragstad): Sleeping after the response status has been checked
         # and the body loaded as JSON allows requests to fail-fast. The sleep
         # is necessary because keystone will err on the side of security and
@@ -68,8 +64,6 @@ class IdentityUsersTest(base.BaseIdentityV2Test):
         # sub-second precision.
         time.sleep(1)
 
-        # check authorization with new token
-        self.non_admin_token_client.auth_token(resp['token']['id'])
         # check authorization with new password
         self.non_admin_token_client.auth(self.username,
                                          new_pass,

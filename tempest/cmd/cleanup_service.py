@@ -85,10 +85,10 @@ def init_conf():
 def _get_network_id(net_name, tenant_name):
     am = credentials.AdminManager()
     net_cl = am.networks_client
-    id_cl = am.identity_client
+    tn_cl = am.tenants_client
 
     networks = net_cl.list_networks()
-    tenant = identity.get_tenant_by_name(id_cl, tenant_name)
+    tenant = identity.get_tenant_by_name(tn_cl, tenant_name)
     t_id = tenant['id']
     n_id = None
     for net in networks['networks']:
@@ -269,7 +269,7 @@ class KeyPairService(BaseService):
 class SecurityGroupService(BaseService):
     def __init__(self, manager, **kwargs):
         super(SecurityGroupService, self).__init__(kwargs)
-        self.client = manager.security_groups_client
+        self.client = manager.compute_security_groups_client
 
     def list(self):
         client = self.client
@@ -387,6 +387,9 @@ class NetworkService(BaseService):
         self.subnets_client = manager.subnets_client
         self.ports_client = manager.ports_client
         self.floating_ips_client = manager.floating_ips_client
+        self.metering_labels_client = manager.metering_labels_client
+        self.metering_label_rules_client = manager.metering_label_rules_client
+        self.security_groups_client = manager.security_groups_client
 
     def _filter_by_conf_networks(self, item_list):
         if not item_list or not all(('network_id' in i for i in item_list)):
@@ -576,7 +579,7 @@ class NetworkPoolService(NetworkService):
 class NetworkMeteringLabelRuleService(NetworkService):
 
     def list(self):
-        client = self.client
+        client = self.metering_label_rules_client
         rules = client.list_metering_label_rules()
         rules = rules['metering_label_rules']
         rules = self._filter_by_tenant_id(rules)
@@ -584,7 +587,7 @@ class NetworkMeteringLabelRuleService(NetworkService):
         return rules
 
     def delete(self):
-        client = self.client
+        client = self.metering_label_rules_client
         rules = self.list()
         for rule in rules:
             try:
@@ -600,7 +603,7 @@ class NetworkMeteringLabelRuleService(NetworkService):
 class NetworkMeteringLabelService(NetworkService):
 
     def list(self):
-        client = self.client
+        client = self.metering_labels_client
         labels = client.list_metering_labels()
         labels = labels['metering_labels']
         labels = self._filter_by_tenant_id(labels)
@@ -608,7 +611,7 @@ class NetworkMeteringLabelService(NetworkService):
         return labels
 
     def delete(self):
-        client = self.client
+        client = self.metering_labels_client
         labels = self.list()
         for label in labels:
             try:
@@ -652,7 +655,7 @@ class NetworkPortService(NetworkService):
 
 class NetworkSecGroupService(NetworkService):
     def list(self):
-        client = self.client
+        client = self.security_groups_client
         filter = self.tenant_filter
         # cannot delete default sec group so never show it.
         secgroups = [secgroup for secgroup in
@@ -853,12 +856,15 @@ class UserService(IdentityService):
             self.data['users'][user['id']] = user['name']
 
 
-class RoleService(IdentityService):
+class RoleService(BaseService):
+
+    def __init__(self, manager, **kwargs):
+        super(RoleService, self).__init__(kwargs)
+        self.client = manager.roles_client
 
     def list(self):
-        client = self.client
         try:
-            roles = client.list_roles()['roles']
+            roles = self.client.list_roles()['roles']
             # reconcile roles with saved state and never list admin role
             if not self.is_save_state:
                 roles = [role for role in roles if
@@ -872,11 +878,10 @@ class RoleService(IdentityService):
             return []
 
     def delete(self):
-        client = self.client
         roles = self.list()
         for role in roles:
             try:
-                client.delete_role(role['id'])
+                self.client.delete_role(role['id'])
             except Exception:
                 LOG.exception("Delete Role exception.")
 
@@ -891,11 +896,14 @@ class RoleService(IdentityService):
             self.data['roles'][role['id']] = role['name']
 
 
-class TenantService(IdentityService):
+class TenantService(BaseService):
+
+    def __init__(self, manager, **kwargs):
+        super(TenantService, self).__init__(kwargs)
+        self.client = manager.tenants_client
 
     def list(self):
-        client = self.client
-        tenants = client.list_tenants()['tenants']
+        tenants = self.client.list_tenants()['tenants']
         if not self.is_save_state:
             tenants = [tenant for tenant in tenants if (tenant['id']
                        not in self.saved_state_json['tenants'].keys()
@@ -909,11 +917,10 @@ class TenantService(IdentityService):
         return tenants
 
     def delete(self):
-        client = self.client
         tenants = self.list()
         for tenant in tenants:
             try:
-                client.delete_tenant(tenant['id'])
+                self.client.delete_tenant(tenant['id'])
             except Exception:
                 LOG.exception("Delete Tenant exception.")
 

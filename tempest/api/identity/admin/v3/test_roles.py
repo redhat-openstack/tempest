@@ -25,13 +25,13 @@ class RolesV3TestJSON(base.BaseIdentityV3AdminTest):
         super(RolesV3TestJSON, cls).resource_setup()
         for _ in range(3):
             role_name = data_utils.rand_name(name='role')
-            role = cls.client.create_role(role_name)['role']
+            role = cls.client.create_role(name=role_name)['role']
             cls.data.v3_roles.append(role)
         cls.fetched_role_ids = list()
         u_name = data_utils.rand_name('user')
         u_desc = '%s description' % u_name
         u_email = '%s@testmail.tm' % u_name
-        cls.u_password = data_utils.rand_name('pass')
+        cls.u_password = data_utils.rand_password()
         cls.domain = cls.client.create_domain(
             data_utils.rand_name('domain'),
             description=data_utils.rand_name('domain-desc'))['domain']
@@ -47,7 +47,7 @@ class RolesV3TestJSON(base.BaseIdentityV3AdminTest):
             email=u_email, project_id=cls.project['id'],
             domain_id=cls.domain['id'])['user']
         cls.role = cls.client.create_role(
-            data_utils.rand_name('Role'))['role']
+            name=data_utils.rand_name('Role'))['role']
 
     @classmethod
     def resource_cleanup(cls):
@@ -69,13 +69,14 @@ class RolesV3TestJSON(base.BaseIdentityV3AdminTest):
     @test.idempotent_id('18afc6c0-46cf-4911-824e-9989cc056c3a')
     def test_role_create_update_get_list(self):
         r_name = data_utils.rand_name('Role')
-        role = self.client.create_role(r_name)['role']
+        role = self.client.create_role(name=r_name)['role']
         self.addCleanup(self.client.delete_role, role['id'])
         self.assertIn('name', role)
         self.assertEqual(role['name'], r_name)
 
         new_name = data_utils.rand_name('NewRole')
-        updated_role = self.client.update_role(new_name, role['id'])['role']
+        updated_role = self.client.update_role(role['id'],
+                                               name=new_name)['role']
         self.assertIn('name', updated_role)
         self.assertIn('id', updated_role)
         self.assertIn('links', updated_role)

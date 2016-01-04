@@ -26,116 +26,6 @@ class IdentityClient(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def create_role(self, name):
-        """Create a role."""
-        post_body = {
-            'name': name,
-        }
-        post_body = json.dumps({'role': post_body})
-        resp, body = self.post('OS-KSADM/roles', post_body)
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return service_client.ResponseBody(resp, body)
-
-    def show_role(self, role_id):
-        """Get a role by its id."""
-        resp, body = self.get('OS-KSADM/roles/%s' % role_id)
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return service_client.ResponseBody(resp, body)
-
-    def create_tenant(self, name, **kwargs):
-        """Create a tenant
-
-        name (required): New tenant name
-        description: Description of new tenant (default is none)
-        enabled <true|false>: Initial tenant status (default is true)
-        """
-        post_body = {
-            'name': name,
-            'description': kwargs.get('description', ''),
-            'enabled': kwargs.get('enabled', True),
-        }
-        post_body = json.dumps({'tenant': post_body})
-        resp, body = self.post('tenants', post_body)
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return service_client.ResponseBody(resp, body)
-
-    def delete_role(self, role_id):
-        """Delete a role."""
-        resp, body = self.delete('OS-KSADM/roles/%s' % str(role_id))
-        self.expected_success(204, resp.status)
-        return resp, body
-
-    def list_user_roles(self, tenant_id, user_id):
-        """Returns a list of roles assigned to a user for a tenant."""
-        url = '/tenants/%s/users/%s/roles' % (tenant_id, user_id)
-        resp, body = self.get(url)
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return service_client.ResponseBody(resp, body)
-
-    def assign_user_role(self, tenant_id, user_id, role_id):
-        """Add roles to a user on a tenant."""
-        resp, body = self.put('/tenants/%s/users/%s/roles/OS-KSADM/%s' %
-                              (tenant_id, user_id, role_id), "")
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return service_client.ResponseBody(resp, body)
-
-    def delete_user_role(self, tenant_id, user_id, role_id):
-        """Removes a role assignment for a user on a tenant."""
-        resp, body = self.delete('/tenants/%s/users/%s/roles/OS-KSADM/%s' %
-                                 (tenant_id, user_id, role_id))
-        self.expected_success(204, resp.status)
-        return service_client.ResponseBody(resp, body)
-
-    def delete_tenant(self, tenant_id):
-        """Delete a tenant."""
-        resp, body = self.delete('tenants/%s' % str(tenant_id))
-        self.expected_success(204, resp.status)
-        return service_client.ResponseBody(resp, body)
-
-    def show_tenant(self, tenant_id):
-        """Get tenant details."""
-        resp, body = self.get('tenants/%s' % str(tenant_id))
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return service_client.ResponseBody(resp, body)
-
-    def list_roles(self):
-        """Returns roles."""
-        resp, body = self.get('OS-KSADM/roles')
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return service_client.ResponseBody(resp, body)
-
-    def list_tenants(self):
-        """Returns tenants."""
-        resp, body = self.get('tenants')
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return service_client.ResponseBody(resp, body)
-
-    def update_tenant(self, tenant_id, **kwargs):
-        """Updates a tenant."""
-        body = self.show_tenant(tenant_id)['tenant']
-        name = kwargs.get('name', body['name'])
-        desc = kwargs.get('description', body['description'])
-        en = kwargs.get('enabled', body['enabled'])
-        post_body = {
-            'id': tenant_id,
-            'name': name,
-            'description': desc,
-            'enabled': en,
-        }
-        post_body = json.dumps({'tenant': post_body})
-        resp, body = self.post('tenants/%s' % tenant_id, post_body)
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
-        return service_client.ResponseBody(resp, body)
-
     def create_user(self, name, password, tenant_id, email, **kwargs):
         """Create a user."""
         post_body = {
@@ -181,12 +71,17 @@ class IdentityClient(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def enable_disable_user(self, user_id, enabled):
-        """Enables or disables a user."""
-        put_body = {
-            'enabled': enabled
-        }
-        put_body = json.dumps({'user': put_body})
+    def enable_disable_user(self, user_id, **kwargs):
+        """Enables or disables a user.
+
+        Available params: see http://developer.openstack.org/
+                              api-ref-identity-v2-ext.html#enableUser
+        """
+        # NOTE: The URL (users/<id>/enabled) is different from the api-site
+        # one (users/<id>/OS-KSADM/enabled) , but they are the same API
+        # because of the fact that in keystone/contrib/admin_crud/core.py
+        # both api use same action='set_user_enabled'
+        put_body = json.dumps({'user': kwargs})
         resp, body = self.put('users/%s/enabled' % user_id, put_body)
         self.expected_success(200, resp.status)
         body = json.loads(body)
@@ -203,13 +98,6 @@ class IdentityClient(service_client.ServiceClient):
         """Delete a token."""
         resp, body = self.delete("tokens/%s" % token_id)
         self.expected_success(204, resp.status)
-        return service_client.ResponseBody(resp, body)
-
-    def list_tenant_users(self, tenant_id):
-        """List users for a Tenant."""
-        resp, body = self.get('/tenants/%s/users' % tenant_id)
-        self.expected_success(200, resp.status)
-        body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
     def create_service(self, name, type, **kwargs):
@@ -276,25 +164,28 @@ class IdentityClient(service_client.ServiceClient):
         self.expected_success(204, resp.status)
         return service_client.ResponseBody(resp, body)
 
-    def update_user_password(self, user_id, new_pass):
+    def update_user_password(self, user_id, **kwargs):
         """Update User Password."""
-        put_body = {
-            'password': new_pass,
-            'id': user_id
-        }
-        put_body = json.dumps({'user': put_body})
+        # TODO(piyush): Current api-site doesn't contain this API description.
+        # After fixing the api-site, we need to fix here also for putting the
+        # link to api-site.
+        # LP: https://bugs.launchpad.net/openstack-api-site/+bug/1524147
+        put_body = json.dumps({'user': kwargs})
         resp, body = self.put('users/%s/OS-KSADM/password' % user_id, put_body)
         self.expected_success(200, resp.status)
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def update_user_own_password(self, user_id, new_pass, old_pass):
+    def update_user_own_password(self, user_id, **kwargs):
         """User updates own password"""
-        patch_body = {
-            "password": new_pass,
-            "original_password": old_pass
-        }
-        patch_body = json.dumps({'user': patch_body})
+        # TODO(piyush): Current api-site doesn't contain this API description.
+        # After fixing the api-site, we need to fix here also for putting the
+        # link to api-site.
+        # LP: https://bugs.launchpad.net/openstack-api-site/+bug/1524153
+        # NOTE: This API is used for updating user password by itself.
+        # Ref: http://lists.openstack.org/pipermail/openstack-dev/2015-December
+        #      /081803.html
+        patch_body = json.dumps({'user': kwargs})
         resp, body = self.patch('OS-KSCRUD/users/%s' % user_id, patch_body)
         self.expected_success(200, resp.status)
         body = json.loads(body)
@@ -307,8 +198,11 @@ class IdentityClient(service_client.ServiceClient):
         body = json.loads(body)
         return service_client.ResponseBody(resp, body)
 
-    def create_user_ec2_credentials(self, user_id, tenant_id):
-        post_body = json.dumps({'tenant_id': tenant_id})
+    def create_user_ec2_credentials(self, user_id, **kwargs):
+        # TODO(piyush): Current api-site doesn't contain this API description.
+        # After fixing the api-site, we need to fix here also for putting the
+        # link to api-site.
+        post_body = json.dumps(kwargs)
         resp, body = self.post('/users/%s/credentials/OS-EC2' % user_id,
                                post_body)
         self.expected_success(200, resp.status)

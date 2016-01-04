@@ -57,16 +57,13 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
         security_group = self._create_security_group()
         network, subnet, router = self.create_networks()
         public_network_id = CONF.network.public_network_id
-        create_kwargs = {
-            'networks': [
-                {'uuid': network.id},
-            ],
-            'key_name': keypair['name'],
-            'security_groups': [{'name': security_group['name']}],
-        }
         server_name = data_utils.rand_name('server-smoke')
-        server = self.create_server(name=server_name,
-                                    create_kwargs=create_kwargs)
+        server = self.create_server(
+            name=server_name,
+            networks=[{'uuid': network.id}],
+            key_name=keypair['name'],
+            security_groups=[{'name': security_group['name']}],
+            wait_until='ACTIVE')
         floating_ip = self.create_floating_ip(server, public_network_id)
         # Verify that we can indeed connect to the server before we mess with
         # it's state
@@ -77,7 +74,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
 
     def _check_network_connectivity(self, server, keypair, floating_ip,
                                     should_connect=True):
-        username = CONF.compute.image_ssh_user
+        username = CONF.validation.image_ssh_user
         private_key = keypair['private_key']
         self._check_tenant_network_connectivity(
             server, username, private_key,
@@ -115,7 +112,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
     @test.services('compute', 'network')
     def test_server_connectivity_reboot(self):
         server, keypair, floating_ip = self._setup_network_and_servers()
-        self.servers_client.reboot_server(server['id'], reboot_type='SOFT')
+        self.servers_client.reboot_server(server['id'], type='SOFT')
         self._wait_server_status_and_check_network_connectivity(
             server, keypair, floating_ip)
 

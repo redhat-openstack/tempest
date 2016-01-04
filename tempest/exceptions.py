@@ -176,6 +176,11 @@ class InvalidStructure(TempestException):
     message = "Invalid structure of table with details"
 
 
+class InvalidAPIVersionString(TempestException):
+    message = ("API Version String %(version)s is of invalid format. Must "
+               "be of format MajorNum.MinorNum or string 'latest'.")
+
+
 class CommandFailed(Exception):
     def __init__(self, returncode, cmd, output, stderr):
         super(CommandFailed, self).__init__()

@@ -18,6 +18,7 @@ import time
 from oslo_log import log as logging
 from tempest_lib import exceptions as lib_exc
 
+from tempest.common import api_version_utils
 from tempest.common import compute
 from tempest.common.utils import data_utils
 from tempest.common import waiters
@@ -29,7 +30,8 @@ CONF = config.CONF
 LOG = logging.getLogger(__name__)
 
 
-class BaseV2ComputeTest(tempest.test.BaseTestCase):
+class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
+                        tempest.test.BaseTestCase):
     """Base test case class for all Compute API tests."""
 
     force_tenant_isolation = False
@@ -43,6 +45,12 @@ class BaseV2ComputeTest(tempest.test.BaseTestCase):
         super(BaseV2ComputeTest, cls).skip_checks()
         if not CONF.service_available.nova:
             raise cls.skipException("Nova is not available")
+        cfg_min_version = CONF.compute_feature_enabled.min_microversion
+        cfg_max_version = CONF.compute_feature_enabled.max_microversion
+        api_version_utils.check_skip_with_microversion(cls.min_microversion,
+                                                       cls.max_microversion,
+                                                       cfg_min_version,
+                                                       cfg_max_version)
 
     @classmethod
     def setup_credentials(cls):
@@ -61,7 +69,7 @@ class BaseV2ComputeTest(tempest.test.BaseTestCase):
         cls.floating_ips_client = cls.os.compute_floating_ips_client
         cls.keypairs_client = cls.os.keypairs_client
         cls.security_group_rules_client = cls.os.security_group_rules_client
-        cls.security_groups_client = cls.os.security_groups_client
+        cls.security_groups_client = cls.os.compute_security_groups_client
         cls.quotas_client = cls.os.quotas_client
         cls.quota_classes_client = cls.os.quota_classes_client
         cls.compute_networks_client = cls.os.compute_networks_client
@@ -93,13 +101,13 @@ class BaseV2ComputeTest(tempest.test.BaseTestCase):
         super(BaseV2ComputeTest, cls).resource_setup()
         cls.build_interval = CONF.compute.build_interval
         cls.build_timeout = CONF.compute.build_timeout
-        cls.ssh_user = CONF.compute.ssh_user
         cls.image_ref = CONF.compute.image_ref
         cls.image_ref_alt = CONF.compute.image_ref_alt
         cls.flavor_ref = CONF.compute.flavor_ref
         cls.flavor_ref_alt = CONF.compute.flavor_ref_alt
-        cls.image_ssh_user = CONF.compute.image_ssh_user
-        cls.image_ssh_password = CONF.compute.image_ssh_password
+        cls.ssh_user = CONF.validation.image_ssh_user
+        cls.image_ssh_user = CONF.validation.image_ssh_user
+        cls.image_ssh_password = CONF.validation.image_ssh_password
         cls.servers = []
         cls.images = []
         cls.security_groups = []

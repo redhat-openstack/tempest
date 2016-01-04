@@ -51,13 +51,14 @@ class AuthorizationTestJSON(base.BaseV2ComputeTest):
         cls.images_client = cls.os.images_client
         cls.glance_client = cls.os.image_client
         cls.keypairs_client = cls.os.keypairs_client
-        cls.security_client = cls.os.security_groups_client
+        cls.security_client = cls.os.compute_security_groups_client
         cls.rule_client = cls.os.security_group_rules_client
 
         cls.alt_client = cls.alt_manager.servers_client
         cls.alt_images_client = cls.alt_manager.images_client
         cls.alt_keypairs_client = cls.alt_manager.keypairs_client
-        cls.alt_security_client = cls.alt_manager.security_groups_client
+        cls.alt_security_client = (
+            cls.alt_manager.compute_security_groups_client)
         cls.alt_rule_client = cls.alt_manager.security_group_rules_client
 
     @classmethod
@@ -150,13 +151,13 @@ class AuthorizationTestJSON(base.BaseV2ComputeTest):
     def test_change_password_for_alt_account_fails(self):
         # A change password request for another user's server should fail
         self.assertRaises(lib_exc.NotFound, self.alt_client.change_password,
-                          self.server['id'], 'newpass')
+                          self.server['id'], adminPass='newpass')
 
     @test.idempotent_id('14cb5ff5-f646-45ca-8f51-09081d6c0c24')
     def test_reboot_server_for_alt_account_fails(self):
         # A reboot request for another user's server should fail
         self.assertRaises(lib_exc.NotFound, self.alt_client.reboot_server,
-                          self.server['id'], 'HARD')
+                          self.server['id'], type='HARD')
 
     @test.idempotent_id('8a0bce51-cd00-480b-88ba-dbc7d8408a37')
     def test_rebuild_server_for_alt_account_fails(self):
@@ -443,4 +444,4 @@ class AuthorizationTestJSON(base.BaseV2ComputeTest):
         # A Get Console Output for another user's server should fail
         self.assertRaises(lib_exc.NotFound,
                           self.alt_client.get_console_output,
-                          self.server['id'], 10)
+                          self.server['id'], length=10)

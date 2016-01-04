@@ -28,7 +28,7 @@ class UsersNegativeTestJSON(base.BaseIdentityV2AdminTest):
     def resource_setup(cls):
         super(UsersNegativeTestJSON, cls).resource_setup()
         cls.alt_user = data_utils.rand_name('test_user')
-        cls.alt_password = data_utils.rand_name('pass')
+        cls.alt_password = data_utils.rand_password()
         cls.alt_email = cls.alt_user + '@testmail.tm'
 
     @test.attr(type=['negative'])
@@ -247,4 +247,4 @@ class UsersNegativeTestJSON(base.BaseIdentityV2AdminTest):
         # List the users with invalid tenant id
         for invalid in invalid_id:
             self.assertRaises(lib_exc.NotFound,
-                              self.client.list_tenant_users, invalid)
+                              self.tenants_client.list_tenant_users, invalid)

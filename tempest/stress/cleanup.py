@@ -48,7 +48,7 @@ def cleanup():
         except Exception:
             pass
 
-    secgrp_client = admin_manager.security_groups_client
+    secgrp_client = admin_manager.compute_security_groups_client
     secgrp = (secgrp_client.list_security_groups(all_tenants=True)
               ['security_groups'])
     secgrp_del = [grp for grp in secgrp if grp['name'] != 'default']
@@ -74,12 +74,11 @@ def cleanup():
     for user in users:
         if user['name'].startswith("stress_user"):
             admin_manager.identity_client.delete_user(user['id'])
-
-    tenants = admin_manager.identity_client.list_tenants()['tenants']
+    tenants = admin_manager.tenants_client.list_tenants()['tenants']
     LOG.info("Cleanup::remove %s tenants" % len(tenants))
     for tenant in tenants:
         if tenant['name'].startswith("stress_tenant"):
-            admin_manager.identity_client.delete_tenant(tenant['id'])
+            admin_manager.tenants_client.delete_tenant(tenant['id'])
 
     # We have to delete snapshots first or
     # volume deletion may block
