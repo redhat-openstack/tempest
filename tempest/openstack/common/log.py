@@ -36,7 +36,7 @@ import os
 import sys
 import traceback
 
-from oslo_config import cfg
+from oslo.config import cfg
 import six
 from six import moves
 
