@@ -47,6 +47,7 @@ from tempest_lib import exceptions
 from tempest_lib.services.compute import flavors_client
 from tempest_lib.services.compute import networks_client as nova_net_client
 from tempest_lib.services.compute import servers_client
+from tempest_lib.services.network import networks_client
 # Since tempest can be configured in different directories, we need to use
 # the path starting at cwd.
 sys.path.insert(0, os.getcwd())
@@ -57,8 +58,8 @@ import tempest.config
 from tempest.services.identity.v2.json import identity_client
 from tempest.services.identity.v2.json import roles_client
 from tempest.services.identity.v2.json import tenants_client
+from tempest.services.identity.v2.json import users_client
 from tempest.services.image.v2.json import images_client
-from tempest.services.network.json import networks_client
 
 LOG = logging.getLogger(__name__)
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -147,7 +148,7 @@ def main():
         clients.identity_region,
         object_store_discovery=conf.get_bool_value(swift_discover))
     if args.create and not args.use_test_accounts:
-        create_tempest_users(clients.identity, clients.tenants, clients.roles,
+        create_tempest_users(clients.tenants, clients.roles, clients.users,
                              conf, services)
     create_tempest_flavors(clients.flavors, conf, args.create)
     create_tempest_images(clients.images, conf, args.image, args.create,
@@ -306,6 +307,13 @@ class ClientManager(object):
             endpoint_type='adminURL',
             **default_params)
 
+        self.users = users_client.UsersClient(
+            _auth,
+            conf.get_defaulted('identity', 'catalog_type'),
+            self.identity_region,
+            endpoint_type='adminURL',
+            **default_params)
+
         self.images = images_client.ImagesClientV2(
             _auth,
             conf.get_defaulted('image', 'catalog_type'),
@@ -397,40 +405,39 @@ class TempestConf(ConfigParser.SafeConfigParser):
         return True
 
 
-def create_tempest_users(identity_client, tenants_client, roles_client,
-                         conf, services):
+def create_tempest_users(tenants_client, roles_client, users_client, conf,
+                         services):
     """Create users necessary for Tempest if they don't exist already."""
-    create_user_with_tenant(identity_client, tenants_client,
+    create_user_with_tenant(tenants_client, users_client,
                             conf.get('identity', 'username'),
                             conf.get('identity', 'password'),
                             conf.get('identity', 'tenant_name'))
 
-    give_role_to_user(identity_client, tenants_client, roles_client,
+    give_role_to_user(tenants_client, roles_client, users_client,
                       conf.get('identity', 'admin_username'),
-                      conf.get('identity', 'tenant_name'),
-                      role_name='admin')
+                      conf.get('identity', 'tenant_name'), role_name='admin')
 
     # Prior to juno, and with earlier juno defaults, users needed to have
     # the heat_stack_owner role to use heat stack apis. We assign that role
     # to the user if the role is present.
     if 'orchestration' in services:
-        give_role_to_user(identity_client, tenants_client, roles_client,
+        give_role_to_user(tenants_client, roles_client, users_client,
                           conf.get('identity', 'username'),
                           conf.get('identity', 'tenant_name'),
                           role_name='heat_stack_owner',
                           role_required=False)
 
-    create_user_with_tenant(identity_client, tenants_client,
+    create_user_with_tenant(tenants_client, users_client,
                             conf.get('identity', 'alt_username'),
                             conf.get('identity', 'alt_password'),
                             conf.get('identity', 'alt_tenant_name'))
 
 
-def give_role_to_user(client, tenants_client, roles_client, username,
+def give_role_to_user(tenants_client, roles_client, users_client, username,
                       tenant_name, role_name, role_required=True):
-    """Give the user a role in the project (tenant)."""
+    """Give the user a role in the project (tenant).""",
     tenant_id = identity.get_tenant_by_name(tenants_client, tenant_name)['id']
-    users = client.list_users()
+    users = users_client.list_users()
     user_ids = [u['id'] for u in users['users'] if u['name'] == username]
     user_id = user_ids[0]
     roles = roles_client.list_roles()
@@ -450,8 +457,8 @@ def give_role_to_user(client, tenants_client, roles_client, username,
                   " project '%s'", username, role_name, tenant_name)
 
 
-def create_user_with_tenant(client, tenants_client, username, password,
-                            tenant_name):
+def create_user_with_tenant(tenants_client, users_client, username,
+                            password, tenant_name):
     """Create user and tenant if he doesn't exist.
 
     Sets password even for existing user.
@@ -470,13 +477,13 @@ def create_user_with_tenant(client, tenants_client, username, password,
     tenant_id = identity.get_tenant_by_name(tenants_client, tenant_name)['id']
     # create user
     try:
-        client.create_user(username, password, tenant_id, email)
+        users_client.create_user(username, password, tenant_id, email)
     except exceptions.Conflict:
         LOG.info("User '%s' already exists. Setting password to '%s'",
                  username, password)
         user = identity.get_user_by_username(tenants_client, tenant_id,
                                              username)
-        client.update_user_password(user['id'], password=password)
+        users_client.update_user_password(user['id'], password=password)
 
 
 def create_tempest_flavors(client, conf, allow_creation):
@@ -736,14 +743,6 @@ def _download_image(client, id, path):
 def _upload_image(client, name, path, disk_format):
     """Upload image file from `path` into Glance with `name."""
     LOG.info("Uploading image '%s' from '%s'", name, os.path.abspath(path))
-
-    properties = {}
-    if disk_format == 'vmdk':
-        # We are gonna be uploading mostly Cirros, which is Ubuntu based.
-        # The vmware_ostype probably doesn't affect anything too much anyway.
-        properties = dict(vmware_disktype='sparse',
-                          vmware_adaptertype="paraVirtual",
-                          vmware_ostype='ubuntu64Guest')
 
     with open(path) as data:
         image = client.create_image(name=name,
