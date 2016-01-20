@@ -49,16 +49,17 @@ class ScenarioTest(tempest.test.BaseTestCase):
         cls.flavors_client = cls.manager.flavors_client
         cls.compute_floating_ips_client = (
             cls.manager.compute_floating_ips_client)
-        # Glance image client v1
-        cls.image_client = cls.manager.image_client
+        if CONF.service_available.glance:
+            # Glance image client v1
+            cls.image_client = cls.manager.image_client
         # Compute image client
-        cls.images_client = cls.manager.images_client
+        cls.compute_images_client = cls.manager.compute_images_client
         cls.keypairs_client = cls.manager.keypairs_client
         # Nova security groups client
         cls.compute_security_groups_client = (
             cls.manager.compute_security_groups_client)
-        cls.security_group_rules_client = (
-            cls.manager.security_group_rules_client)
+        cls.compute_security_group_rules_client = (
+            cls.manager.compute_security_group_rules_client)
         cls.servers_client = cls.manager.servers_client
         cls.interface_client = cls.manager.interfaces_client
         # Neutron network client
@@ -260,9 +261,13 @@ class ScenarioTest(tempest.test.BaseTestCase):
                       imageRef=None, volume_type=None, wait_on_delete=True):
         if name is None:
             name = data_utils.rand_name(self.__class__.__name__)
-        volume = self.volumes_client.create_volume(
-            size=size, display_name=name, snapshot_id=snapshot_id,
-            imageRef=imageRef, volume_type=volume_type)['volume']
+        kwargs = {'display_name': name,
+                  'snapshot_id': snapshot_id,
+                  'imageRef': imageRef,
+                  'volume_type': volume_type}
+        if size is not None:
+            kwargs.update({'size': size})
+        volume = self.volumes_client.create_volume(**kwargs)['volume']
 
         if wait_on_delete:
             self.addCleanup(self.volumes_client.wait_for_resource_deletion,
@@ -289,7 +294,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
 
     def _create_loginable_secgroup_rule(self, secgroup_id=None):
         _client = self.compute_security_groups_client
-        _client_rules = self.security_group_rules_client
+        _client_rules = self.compute_security_group_rules_client
         if secgroup_id is None:
             sgs = _client.list_security_groups()['security_groups']
             for sg in sgs:
@@ -344,17 +349,13 @@ class ScenarioTest(tempest.test.BaseTestCase):
 
         return secgroup
 
-    def get_remote_client(self, server_or_ip, username=None, private_key=None,
-                          log_console_of_servers=None):
+    def get_remote_client(self, server_or_ip, username=None, private_key=None):
         """Get a SSH client to a remote server
 
         @param server_or_ip a server object as returned by Tempest compute
             client or an IP address to connect to
         @param username name of the Linux account on the remote server
         @param private_key the SSH private key to use
-        @param log_console_of_servers a list of server objects. Each server
-            in the list will have its console printed in the logs in case the
-            SSH connection failed to be established
         @return a RemoteClient object
         """
         if isinstance(server_or_ip, six.string_types):
@@ -391,10 +392,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
             if caller:
                 message = '(%s) %s' % (caller, message)
             LOG.exception(message)
-            # If we don't explicitly set for which servers we want to
-            # log the console output then all the servers will be logged.
-            # See the definition of _log_console_output()
-            self._log_console_output(log_console_of_servers)
+            self._log_console_output()
             raise
 
         return linux_client
@@ -471,7 +469,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         # Glance client
         _image_client = self.image_client
         # Compute client
-        _images_client = self.images_client
+        _images_client = self.compute_images_client
         if name is None:
             name = data_utils.rand_name('scenario-snapshot')
         LOG.debug("Creating a snapshot image for server: %s", server['name'])
@@ -729,7 +727,7 @@ class NetworkScenarioTest(ScenarioTest):
 
     def _list_agents(self, *args, **kwargs):
         """List agents using admin creds """
-        agents_list = self.admin_manager.network_client.list_agents(
+        agents_list = self.admin_manager.network_agents_client.list_agents(
             *args, **kwargs)
         return agents_list['agents']
 
@@ -932,8 +930,8 @@ class NetworkScenarioTest(ScenarioTest):
             try:
                 source.ping_host(dest, nic=nic)
             except lib_exc.SSHExecCommandFailed:
-                LOG.warn('Failed to ping IP: %s via a ssh connection from: %s.'
-                         % (dest, source.ssh_client.host))
+                LOG.warning('Failed to ping IP: %s via a ssh connection '
+                            'from: %s.' % (dest, source.ssh_client.host))
                 return not should_succeed
             return should_succeed
 

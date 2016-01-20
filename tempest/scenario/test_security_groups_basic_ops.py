@@ -13,8 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo_log import log as logging
-
 from tempest import clients
 from tempest.common.utils import data_utils
 from tempest import config
@@ -22,8 +20,6 @@ from tempest.scenario import manager
 from tempest import test
 
 CONF = config.CONF
-
-LOG = logging.getLogger(__name__)
 
 
 class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
@@ -136,6 +132,9 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
                 CONF.network.public_network_id):
             msg = ('Either tenant_networks_reachable must be "true", or '
                    'public_network_id must be defined.')
+            raise cls.skipException(msg)
+        if not test.is_extension_enabled('security-group', 'network'):
+            msg = "security-group extension not enabled."
             raise cls.skipException(msg)
 
     @classmethod

@@ -13,7 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo_log import log as logging
 from tempest_lib import exceptions as lib_exc
 
 from tempest.common import compute
@@ -23,8 +22,6 @@ from tempest import exceptions
 import tempest.test
 
 CONF = config.CONF
-
-LOG = logging.getLogger(__name__)
 
 
 class BaseVolumeTest(tempest.test.BaseTestCase):
@@ -62,7 +59,7 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
         super(BaseVolumeTest, cls).setup_clients()
         cls.servers_client = cls.os.servers_client
         cls.compute_networks_client = cls.os.compute_networks_client
-        cls.images_client = cls.os.images_client
+        cls.compute_images_client = cls.os.compute_images_client
 
         if cls._api_version == 1:
             cls.snapshots_client = cls.os.snapshots_client
@@ -106,14 +103,14 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
         super(BaseVolumeTest, cls).resource_cleanup()
 
     @classmethod
-    def create_volume(cls, size=None, **kwargs):
+    def create_volume(cls, **kwargs):
         """Wrapper utility that returns a test volume."""
         name = data_utils.rand_name('Volume')
 
         name_field = cls.special_fields['name_field']
 
         kwargs[name_field] = name
-        volume = cls.volumes_client.create_volume(size, **kwargs)['volume']
+        volume = cls.volumes_client.create_volume(**kwargs)['volume']
 
         cls.volumes.append(volume)
         cls.volumes_client.wait_for_volume_status(volume['id'], 'available')
@@ -123,7 +120,7 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
     def create_snapshot(cls, volume_id=1, **kwargs):
         """Wrapper utility that returns a test snapshot."""
         snapshot = cls.snapshots_client.create_snapshot(
-            volume_id, **kwargs)['snapshot']
+            volume_id=volume_id, **kwargs)['snapshot']
         cls.snapshots.append(snapshot)
         cls.snapshots_client.wait_for_snapshot_status(snapshot['id'],
                                                       'available')

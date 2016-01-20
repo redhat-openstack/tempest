@@ -13,8 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo_log import log as logging
-
 from tempest.common import custom_matchers
 from tempest.common import waiters
 from tempest import config
@@ -23,8 +21,6 @@ from tempest.scenario import manager
 from tempest import test
 
 CONF = config.CONF
-
-LOG = logging.getLogger(__name__)
 
 
 class TestMinimumBasicScenario(manager.ScenarioTest):
@@ -50,13 +46,6 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
     10. Check SSH connection to instance after reboot
 
     """
-
-    def _wait_for_server_status(self, server, status):
-        server_id = server['id']
-        # Raise on error defaults to True, which is consistent with the
-        # original function from scenario tests here
-        waiters.wait_for_server_status(self.servers_client,
-                                       server_id, status)
 
     def nova_list(self):
         servers = self.servers_client.list_servers()
@@ -85,7 +74,8 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
 
     def nova_reboot(self, server):
         self.servers_client.reboot_server(server['id'], type='SOFT')
-        self._wait_for_server_status(server, 'ACTIVE')
+        waiters.wait_for_server_status(self.servers_client,
+                                       server['id'], 'ACTIVE')
 
     def check_partitions(self):
         # NOTE(andreaf) The device name may be different on different guest OS

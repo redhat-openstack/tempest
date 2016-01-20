@@ -106,7 +106,7 @@ def terminate_all_processes(check_interval=20):
         if process['process'].is_alive():
             try:
                 pid = process['process'].pid
-                LOG.warn("Process %d hangs. Send SIGKILL." % pid)
+                LOG.warning("Process %d hangs. Send SIGKILL." % pid)
                 os.kill(pid, signal.SIGKILL)
             except Exception:
                 pass
@@ -148,12 +148,15 @@ def stress_openstack(tests, duration, max_runs=None, stop_on_error=False):
                     identity_client = admin_manager.identity_client
                     projects_client = admin_manager.tenants_client
                     roles_client = admin_manager.roles_client
+                    users_client = admin_manager.users_client
                 else:
                     identity_client = admin_manager.identity_v3_client
                     projects_client = None
                     roles_client = None
+                    users_client = None
                 credentials_client = cred_client.get_creds_client(
-                    identity_client, projects_client, roles_client)
+                    identity_client, projects_client, roles_client,
+                    users_client)
                 project = credentials_client.create_project(
                     name=tenant_name, description=tenant_name)
                 user = credentials_client.create_user(username, password,

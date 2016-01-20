@@ -737,7 +737,7 @@ VolumeGroup = [
                deprecated_for_removal=True),
     cfg.ListOpt('backend_names',
                 default=['BACKEND_1', 'BACKEND_2'],
-                help='A list of backend names seperated by comma .'
+                help='A list of backend names separated by comma. '
                      'The backend name must be declared in cinder.conf',
                 deprecated_opts=[cfg.DeprecatedOpt('BACKEND_1',
                                                    group='volume'),
@@ -785,9 +785,10 @@ VolumeFeaturesGroup = [
                 default=True,
                 help="Is the v2 volume API enabled"),
     cfg.BoolOpt('bootable',
-                default=False,
+                default=True,
                 help='Update bootable status of a volume '
-                     'Not implemented on icehouse ')
+                     'Not implemented on icehouse ',
+                deprecated_for_removal=True)
 ]
 
 
@@ -1045,7 +1046,8 @@ ScenarioGroup = [
     cfg.StrOpt('img_dir',
                default='/opt/stack/new/devstack/files/images/'
                'cirros-0.3.1-x86_64-uec',
-               help='Directory containing image files'),
+               help='Directory containing image files',
+               deprecated_for_removal=True),
     cfg.StrOpt('img_file', deprecated_name='qcow2_img_file',
                default='cirros-0.3.1-x86_64-disk.img',
                help='Image file name'),
@@ -1059,13 +1061,16 @@ ScenarioGroup = [
                 'Use for custom images which require them'),
     cfg.StrOpt('ami_img_file',
                default='cirros-0.3.1-x86_64-blank.img',
-               help='AMI image file name'),
+               help='AMI image file name',
+               deprecated_for_removal=True),
     cfg.StrOpt('ari_img_file',
                default='cirros-0.3.1-x86_64-initrd',
-               help='ARI image file name'),
+               help='ARI image file name',
+               deprecated_for_removal=True),
     cfg.StrOpt('aki_img_file',
                default='cirros-0.3.1-x86_64-vmlinuz',
-               help='AKI image file name'),
+               help='AKI image file name',
+               deprecated_for_removal=True),
     cfg.IntOpt(
         'large_ops_number',
         default=0,
