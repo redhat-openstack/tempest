@@ -11,10 +11,7 @@
 #    See the License for the specific language governing permissions and
 #    limitations under the License.
 
-import os
-
 from oslo_concurrency import lockutils
-from oslo_log import log as logging
 from tempest_lib import auth
 
 from tempest import clients
@@ -25,7 +22,6 @@ from tempest import config
 from tempest import exceptions
 
 CONF = config.CONF
-LOG = logging.getLogger(__name__)
 
 
 """This module provides factories of credential and credential providers
@@ -170,8 +166,7 @@ def get_credentials_provider(name, network_resources=None,
             admin_creds=admin_creds,
             **_get_dynamic_provider_params())
     else:
-        if (CONF.auth.test_accounts_file and
-                os.path.isfile(CONF.auth.test_accounts_file)):
+        if CONF.auth.test_accounts_file:
             # Most params are not relevant for pre-created accounts
             return preprov_creds.PreProvisionedCredentialProvider(
                 name=name, identity_version=identity_version,
@@ -193,8 +188,7 @@ def is_admin_available(identity_version):
     if CONF.auth.use_dynamic_credentials:
         return is_admin
     # Check whether test accounts file has the admin specified or not
-    elif (CONF.auth.test_accounts_file and
-            os.path.isfile(CONF.auth.test_accounts_file)):
+    elif CONF.auth.test_accounts_file:
         check_accounts = preprov_creds.PreProvisionedCredentialProvider(
             identity_version=identity_version, name='check_admin',
             **_get_preprov_provider_params())
@@ -219,8 +213,7 @@ def is_alt_available(identity_version):
     if CONF.auth.use_dynamic_credentials:
         return True
     # Check whether test accounts file has the admin specified or not
-    if (CONF.auth.test_accounts_file and
-            os.path.isfile(CONF.auth.test_accounts_file)):
+    if CONF.auth.test_accounts_file:
         check_accounts = preprov_creds.PreProvisionedCredentialProvider(
             identity_version=identity_version, name='check_alt',
             **_get_preprov_provider_params())

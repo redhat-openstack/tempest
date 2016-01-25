@@ -13,8 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo_log import log as logging
-
 from tempest import clients
 from tempest.common.utils import data_utils
 from tempest import config
@@ -22,8 +20,6 @@ from tempest.scenario import manager
 from tempest import test
 
 CONF = config.CONF
-
-LOG = logging.getLogger(__name__)
 
 
 class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
@@ -137,6 +133,9 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
             msg = ('Either tenant_networks_reachable must be "true", or '
                    'public_network_id must be defined.')
             raise cls.skipException(msg)
+        if not test.is_extension_enabled('security-group', 'network'):
+            msg = "security-group extension not enabled."
+            raise cls.skipException(msg)
 
     @classmethod
     def setup_credentials(cls):
@@ -176,14 +175,14 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         access_sg = self._create_empty_security_group(
             namestart='secgroup_access-',
             tenant_id=tenant.creds.tenant_id,
-            client=tenant.manager.network_client
+            client=tenant.manager.security_groups_client
         )
 
         # don't use default secgroup since it allows in-tenant traffic
         def_sg = self._create_empty_security_group(
             namestart='secgroup_general-',
             tenant_id=tenant.creds.tenant_id,
-            client=tenant.manager.network_client
+            client=tenant.manager.security_groups_client
         )
         tenant.security_groups.update(access=access_sg, default=def_sg)
         ssh_rule = dict(
@@ -234,23 +233,16 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
 
     def _create_server(self, name, tenant, security_groups=None):
         """creates a server and assigns to security group"""
-        self._set_compute_context(tenant)
         if security_groups is None:
             security_groups = [tenant.security_groups['default']]
         security_groups_names = [{'name': s['name']} for s in security_groups]
-        create_kwargs = {
-            'networks': [
-                {'uuid': tenant.network.id},
-            ],
-            'key_name': tenant.keypair['name'],
-            'security_groups': security_groups_names
-        }
         server = self.create_server(
             name=name,
-            network_client=tenant.manager.network_client,
-            networks_client=tenant.manager.networks_client,
-            ports_client=tenant.manager.ports_client,
-            create_kwargs=create_kwargs)
+            networks=[{'uuid': tenant.network.id}],
+            key_name=tenant.keypair['name'],
+            security_groups=security_groups_names,
+            wait_until='ACTIVE',
+            clients=tenant.manager)
         self.assertEqual(
             sorted([s['name'] for s in security_groups]),
             sorted([s['name'] for s in server['security_groups']]))
@@ -293,10 +285,6 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
             subnets_client=tenant.manager.subnets_client)
         tenant.set_network(network, subnet, router)
 
-    def _set_compute_context(self, tenant):
-        self.servers_client = tenant.manager.servers_client
-        return self.servers_client
-
     def _deploy_tenant(self, tenant_or_id):
         """creates:
 
@@ -310,7 +298,6 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
             tenant = self.tenants[tenant_or_id]
         else:
             tenant = tenant_or_id
-        self._set_compute_context(tenant)
         self._create_tenant_keypairs(tenant)
         self._create_tenant_network(tenant)
         self._create_tenant_security_groups(tenant)
@@ -476,7 +463,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         new_sg = self._create_empty_security_group(
             namestart='secgroup_new-',
             tenant_id=new_tenant.creds.tenant_id,
-            client=new_tenant.manager.network_client)
+            client=new_tenant.manager.security_groups_client)
         icmp_rule = dict(
             protocol='icmp',
             direction='ingress',
@@ -524,7 +511,7 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         tenant = self.primary_tenant
         ip = self._get_server_ip(tenant.access_point,
                                  floating=self.floating_ip_access)
-        ssh_login = CONF.compute.image_ssh_user
+        ssh_login = CONF.validation.image_ssh_user
         private_key = tenant.keypair['private_key']
         self.check_vm_connectivity(ip,
                                    should_connect=False)

@@ -24,12 +24,10 @@ import struct
 
 import OpenSSL
 from oslo_log import log as logging
-from oslo_serialization import jsonutils as json
 import six
 from six import moves
 from six.moves import http_client as httplib
 from six.moves.urllib import parse as urlparse
-from tempest_lib import exceptions as lib_exc
 
 from tempest import exceptions as exc
 
@@ -51,19 +49,20 @@ class HTTPClient(object):
         self.endpoint_port = endpoint_parts.port
         self.endpoint_path = endpoint_parts.path
 
-        self.connection_class = self.get_connection_class(self.endpoint_scheme)
-        self.connection_kwargs = self.get_connection_kwargs(
+        self.connection_class = self._get_connection_class(
+            self.endpoint_scheme)
+        self.connection_kwargs = self._get_connection_kwargs(
             self.endpoint_scheme, **kwargs)
 
     @staticmethod
-    def get_connection_class(scheme):
+    def _get_connection_class(scheme):
         if scheme == 'https':
             return VerifiedHTTPSConnection
         else:
             return httplib.HTTPConnection
 
     @staticmethod
-    def get_connection_kwargs(scheme, **kwargs):
+    def _get_connection_kwargs(scheme, **kwargs):
         _kwargs = {'timeout': float(kwargs.get('timeout', 600))}
 
         if scheme == 'https':
@@ -75,7 +74,7 @@ class HTTPClient(object):
 
         return _kwargs
 
-    def get_connection(self):
+    def _get_connection(self):
         _class = self.connection_class
         try:
             return _class(self.endpoint_hostname, self.endpoint_port,
@@ -95,7 +94,7 @@ class HTTPClient(object):
 
         self._log_request(method, url, kwargs['headers'])
 
-        conn = self.get_connection()
+        conn = self._get_connection()
 
         try:
             url_parts = urlparse.urlparse(url)
@@ -158,30 +157,6 @@ class HTTPClient(object):
             if length >= 2048:
                 self.LOG.debug("Large body (%d) md5 summary: %s", length,
                                hashlib.md5(str_body).hexdigest())
-
-    def json_request(self, method, url, **kwargs):
-        kwargs.setdefault('headers', {})
-        kwargs['headers'].setdefault('Content-Type', 'application/json')
-        if kwargs['headers']['Content-Type'] != 'application/json':
-            msg = "Only application/json content-type is supported."
-            raise lib_exc.InvalidContentType(msg)
-
-        if 'body' in kwargs:
-            kwargs['body'] = json.dumps(kwargs['body'])
-
-        resp, body_iter = self._http_request(url, method, **kwargs)
-
-        if 'application/json' in resp.getheader('content-type', ''):
-            body = ''.join([chunk for chunk in body_iter])
-            try:
-                body = json.loads(body)
-            except ValueError:
-                LOG.error('Could not decode response body as JSON')
-        else:
-            msg = "Only json/application content-type is supported."
-            raise lib_exc.InvalidContentType(msg)
-
-        return resp, body
 
     def raw_request(self, method, url, **kwargs):
         kwargs.setdefault('headers', {})

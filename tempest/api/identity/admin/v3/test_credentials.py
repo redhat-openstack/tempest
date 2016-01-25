@@ -29,7 +29,7 @@ class CredentialsTestJSON(base.BaseIdentityV3AdminTest):
         u_name = data_utils.rand_name('user')
         u_desc = '%s description' % u_name
         u_email = '%s@testmail.tm' % u_name
-        u_password = data_utils.rand_name('pass')
+        u_password = data_utils.rand_password()
         for i in range(2):
             cls.project = cls.client.create_project(
                 data_utils.rand_name('project'),
@@ -76,7 +76,7 @@ class CredentialsTestJSON(base.BaseIdentityV3AdminTest):
         self.assertEqual(update_body['blob']['access'], new_keys[0])
         self.assertEqual(update_body['blob']['secret'], new_keys[1])
 
-        get_body = self.creds_client.get_credential(cred['id'])['credential']
+        get_body = self.creds_client.show_credential(cred['id'])['credential']
         for value1 in self.creds_list[0]:
             self.assertEqual(update_body[value1],
                              get_body[value1])

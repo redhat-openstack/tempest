@@ -35,62 +35,6 @@ class NetworkClient(base.BaseNetworkClient):
     quotas
     """
 
-    def create_metering_label(self, **kwargs):
-        uri = '/metering/metering-labels'
-        post_data = {'metering_label': kwargs}
-        return self.create_resource(uri, post_data)
-
-    def show_metering_label(self, metering_label_id, **fields):
-        uri = '/metering/metering-labels/%s' % metering_label_id
-        return self.show_resource(uri, **fields)
-
-    def delete_metering_label(self, metering_label_id):
-        uri = '/metering/metering-labels/%s' % metering_label_id
-        return self.delete_resource(uri)
-
-    def list_metering_labels(self, **filters):
-        uri = '/metering/metering-labels'
-        return self.list_resources(uri, **filters)
-
-    def create_metering_label_rule(self, **kwargs):
-        uri = '/metering/metering-label-rules'
-        post_data = {'metering_label_rule': kwargs}
-        return self.create_resource(uri, post_data)
-
-    def show_metering_label_rule(self, metering_label_rule_id, **fields):
-        uri = '/metering/metering-label-rules/%s' % metering_label_rule_id
-        return self.show_resource(uri, **fields)
-
-    def delete_metering_label_rule(self, metering_label_rule_id):
-        uri = '/metering/metering-label-rules/%s' % metering_label_rule_id
-        return self.delete_resource(uri)
-
-    def list_metering_label_rules(self, **filters):
-        uri = '/metering/metering-label-rules'
-        return self.list_resources(uri, **filters)
-
-    def create_security_group(self, **kwargs):
-        uri = '/security-groups'
-        post_data = {'security_group': kwargs}
-        return self.create_resource(uri, post_data)
-
-    def update_security_group(self, security_group_id, **kwargs):
-        uri = '/security-groups/%s' % security_group_id
-        post_data = {'security_group': kwargs}
-        return self.update_resource(uri, post_data)
-
-    def show_security_group(self, security_group_id, **fields):
-        uri = '/security-groups/%s' % security_group_id
-        return self.show_resource(uri, **fields)
-
-    def delete_security_group(self, security_group_id):
-        uri = '/security-groups/%s' % security_group_id
-        return self.delete_resource(uri)
-
-    def list_security_groups(self, **filters):
-        uri = '/security-groups'
-        return self.list_resources(uri, **filters)
-
     def create_security_group_rule(self, **kwargs):
         uri = '/security-group-rules'
         post_data = {'security_group_rule': kwargs}
@@ -116,21 +60,32 @@ class NetworkClient(base.BaseNetworkClient):
         uri = '/extensions'
         return self.list_resources(uri, **filters)
 
-    def create_bulk_network(self, names):
-        network_list = [{'name': name} for name in names]
-        post_data = {'networks': network_list}
+    def create_bulk_network(self, **kwargs):
+        """create bulk network
+
+        Available params: see http://developer.openstack.org/
+                              api-ref-networking-v2.html#bulkCreateNetwork
+        """
         uri = '/networks'
-        return self.create_resource(uri, post_data)
+        return self.create_resource(uri, kwargs)
 
-    def create_bulk_subnet(self, subnet_list):
-        post_data = {'subnets': subnet_list}
+    def create_bulk_subnet(self, **kwargs):
+        """create bulk subnet
+
+        Available params: see http://developer.openstack.org/
+                              api-ref-networking-v2.html#bulkCreateSubnet
+        """
         uri = '/subnets'
-        return self.create_resource(uri, post_data)
+        return self.create_resource(uri, kwargs)
 
-    def create_bulk_port(self, port_list):
-        post_data = {'ports': port_list}
+    def create_bulk_port(self, **kwargs):
+        """create bulk port
+
+        Available params: see http://developer.openstack.org/
+                              api-ref-networking-v2.html#bulkCreatePorts
+        """
         uri = '/ports'
-        return self.create_resource(uri, post_data)
+        return self.create_resource(uri, kwargs)
 
     def wait_for_resource_deletion(self, resource_type, id, client=None):
         """Waits for a resource to be deleted."""
@@ -190,23 +145,6 @@ class NetworkClient(base.BaseNetworkClient):
         if caller:
             message = '(%s) %s' % (caller, message)
         raise exceptions.TimeoutException(message)
-
-    def update_quotas(self, tenant_id, **kwargs):
-        put_body = {'quota': kwargs}
-        uri = '/quotas/%s' % tenant_id
-        return self.update_resource(uri, put_body)
-
-    def reset_quotas(self, tenant_id):
-        uri = '/quotas/%s' % tenant_id
-        return self.delete_resource(uri)
-
-    def show_quotas(self, tenant_id, **fields):
-        uri = '/quotas/%s' % tenant_id
-        return self.show_resource(uri, **fields)
-
-    def list_quotas(self, **filters):
-        uri = '/quotas'
-        return self.list_resources(uri, **filters)
 
     def create_router(self, name, admin_state_up=True, **kwargs):
         post_body = {'router': kwargs}
@@ -291,61 +229,22 @@ class NetworkClient(base.BaseNetworkClient):
         uri = '/ports?device_id=%s' % uuid
         return self.list_resources(uri)
 
-    def update_agent(self, agent_id, agent_info):
-        """Update agent
-
-        :param agent_info: Agent update information.
-        E.g {"admin_state_up": True}
-        """
-        uri = '/agents/%s' % agent_id
-        agent = {"agent": agent_info}
-        return self.update_resource(uri, agent)
-
-    def show_agent(self, agent_id, **fields):
-        uri = '/agents/%s' % agent_id
-        return self.show_resource(uri, **fields)
-
-    def list_agents(self, **filters):
-        uri = '/agents'
-        return self.list_resources(uri, **filters)
-
-    def list_routers_on_l3_agent(self, agent_id):
-        uri = '/agents/%s/l3-routers' % agent_id
-        return self.list_resources(uri)
-
     def list_l3_agents_hosting_router(self, router_id):
         uri = '/routers/%s/l3-agents' % router_id
         return self.list_resources(uri)
-
-    def add_router_to_l3_agent(self, agent_id, router_id):
-        uri = '/agents/%s/l3-routers' % agent_id
-        post_body = {"router_id": router_id}
-        return self.create_resource(uri, post_body)
-
-    def remove_router_from_l3_agent(self, agent_id, router_id):
-        uri = '/agents/%s/l3-routers/%s' % (agent_id, router_id)
-        return self.delete_resource(uri)
 
     def list_dhcp_agent_hosting_network(self, network_id):
         uri = '/networks/%s/dhcp-agents' % network_id
         return self.list_resources(uri)
 
-    def list_networks_hosted_by_one_dhcp_agent(self, agent_id):
-        uri = '/agents/%s/dhcp-networks' % agent_id
-        return self.list_resources(uri)
+    def update_extra_routes(self, router_id, **kwargs):
+        """Update Extra routes.
 
-    def remove_network_from_dhcp_agent(self, agent_id, network_id):
-        uri = '/agents/%s/dhcp-networks/%s' % (agent_id,
-                                               network_id)
-        return self.delete_resource(uri)
-
-    def update_extra_routes(self, router_id, routes):
+        Available params: see http://developer.openstack.org/
+                              api-ref-networking-v2-ext.html#updateExtraRoutes
+        """
         uri = '/routers/%s' % router_id
-        put_body = {
-            'router': {
-                'routes': routes
-            }
-        }
+        put_body = {'router': kwargs}
         return self.update_resource(uri, put_body)
 
     def delete_extra_routes(self, router_id):
@@ -356,30 +255,3 @@ class NetworkClient(base.BaseNetworkClient):
             }
         }
         return self.update_resource(uri, put_body)
-
-    def add_dhcp_agent_to_network(self, agent_id, network_id):
-        post_body = {'network_id': network_id}
-        uri = '/agents/%s/dhcp-networks' % agent_id
-        return self.create_resource(uri, post_body)
-
-    def list_subnetpools(self, **filters):
-        uri = '/subnetpools'
-        return self.list_resources(uri, **filters)
-
-    def create_subnetpools(self, **kwargs):
-        uri = '/subnetpools'
-        post_data = {'subnetpool': kwargs}
-        return self.create_resource(uri, post_data)
-
-    def show_subnetpools(self, subnetpool_id, **fields):
-        uri = '/subnetpools/%s' % subnetpool_id
-        return self.show_resource(uri, **fields)
-
-    def update_subnetpools(self, subnetpool_id, **kwargs):
-        uri = '/subnetpools/%s' % subnetpool_id
-        post_data = {'subnetpool': kwargs}
-        return self.update_resource(uri, post_data)
-
-    def delete_subnetpools(self, subnetpool_id):
-        uri = '/subnetpools/%s' % subnetpool_id
-        return self.delete_resource(uri)

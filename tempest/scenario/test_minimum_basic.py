@@ -13,8 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo_log import log as logging
-
 from tempest.common import custom_matchers
 from tempest.common import waiters
 from tempest import config
@@ -23,8 +21,6 @@ from tempest.scenario import manager
 from tempest import test
 
 CONF = config.CONF
-
-LOG = logging.getLogger(__name__)
 
 
 class TestMinimumBasicScenario(manager.ScenarioTest):
@@ -50,13 +46,6 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
     10. Check SSH connection to instance after reboot
 
     """
-
-    def _wait_for_server_status(self, server, status):
-        server_id = server['id']
-        # Raise on error defaults to True, which is consistent with the
-        # original function from scenario tests here
-        waiters.wait_for_server_status(self.servers_client,
-                                       server_id, status)
 
     def nova_list(self):
         servers = self.servers_client.list_servers()
@@ -84,8 +73,9 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
         self.assertEqual(volume, got_volume)
 
     def nova_reboot(self, server):
-        self.servers_client.reboot_server(server['id'], 'SOFT')
-        self._wait_for_server_status(server, 'ACTIVE')
+        self.servers_client.reboot_server(server['id'], type='SOFT')
+        waiters.wait_for_server_status(self.servers_client,
+                                       server['id'], 'ACTIVE')
 
     def check_partitions(self):
         # NOTE(andreaf) The device name may be different on different guest OS
@@ -95,9 +85,9 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
     def create_and_add_security_group_to_server(self, server):
         secgroup = self._create_security_group()
         self.servers_client.add_security_group(server['id'],
-                                               secgroup['name'])
+                                               name=secgroup['name'])
         self.addCleanup(self.servers_client.remove_security_group,
-                        server['id'], secgroup['name'])
+                        server['id'], name=secgroup['name'])
 
         def wait_for_secgroup_add():
             body = (self.servers_client.show_server(server['id'])
@@ -117,9 +107,9 @@ class TestMinimumBasicScenario(manager.ScenarioTest):
         image = self.glance_image_create()
         keypair = self.create_keypair()
 
-        create_kwargs = {'key_name': keypair['name']}
-        server = self.create_server(image=image,
-                                    create_kwargs=create_kwargs)
+        server = self.create_server(image_id=image,
+                                    key_name=keypair['name'],
+                                    wait_until='ACTIVE')
         servers = self.nova_list()
         self.assertIn(server['id'], [x['id'] for x in servers])
 

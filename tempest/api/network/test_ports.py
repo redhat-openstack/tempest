@@ -74,7 +74,7 @@ class PortsTestJSON(sec_base.BaseSecGroupTest):
         network2 = self.create_network(network_name=name)
         network_list = [network1['id'], network2['id']]
         port_list = [{'network_id': net_id} for net_id in network_list]
-        body = self.client.create_bulk_port(port_list)
+        body = self.client.create_bulk_port(ports=port_list)
         created_ports = body['ports']
         port1 = created_ports[0]
         port2 = created_ports[1]
@@ -250,17 +250,19 @@ class PortsTestJSON(sec_base.BaseSecGroupTest):
         fixed_ip_1 = [{'subnet_id': subnet_1['id']}]
 
         security_groups_list = list()
+        sec_grps_client = self.security_groups_client
         for name in security_groups_names:
-            group_create_body = self.client.create_security_group(
+            group_create_body = sec_grps_client.create_security_group(
                 name=name)
-            self.addCleanup(self.client.delete_security_group,
+            self.addCleanup(self.security_groups_client.delete_security_group,
                             group_create_body['security_group']['id'])
             security_groups_list.append(group_create_body['security_group']
                                         ['id'])
         # Create a port
         sec_grp_name = data_utils.rand_name('secgroup')
-        security_group = self.client.create_security_group(name=sec_grp_name)
-        self.addCleanup(self.client.delete_security_group,
+        security_group = sec_grps_client.create_security_group(
+            name=sec_grp_name)
+        self.addCleanup(self.security_groups_client.delete_security_group,
                         security_group['security_group']['id'])
         post_body = {
             "name": data_utils.rand_name('port-'),

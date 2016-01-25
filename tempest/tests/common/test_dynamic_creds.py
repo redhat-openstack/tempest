@@ -24,6 +24,12 @@ from tempest import config
 from tempest import exceptions
 from tempest.services.identity.v2.json import identity_client as \
     json_iden_client
+from tempest.services.identity.v2.json import roles_client as \
+    json_roles_client
+from tempest.services.identity.v2.json import tenants_client as \
+    json_tenants_client
+from tempest.services.identity.v2.json import users_client as \
+    json_users_client
 from tempest.services.network.json import network_client as json_network_client
 from tempest.tests import base
 from tempest.tests import fake_config
@@ -66,7 +72,7 @@ class TestDynamicCredentialProvider(base.TestCase):
 
     def _mock_user_create(self, id, name):
         user_fix = self.useFixture(mockpatch.PatchObject(
-            json_iden_client.IdentityClient,
+            json_users_client.UsersClient,
             'create_user',
             return_value=(service_client.ResponseBody
                           (200, {'user': {'id': id, 'name': name}}))))
@@ -74,7 +80,7 @@ class TestDynamicCredentialProvider(base.TestCase):
 
     def _mock_tenant_create(self, id, name):
         tenant_fix = self.useFixture(mockpatch.PatchObject(
-            json_iden_client.IdentityClient,
+            json_tenants_client.TenantsClient,
             'create_tenant',
             return_value=(service_client.ResponseBody
                           (200, {'tenant': {'id': id, 'name': name}}))))
@@ -82,7 +88,7 @@ class TestDynamicCredentialProvider(base.TestCase):
 
     def _mock_list_roles(self, id, name):
         roles_fix = self.useFixture(mockpatch.PatchObject(
-            json_iden_client.IdentityClient,
+            json_roles_client.RolesClient,
             'list_roles',
             return_value=(service_client.ResponseBody
                           (200,
@@ -93,7 +99,7 @@ class TestDynamicCredentialProvider(base.TestCase):
 
     def _mock_list_2_roles(self):
         roles_fix = self.useFixture(mockpatch.PatchObject(
-            json_iden_client.IdentityClient,
+            json_roles_client.RolesClient,
             'list_roles',
             return_value=(service_client.ResponseBody
                           (200,
@@ -104,7 +110,7 @@ class TestDynamicCredentialProvider(base.TestCase):
 
     def _mock_assign_user_role(self):
         tenant_fix = self.useFixture(mockpatch.PatchObject(
-            json_iden_client.IdentityClient,
+            json_roles_client.RolesClient,
             'assign_user_role',
             return_value=(service_client.ResponseBody
                           (200, {}))))
@@ -112,7 +118,7 @@ class TestDynamicCredentialProvider(base.TestCase):
 
     def _mock_list_role(self):
         roles_fix = self.useFixture(mockpatch.PatchObject(
-            json_iden_client.IdentityClient,
+            json_roles_client.RolesClient,
             'list_roles',
             return_value=(service_client.ResponseBody
                           (200, {'roles': [{'id': '1',
@@ -121,7 +127,7 @@ class TestDynamicCredentialProvider(base.TestCase):
 
     def _mock_list_ec2_credentials(self, user_id, tenant_id):
         ec2_creds_fix = self.useFixture(mockpatch.PatchObject(
-            json_iden_client.IdentityClient,
+            json_users_client.UsersClient,
             'list_user_ec2_credentials',
             return_value=(service_client.ResponseBody
                           (200, {'credentials': [{
@@ -176,11 +182,11 @@ class TestDynamicCredentialProvider(base.TestCase):
         self._mock_user_create('1234', 'fake_admin_user')
         self._mock_tenant_create('1234', 'fake_admin_tenant')
 
-        user_mock = mock.patch.object(json_iden_client.IdentityClient,
+        user_mock = mock.patch.object(json_roles_client.RolesClient,
                                       'assign_user_role')
         user_mock.start()
         self.addCleanup(user_mock.stop)
-        with mock.patch.object(json_iden_client.IdentityClient,
+        with mock.patch.object(json_roles_client.RolesClient,
                                'assign_user_role') as user_mock:
             admin_creds = creds.get_admin_creds()
         user_mock.assert_has_calls([
@@ -199,11 +205,11 @@ class TestDynamicCredentialProvider(base.TestCase):
         self._mock_user_create('1234', 'fake_role_user')
         self._mock_tenant_create('1234', 'fake_role_tenant')
 
-        user_mock = mock.patch.object(json_iden_client.IdentityClient,
+        user_mock = mock.patch.object(json_roles_client.RolesClient,
                                       'assign_user_role')
         user_mock.start()
         self.addCleanup(user_mock.stop)
-        with mock.patch.object(json_iden_client.IdentityClient,
+        with mock.patch.object(json_roles_client.RolesClient,
                                'assign_user_role') as user_mock:
             role_creds = creds.get_creds_by_roles(
                 roles=['role1', 'role2'])
@@ -237,11 +243,11 @@ class TestDynamicCredentialProvider(base.TestCase):
         self._mock_list_roles('123456', 'admin')
         creds.get_admin_creds()
         user_mock = self.patch(
-            'tempest.services.identity.v2.json.identity_client.'
-            'IdentityClient.delete_user')
+            'tempest.services.identity.v2.json.users_client.'
+            'UsersClient.delete_user')
         tenant_mock = self.patch(
-            'tempest.services.identity.v2.json.identity_client.'
-            'IdentityClient.delete_tenant')
+            'tempest.services.identity.v2.json.tenants_client.'
+            'TenantsClient.delete_tenant')
         creds.clear_creds()
         # Verify user delete calls
         calls = user_mock.mock_calls
@@ -318,7 +324,7 @@ class TestDynamicCredentialProvider(base.TestCase):
             'tempest.services.network.json.network_client.NetworkClient.'
             'add_router_interface_with_subnet_id')
         primary_creds = creds.get_primary_creds()
-        router_interface_mock.called_once_with('1234', '1234')
+        router_interface_mock.assert_called_once_with('1234', '1234')
         network = primary_creds.network
         subnet = primary_creds.subnet
         router = primary_creds.router
@@ -350,7 +356,7 @@ class TestDynamicCredentialProvider(base.TestCase):
             'tempest.services.network.json.network_client.NetworkClient.'
             'add_router_interface_with_subnet_id')
         creds.get_primary_creds()
-        router_interface_mock.called_once_with('1234', '1234')
+        router_interface_mock.assert_called_once_with('1234', '1234')
         router_interface_mock.reset_mock()
         # Create alternate tenant and network
         self._mock_user_create('12345', 'fake_alt_user')
@@ -359,7 +365,7 @@ class TestDynamicCredentialProvider(base.TestCase):
         self._mock_subnet_create(creds, '12345', 'fake_alt_subnet')
         self._mock_router_create('12345', 'fake_alt_router')
         creds.get_alt_creds()
-        router_interface_mock.called_once_with('12345', '12345')
+        router_interface_mock.assert_called_once_with('12345', '12345')
         router_interface_mock.reset_mock()
         # Create admin tenant and networks
         self._mock_user_create('123456', 'fake_admin_user')
@@ -369,10 +375,10 @@ class TestDynamicCredentialProvider(base.TestCase):
         self._mock_router_create('123456', 'fake_admin_router')
         self._mock_list_roles('123456', 'admin')
         creds.get_admin_creds()
-        self.patch('tempest.services.identity.v2.json.identity_client.'
-                   'IdentityClient.delete_user')
-        self.patch('tempest.services.identity.v2.json.identity_client.'
-                   'IdentityClient.delete_tenant')
+        self.patch('tempest.services.identity.v2.json.users_client.'
+                   'UsersClient.delete_user')
+        self.patch('tempest.services.identity.v2.json.tenants_client.'
+                   'TenantsClient.delete_tenant')
         net = mock.patch.object(creds.networks_admin_client,
                                 'delete_network')
         net_mock = net.start()
@@ -392,15 +398,15 @@ class TestDynamicCredentialProvider(base.TestCase):
 
         port_list_mock.start()
         secgroup_list_mock = mock.patch.object(
-            creds.network_admin_client,
+            creds.security_groups_admin_client,
             'list_security_groups',
             side_effect=side_effect)
         secgroup_list_mock.start()
 
         return_values = (fake_http.fake_httplib({}, status=204), {})
         remove_secgroup_mock = self.patch(
-            'tempest.services.network.json.network_client.'
-            'NetworkClient.delete', return_value=return_values)
+            'tempest.services.network.json.security_groups_client.'
+            'SecurityGroupsClient.delete', return_value=return_values)
         creds.clear_creds()
         # Verify default security group delete
         calls = remove_secgroup_mock.mock_calls
@@ -457,7 +463,7 @@ class TestDynamicCredentialProvider(base.TestCase):
             'tempest.services.network.json.network_client.NetworkClient.'
             'add_router_interface_with_subnet_id')
         alt_creds = creds.get_alt_creds()
-        router_interface_mock.called_once_with('1234', '1234')
+        router_interface_mock.assert_called_once_with('1234', '1234')
         network = alt_creds.network
         subnet = alt_creds.subnet
         router = alt_creds.router
@@ -482,7 +488,7 @@ class TestDynamicCredentialProvider(base.TestCase):
             'add_router_interface_with_subnet_id')
         self._mock_list_roles('123456', 'admin')
         admin_creds = creds.get_admin_creds()
-        router_interface_mock.called_once_with('1234', '1234')
+        router_interface_mock.assert_called_once_with('1234', '1234')
         network = admin_creds.network
         subnet = admin_creds.subnet
         router = admin_creds.router

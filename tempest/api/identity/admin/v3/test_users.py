@@ -13,6 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import time
+
 from tempest.api.identity import base
 from tempest.common.utils import data_utils
 from tempest import test
@@ -27,7 +29,7 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         u_name = data_utils.rand_name('user')
         u_desc = u_name + 'description'
         u_email = u_name + '@testmail.tm'
-        u_password = data_utils.rand_name('pass')
+        u_password = data_utils.rand_password()
         user = self.client.create_user(
             u_name, description=u_desc, password=u_password,
             email=u_email, enabled=False)['user']
@@ -67,15 +69,23 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
     def test_update_user_password(self):
         # Creating User to check password updation
         u_name = data_utils.rand_name('user')
-        original_password = data_utils.rand_name('pass')
+        original_password = data_utils.rand_password()
         user = self.client.create_user(
             u_name, password=original_password)['user']
         # Delete the User at the end all test methods
         self.addCleanup(self.client.delete_user, user['id'])
         # Update user with new password
-        new_password = data_utils.rand_name('pass1')
-        self.client.update_user_password(user['id'], new_password,
-                                         original_password)
+        new_password = data_utils.rand_password()
+        self.client.update_user_password(user['id'], password=new_password,
+                                         original_password=original_password)
+        # TODO(lbragstad): Sleeping after the response status has been checked
+        # and the body loaded as JSON allows requests to fail-fast. The sleep
+        # is necessary because keystone will err on the side of security and
+        # invalidate tokens within a small margin of error (within the same
+        # wall clock second) after a revocation event is issued (such as a
+        # password change). Remove this once keystone and Fernet support
+        # sub-second precision, see bug 1517697 for more details.
+        time.sleep(1)
         resp = self.token.auth(user_id=user['id'],
                                password=new_password).response
         subject_token = resp['x-subject-token']
@@ -99,7 +109,7 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         u_name = data_utils.rand_name('user')
         u_desc = u_name + 'description'
         u_email = u_name + '@testmail.tm'
-        u_password = data_utils.rand_name('pass')
+        u_password = data_utils.rand_password()
         user_body = self.client.create_user(
             u_name, description=u_desc, password=u_password,
             email=u_email, enabled=False, project_id=u_project['id'])['user']
@@ -107,7 +117,7 @@ class UsersV3TestJSON(base.BaseIdentityV3AdminTest):
         self.addCleanup(self.client.delete_user, user_body['id'])
         # Creating Role
         role_body = self.client.create_role(
-            data_utils.rand_name('role'))['role']
+            name=data_utils.rand_name('role'))['role']
         # Delete the Role at the end of this method
         self.addCleanup(self.client.delete_role, role_body['id'])
 

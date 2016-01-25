@@ -19,7 +19,6 @@ import os
 import re
 import sys
 import time
-import urllib
 import uuid
 
 import fixtures
@@ -27,6 +26,8 @@ from oslo_log import log as logging
 from oslo_serialization import jsonutils as json
 from oslo_utils import importutils
 import six
+from six.moves import urllib
+from tempest_lib import decorators
 import testscenarios
 import testtools
 
@@ -42,6 +43,8 @@ from tempest import exceptions
 LOG = logging.getLogger(__name__)
 
 CONF = config.CONF
+
+idempotent_id = decorators.idempotent_id
 
 
 def attr(**kwargs):
@@ -59,23 +62,6 @@ def attr(**kwargs):
                 f = testtools.testcase.attr(attr)(f)
         return f
 
-    return decorator
-
-
-def idempotent_id(id):
-    """Stub for metadata decorator"""
-    if not isinstance(id, six.string_types):
-        raise TypeError('Test idempotent_id must be string not %s'
-                        '' % type(id).__name__)
-    uuid.UUID(id)
-
-    def decorator(f):
-        f = testtools.testcase.attr('id-%s' % id)(f)
-        if f.__doc__:
-            f.__doc__ = 'Test idempotent id: %s\n%s' % (id, f.__doc__)
-        else:
-            f.__doc__ = 'Test idempotent id: %s' % id
-        return f
     return decorator
 
 
@@ -240,6 +226,7 @@ class BaseTestCase(testtools.testcase.WithAttributes,
     # Resources required to validate a server using ssh
     validation_resources = {}
     network_resources = {}
+    services_microversion = {}
 
     # NOTE(sdague): log_format is defined inline here instead of using the oslo
     # default because going through the config path recouples config to the
@@ -389,8 +376,8 @@ class BaseTestCase(testtools.testcase.WithAttributes,
             cls.validation_resources = vresources.create_validation_resources(
                 cls.os, cls.validation_resources)
         else:
-            LOG.warn("Client manager not found, validation resources not"
-                     " created")
+            LOG.warning("Client manager not found, validation resources not"
+                        " created")
 
     @classmethod
     def resource_cleanup(cls):
@@ -405,8 +392,8 @@ class BaseTestCase(testtools.testcase.WithAttributes,
                                                       cls.validation_resources)
                 cls.validation_resources = {}
             else:
-                LOG.warn("Client manager not found, validation resources not"
-                         " deleted")
+                LOG.warning("Client manager not found, validation resources "
+                            "not deleted")
 
     def setUp(self):
         super(BaseTestCase, self).setUp()
@@ -450,15 +437,24 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         """
         if CONF.identity.auth_version == 'v2':
             client = self.os_admin.identity_client
+            project_client = self.os_admin.tenants_client
+            roles_client = self.os_admin.roles_client
+            users_client = self.os_admin.users_client
         else:
             client = self.os_admin.identity_v3_client
+            project_client = None
+            roles_client = None
+            users_client = None
 
         try:
             domain = client.auth_provider.credentials.project_domain_name
         except AttributeError:
             domain = 'Default'
 
-        return cred_client.get_creds_client(client, domain)
+        return cred_client.get_creds_client(client, project_client,
+                                            roles_client,
+                                            users_client,
+                                            project_domain_name=domain)
 
     @classmethod
     def get_identity_version(cls):
@@ -495,7 +491,7 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         :param credential_type: string - primary, alt or admin
         :param roles: list of roles
 
-        :returns the created client manager
+        :returns: the created client manager
         :raises skipException: if the requested credentials are not available
         """
         if all([roles, credential_type]):
@@ -523,7 +519,8 @@ class BaseTestCase(testtools.testcase.WithAttributes,
             else:
                 raise exceptions.InvalidCredentials(
                     "Invalid credentials type %s" % credential_type)
-        return clients.Manager(credentials=creds, service=cls._service)
+        return clients.Manager(credentials=creds, service=cls._service,
+                               api_microversions=cls.services_microversion)
 
     @classmethod
     def clear_credentials(cls):
@@ -610,7 +607,8 @@ class BaseTestCase(testtools.testcase.WithAttributes,
                 credentials.is_admin_available(
                     identity_version=cls.get_identity_version())):
             admin_creds = cred_provider.get_admin_creds()
-            admin_manager = clients.Manager(admin_creds)
+            admin_manager = clients.Manager(
+                admin_creds, api_microversions=cls.services_microversion)
             networks_client = admin_manager.compute_networks_client
         return fixed_network.get_tenant_network(
             cred_provider, networks_client, CONF.compute.fixed_network_name)
@@ -778,7 +776,7 @@ class NegativeAutoTest(BaseTestCase):
         if not json_dict:
             return url, None
         elif method in ["GET", "HEAD", "PUT", "DELETE"]:
-            return "%s?%s" % (url, urllib.urlencode(json_dict)), None
+            return "%s?%s" % (url, urllib.parse.urlencode(json_dict)), None
         else:
             return url, json.dumps(json_dict)
 
