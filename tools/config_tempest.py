@@ -42,7 +42,7 @@ import shutil
 import sys
 import urllib2
 
-import tempest_lib.auth
+from tempest_lib import auth
 from tempest_lib import exceptions
 from tempest_lib.services.compute import flavors_client
 from tempest_lib.services.compute import networks_client as nova_net_client
@@ -59,6 +59,8 @@ from tempest.services.identity.v2.json import identity_client
 from tempest.services.identity.v2.json import roles_client
 from tempest.services.identity.v2.json import tenants_client
 from tempest.services.identity.v2.json import users_client
+from tempest.services.identity.v3.json  \
+    import identity_client as identity_v3_client
 from tempest.services.image.v2.json import images_client
 
 LOG = logging.getLogger(__name__)
@@ -132,7 +134,16 @@ def main():
     for section, key, value in args.overrides:
         conf.set(section, key, value, priority=True)
     uri = conf.get("identity", "uri")
-    conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
+    api_version = 2
+    v3_only = False
+    if "v3" in uri and v3_only:
+        api_version = 3
+    if "v3" in uri:
+        conf.set("identity", "auth_version", "v3")
+        conf.set("identity", "uri", uri.replace("v3", "v2.0"), priority=True)
+        conf.set("identity", "uri_v3", uri)
+    else:
+        conf.set("identity", "uri_v3", uri.replace("v2.0", "v3"))
     if args.non_admin:
         conf.set("identity", "admin_username", "")
         conf.set("identity", "admin_tenant_name", "")
@@ -146,7 +157,8 @@ def main():
     services = api_discovery.discover(
         clients.auth_provider,
         clients.identity_region,
-        object_store_discovery=conf.get_bool_value(swift_discover))
+        object_store_discovery=conf.get_bool_value(swift_discover),
+        api_version=api_version)
     if args.create and not args.use_test_accounts:
         create_tempest_users(clients.tenants, clients.roles, clients.users,
                              conf, services)
@@ -247,8 +259,54 @@ class ClientManager(object):
     Connections to clients are created on-demand, i.e. the client tries to
     connect to the server only when it's being requested.
     """
+    def get_credentials(self, conf, username, tenant_name, password,
+                        identity_version='v2'):
+        creds_kwargs = {'username': username,
+                        'password': password}
+        if identity_version == 'v3':
+            creds_kwargs.update({'project_name': tenant_name,
+                                 'domain_name': 'Default',
+                                 'user_domain_name': 'Default'})
+        else:
+            creds_kwargs.update({'tenant_name': tenant_name})
+        return auth.get_credentials(
+            auth_url=None,
+            fill_in=False,
+            identity_version=identity_version,
+            disable_ssl_certificate_validation=conf.get_defaulted(
+                'identity',
+                'disable_ssl_certificate_validation'),
+            ca_certs=conf.get_defaulted(
+                'identity',
+                'ca_certificates_file'),
+            **creds_kwargs)
+
+    def get_auth_provider(self, conf, credentials):
+        disable_ssl_certificate_validation = conf.get_defaulted(
+            'identity',
+            'disable_ssl_certificate_validation')
+        ca_certs = conf.get_defaulted(
+            'identity',
+            'ca_certificates_file')
+        if isinstance(credentials, auth.KeystoneV3Credentials):
+            return auth.KeystoneV3AuthProvider(
+                credentials, conf.get_defaulted('identity', 'uri_v3'),
+                disable_ssl_certificate_validation,
+                ca_certs)
+        else:
+            return auth.KeystoneV2AuthProvider(
+                credentials, conf.get_defaulted('identity', 'uri'),
+                disable_ssl_certificate_validation,
+                ca_certs)
+
+    def get_identity_version(self, conf):
+        if "v3" in conf.get("identity", "uri"):
+            return "v3"
+        else:
+            return "v2"
 
     def __init__(self, conf, admin):
+        self.identity_version = self.get_identity_version(conf)
         if admin:
             username = conf.get_defaulted('identity', 'admin_username')
             password = conf.get_defaulted('identity', 'admin_password')
@@ -272,26 +330,27 @@ class ClientManager(object):
         }
         compute_params.update(default_params)
 
-        _creds = tempest_lib.auth.KeystoneV2Credentials(
-            username=username,
-            password=password,
-            tenant_name=tenant_name)
-        auth_provider_params = {
-            'disable_ssl_certificate_validation':
-                conf.get_defaulted('identity',
-                                   'disable_ssl_certificate_validation'),
-            'ca_certs': conf.get_defaulted('identity', 'ca_certificates_file')
-        }
-        _auth = tempest_lib.auth.KeystoneV2AuthProvider(
-            _creds, conf.get_defaulted('identity', 'uri'),
-            **auth_provider_params)
+        if self.identity_version == "v2":
+            _creds = self.get_credentials(conf, username, tenant_name,
+                                          password)
+        else:
+            _creds = self.get_credentials(
+                conf, username, tenant_name, password,
+                identity_version=self.identity_version)
+
+        _auth = self.get_auth_provider(conf, _creds)
         self.auth_provider = _auth
-        self.identity = identity_client.IdentityClient(
-            _auth,
-            conf.get_defaulted('identity', 'catalog_type'),
-            self.identity_region,
-            endpoint_type='adminURL',
-            **default_params)
+
+        if "v2.0" in conf.get("identity", "uri"):
+            self.identity = identity_client.IdentityClient(
+                _auth, conf.get_defaulted('identity', 'catalog_type'),
+                self.identity_region, endpoint_type='adminURL',
+                **default_params)
+        else:
+            self.identity = identity_v3_client.IdentityV3Client(
+                _auth, conf.get_defaulted('identity', 'catalog_type'),
+                self.identity_region, endpoint_type='adminURL',
+                **default_params)
 
         self.tenants = tenants_client.TenantsClient(
             _auth,

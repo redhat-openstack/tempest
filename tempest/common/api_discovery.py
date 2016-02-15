@@ -128,7 +128,8 @@ def get_service_class(service_name):
     return service_dict.get(service_name, Service)
 
 
-def discover(auth_provider, region, object_store_discovery=True):
+def discover(auth_provider, region, object_store_discovery=True,
+             api_version=2):
     """Returns a dict with discovered apis.
 
     :param auth_provider: An AuthProvider to obtain service urls.
@@ -139,7 +140,13 @@ def discover(auth_provider, region, object_store_discovery=True):
     """
     token, auth_data = auth_provider.get_auth()
     services = {}
-    for entry in auth_data['serviceCatalog']:
+    service_catalog = 'serviceCatalog'
+    public_url = 'publicURL'
+    if api_version == 3:
+        service_catalog = 'catalog'
+        public_url = 'url'
+
+    for entry in auth_data[service_catalog]:
         name = entry['type']
         services[name] = dict()
         for _ep in entry['endpoints']:
@@ -148,8 +155,7 @@ def discover(auth_provider, region, object_store_discovery=True):
                 break
         else:
             ep = entry['endpoints'][0]
-        services[name]['url'] = ep['publicURL']
-
+        services[name]['url'] = ep[public_url]
         service_class = get_service_class(name)
         service = service_class(name, services[name]['url'], token)
         if name == 'object-store' and not object_store_discovery:
