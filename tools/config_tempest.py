@@ -377,7 +377,6 @@ class ClientManager(object):
             _auth,
             conf.get_defaulted('image', 'catalog_type'),
             self.identity_region,
-            conf.get_defaulted('image', 'endpoint_type'),
             **default_params)
         self.servers = servers_client.ServersClient(_auth,
                                                     **compute_params)
