@@ -21,7 +21,6 @@ from oslo_log import log as logging
 from oslo_utils import importutils
 import six
 from six import moves
-from tempest_lib.common import ssh
 
 
 from tempest import clients
@@ -30,6 +29,7 @@ from tempest.common import credentials_factory as credentials
 from tempest.common.utils import data_utils
 from tempest import config
 from tempest import exceptions
+from tempest.lib.common import ssh
 from tempest.stress import cleanup
 
 CONF = config.CONF
@@ -149,14 +149,18 @@ def stress_openstack(tests, duration, max_runs=None, stop_on_error=False):
                     projects_client = admin_manager.tenants_client
                     roles_client = admin_manager.roles_client
                     users_client = admin_manager.users_client
+                    domains_client = None
                 else:
                     identity_client = admin_manager.identity_v3_client
-                    projects_client = None
-                    roles_client = None
-                    users_client = None
+                    projects_client = admin_manager.projects_client
+                    roles_client = admin_manager.roles_v3_client
+                    users_client = admin_manager.users_v3_client
+                    domains_client = admin_manager.domains_client
+                domain = (identity_client.auth_provider.credentials.
+                          get('project_domain_name', 'Default'))
                 credentials_client = cred_client.get_creds_client(
-                    identity_client, projects_client, roles_client,
-                    users_client)
+                    identity_client, projects_client, users_client,
+                    roles_client, domains_client, project_domain_name=domain)
                 project = credentials_client.create_project(
                     name=tenant_name, description=tenant_name)
                 user = credentials_client.create_user(username, password,

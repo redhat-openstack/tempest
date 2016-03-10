@@ -78,7 +78,7 @@ def init_conf():
 
     if IS_NEUTRON:
         CONF_PRIV_NETWORK = _get_network_id(CONF.compute.fixed_network_name,
-                                            CONF.identity.tenant_name)
+                                            CONF.auth.admin_tenant_name)
         CONF_NETWORKS = [CONF_PUB_NETWORK, CONF_PRIV_NETWORK]
 
 
@@ -449,7 +449,7 @@ class NetworkFloatingIpService(NetworkService):
 class NetworkRouterService(NetworkService):
 
     def list(self):
-        client = self.client
+        client = self.routers_client
         routers = client.list_routers(**self.tenant_filter)
         routers = routers['routers']
         if self.is_preserve:
@@ -460,7 +460,7 @@ class NetworkRouterService(NetworkService):
         return routers
 
     def delete(self):
-        client = self.client
+        client = self.routers_client
         routers = self.list()
         for router in routers:
             try:
@@ -469,8 +469,7 @@ class NetworkRouterService(NetworkService):
                          in client.list_router_interfaces(rid)['ports']
                          if port["device_owner"] == "network:router_interface"]
                 for port in ports:
-                    client.remove_router_interface_with_port_id(rid,
-                                                                port['id'])
+                    client.remove_router_interface(rid, port_id=port['id'])
                 client.delete_router(rid)
             except Exception:
                 LOG.exception("Delete Router exception.")
@@ -941,7 +940,7 @@ class DomainService(BaseService):
 
     def __init__(self, manager, **kwargs):
         super(DomainService, self).__init__(kwargs)
-        self.client = manager.identity_v3_client
+        self.client = manager.domains_client
 
     def list(self):
         client = self.client

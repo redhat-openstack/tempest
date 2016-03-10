@@ -10,11 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest_lib import exceptions as lib_exc
-
 from tempest.api.orchestration import base
 from tempest.common.utils import data_utils
 from tempest import config
+from tempest.lib import exceptions as lib_exc
 from tempest import test
 
 CONF = config.CONF
@@ -33,7 +32,7 @@ Outputs:
   Foo: bar''' % fill
         ex = self.assertRaises(lib_exc.BadRequest, self.create_stack,
                                stack_name, template)
-        self.assertIn('Template exceeds maximum allowed size', str(ex))
+        self.assertIn('exceeds maximum allowed size', str(ex))
 
     @test.idempotent_id('d1b83e73-7cad-4a22-9839-036548c5387c')
     def test_exceed_max_resources_per_stack(self):

@@ -15,7 +15,6 @@
 
 from oslo_log import log as logging
 
-from tempest.common import waiters
 from tempest import config
 from tempest.scenario import manager
 from tempest import test
@@ -37,32 +36,10 @@ class BaremetalBasicOps(manager.BaremetalScenarioTest):
         * Verifies SSH connectivity using created keypair via fixed IP
         * Associates a floating ip
         * Verifies SSH connectivity using created keypair via floating IP
-        * Verifies instance rebuild with ephemeral partition preservation
         * Deletes instance
         * Monitors the associated Ironic node for power and
           expected state transitions
     """
-    def rebuild_instance(self, preserve_ephemeral=False):
-        self.rebuild_server(server_id=self.instance['id'],
-                            preserve_ephemeral=preserve_ephemeral,
-                            wait=False)
-
-        node = self.get_node(instance_id=self.instance['id'])
-
-        # We should remain on the same node
-        self.assertEqual(self.node['uuid'], node['uuid'])
-        self.node = node
-
-        waiters.wait_for_server_status(
-            self.servers_client,
-            server_id=self.instance['id'],
-            status='REBUILD',
-            ready_wait=False)
-        waiters.wait_for_server_status(
-            self.servers_client,
-            server_id=self.instance['id'],
-            status='ACTIVE')
-
     def verify_partition(self, client, label, mount, gib_size):
         """Verify a labeled partition's mount point and size."""
         LOG.info("Looking for partition %s mounted on %s" % (label, mount))
@@ -112,12 +89,9 @@ class BaremetalBasicOps(manager.BaremetalScenarioTest):
         self.add_keypair()
         self.boot_instance()
         self.validate_ports()
-        self.verify_connectivity()
-        if CONF.validation.connect_method == 'floating':
-            floating_ip = self.create_floating_ip(self.instance)['ip']
-            self.verify_connectivity(ip=floating_ip)
-
-        vm_client = self.get_remote_client(self.instance)
+        ip_address = self.get_server_ip(self.instance)
+        self.get_remote_client(ip_address).validate_authentication()
+        vm_client = self.get_remote_client(ip_address)
 
         # We expect the ephemeral partition to be mounted on /mnt and to have
         # the same size as our flavor definition.
@@ -126,6 +100,6 @@ class BaremetalBasicOps(manager.BaremetalScenarioTest):
             self.verify_partition(vm_client, 'ephemeral0', '/mnt', eph_size)
             # Create the test file
             self.create_timestamp(
-                floating_ip, private_key=self.keypair['private_key'])
+                ip_address, private_key=self.keypair['private_key'])
 
         self.terminate_instance()

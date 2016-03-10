@@ -146,7 +146,7 @@ def get_extension_client(os, service):
     extensions_client = {
         'nova': os.extensions_client,
         'cinder': os.volumes_extension_client,
-        'neutron': os.network_client,
+        'neutron': os.network_extensions_client,
         'swift': os.account_client,
     }
     # NOTE (e0ne): Use Cinder API v2 by default because v1 is deprecated
@@ -157,7 +157,7 @@ def get_extension_client(os, service):
 
     if service not in extensions_client:
         print('No tempest extensions client for %s' % service)
-        exit(1)
+        sys.exit(1)
     return extensions_client[service]
 
 
@@ -170,7 +170,7 @@ def get_enabled_extensions(service):
     }
     if service not in extensions_options:
         print('No supported extensions list option for %s' % service)
-        exit(1)
+        sys.exit(1)
     return extensions_options[service]
 
 
@@ -269,7 +269,6 @@ def check_service_availability(os, update):
         'data_processing': 'sahara',
         'baremetal': 'ironic',
         'identity': 'keystone',
-        'messaging': 'zaqar',
         'database': 'trove'
     }
     # Get catalog list for endpoints to use for validation

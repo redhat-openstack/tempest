@@ -20,8 +20,6 @@ import netaddr
 from oslo_log import log
 from oslo_serialization import jsonutils as json
 import six
-from tempest_lib.common.utils import misc as misc_utils
-from tempest_lib import exceptions as lib_exc
 
 from tempest.common import compute
 from tempest.common.utils import data_utils
@@ -29,6 +27,8 @@ from tempest.common.utils.linux import remote_client
 from tempest.common import waiters
 from tempest import config
 from tempest import exceptions
+from tempest.lib.common.utils import misc as misc_utils
+from tempest.lib import exceptions as lib_exc
 from tempest.services.network import resources as net_resources
 import tempest.test
 
@@ -66,9 +66,12 @@ class ScenarioTest(tempest.test.BaseTestCase):
         cls.network_client = cls.manager.network_client
         cls.networks_client = cls.manager.networks_client
         cls.ports_client = cls.manager.ports_client
+        cls.routers_client = cls.manager.routers_client
         cls.subnets_client = cls.manager.subnets_client
         cls.floating_ips_client = cls.manager.floating_ips_client
         cls.security_groups_client = cls.manager.security_groups_client
+        cls.security_group_rules_client = (
+            cls.manager.security_group_rules_client)
         # Heat client
         cls.orchestration_client = cls.manager.orchestration_client
 
@@ -160,7 +163,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         self.addCleanup(client.delete_keypair, name)
         return body['keypair']
 
-    def create_server(self, name=None, image=None, flavor=None,
+    def create_server(self, name=None, image_id=None, flavor=None,
                       validatable=False, wait_until=None,
                       wait_on_delete=True, clients=None, **kwargs):
         """Wrapper utility that returns a test server.
@@ -240,7 +243,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
             clients,
             tenant_network=tenant_network,
             wait_until=wait_until,
-            **kwargs)
+            name=name, flavor=flavor,
+            image_id=image_id, **kwargs)
 
         # TODO(jlanoux) Move wait_on_delete in compute.py
         if wait_on_delete:
@@ -325,9 +329,6 @@ class ScenarioTest(tempest.test.BaseTestCase):
         for ruleset in rulesets:
             sg_rule = _client_rules.create_security_group_rule(
                 parent_group_id=secgroup_id, **ruleset)['security_group_rule']
-            self.addCleanup(self.delete_wrapper,
-                            _client_rules.delete_security_group_rule,
-                            sg_rule['id'])
             rules.append(sg_rule)
         return rules
 
@@ -349,25 +350,15 @@ class ScenarioTest(tempest.test.BaseTestCase):
 
         return secgroup
 
-    def get_remote_client(self, server_or_ip, username=None, private_key=None):
+    def get_remote_client(self, ip_address, username=None, private_key=None):
         """Get a SSH client to a remote server
 
-        @param server_or_ip a server object as returned by Tempest compute
-            client or an IP address to connect to
+        @param ip_address the server floating or fixed IP address to use
+                          for ssh validation
         @param username name of the Linux account on the remote server
         @param private_key the SSH private key to use
         @return a RemoteClient object
         """
-        if isinstance(server_or_ip, six.string_types):
-            ip = server_or_ip
-        else:
-            addrs = server_or_ip['addresses'][CONF.validation.network_for_ssh]
-            try:
-                ip = (addr['addr'] for addr in addrs if
-                      netaddr.valid_ipv4(addr['addr'])).next()
-            except StopIteration:
-                raise lib_exc.NotFound("No IPv4 addresses to use for SSH to "
-                                       "remote server.")
 
         if username is None:
             username = CONF.validation.image_ssh_user
@@ -380,14 +371,15 @@ class ScenarioTest(tempest.test.BaseTestCase):
         else:
             password = CONF.validation.image_ssh_password
             private_key = None
-        linux_client = remote_client.RemoteClient(ip, username,
+        linux_client = remote_client.RemoteClient(ip_address, username,
                                                   pkey=private_key,
                                                   password=password)
         try:
             linux_client.validate_authentication()
         except Exception as e:
             message = ('Initializing SSH connection to %(ip)s failed. '
-                       'Error: %(error)s' % {'ip': ip, 'error': e})
+                       'Error: %(error)s' % {'ip': ip_address,
+                                             'error': e})
             caller = misc_utils.find_test_caller()
             if caller:
                 message = '(%s) %s' % (caller, message)
@@ -625,9 +617,9 @@ class ScenarioTest(tempest.test.BaseTestCase):
             floating_ip['ip'], thing['id'])
         return floating_ip
 
-    def create_timestamp(self, server_or_ip, dev_name=None, mount_path='/mnt',
+    def create_timestamp(self, ip_address, dev_name=None, mount_path='/mnt',
                          private_key=None):
-        ssh_client = self.get_remote_client(server_or_ip,
+        ssh_client = self.get_remote_client(ip_address,
                                             private_key=private_key)
         if dev_name is not None:
             ssh_client.make_fs(dev_name)
@@ -640,9 +632,9 @@ class ScenarioTest(tempest.test.BaseTestCase):
             ssh_client.umount(mount_path)
         return timestamp
 
-    def get_timestamp(self, server_or_ip, dev_name=None, mount_path='/mnt',
+    def get_timestamp(self, ip_address, dev_name=None, mount_path='/mnt',
                       private_key=None):
-        ssh_client = self.get_remote_client(server_or_ip,
+        ssh_client = self.get_remote_client(ip_address,
                                             private_key=private_key)
         if dev_name is not None:
             ssh_client.mount(dev_name, mount_path)
@@ -652,12 +644,25 @@ class ScenarioTest(tempest.test.BaseTestCase):
             ssh_client.umount(mount_path)
         return timestamp
 
-    def get_server_or_ip(self, server):
+    def get_server_ip(self, server):
+        """Get the server fixed or floating IP.
+
+        Based on the configuration we're in, return a correct ip
+        address for validating that a guest is up.
+        """
         if CONF.validation.connect_method == 'floating':
-            ip = self.create_floating_ip(server)['ip']
+            # The tests calling this method don't have a floating IP
+            # and can't make use of the validattion resources. So the
+            # method is creating the floating IP there.
+            return self.create_floating_ip(server)['ip']
+        elif CONF.validation.connect_method == 'fixed':
+            addresses = server['addresses'][CONF.validation.network_for_ssh]
+            for address in addresses:
+                if address['version'] == CONF.validation.ip_version_for_ssh:
+                    return address['addr']
+            raise exceptions.ServerUnreachable()
         else:
-            ip = server
-        return ip
+            raise exceptions.InvalidConfiguration()
 
 
 class NetworkScenarioTest(ScenarioTest):
@@ -686,17 +691,21 @@ class NetworkScenarioTest(ScenarioTest):
         cls.tenant_id = cls.manager.identity_client.tenant_id
 
     def _create_network(self, client=None, networks_client=None,
-                        tenant_id=None, namestart='network-smoke-'):
+                        routers_client=None, tenant_id=None,
+                        namestart='network-smoke-'):
         if not client:
             client = self.network_client
         if not networks_client:
             networks_client = self.networks_client
+        if not routers_client:
+            routers_client = self.routers_client
         if not tenant_id:
             tenant_id = client.tenant_id
         name = data_utils.rand_name(namestart)
         result = networks_client.create_network(name=name, tenant_id=tenant_id)
         network = net_resources.DeletableNetwork(
-            networks_client=networks_client, **result['network'])
+            networks_client=networks_client, routers_client=routers_client,
+            **result['network'])
         self.assertEqual(network.name, name)
         self.addCleanup(self.delete_wrapper, network.delete)
         return network
@@ -715,7 +724,7 @@ class NetworkScenarioTest(ScenarioTest):
 
     def _list_routers(self, *args, **kwargs):
         """List routers using admin creds """
-        routers_list = self.admin_manager.network_client.list_routers(
+        routers_list = self.admin_manager.routers_client.list_routers(
             *args, **kwargs)
         return routers_list['routers']
 
@@ -732,7 +741,8 @@ class NetworkScenarioTest(ScenarioTest):
         return agents_list['agents']
 
     def _create_subnet(self, network, client=None, subnets_client=None,
-                       namestart='subnet-smoke', **kwargs):
+                       routers_client=None, namestart='subnet-smoke',
+                       **kwargs):
         """Create a subnet for the given network
 
         within the cidr block configured for tenant networks.
@@ -741,6 +751,8 @@ class NetworkScenarioTest(ScenarioTest):
             client = self.network_client
         if not subnets_client:
             subnets_client = self.subnets_client
+        if not routers_client:
+            routers_client = self.routers_client
 
         def cidr_in_use(cidr, tenant_id):
             """Check cidr existence
@@ -788,7 +800,7 @@ class NetworkScenarioTest(ScenarioTest):
         self.assertIsNotNone(result, 'Unable to allocate tenant network')
         subnet = net_resources.DeletableSubnet(
             network_client=client, subnets_client=subnets_client,
-            **result['subnet'])
+            routers_client=routers_client, **result['subnet'])
         self.assertEqual(subnet.cidr, str_cidr)
         self.addCleanup(self.delete_wrapper, subnet.delete)
         return subnet
@@ -809,15 +821,18 @@ class NetworkScenarioTest(ScenarioTest):
         return port
 
     def _get_server_port_id_and_ip4(self, server, ip_addr=None):
-        ports = self._list_ports(device_id=server['id'], status='ACTIVE',
-                                 fixed_ip=ip_addr)
+        ports = self._list_ports(device_id=server['id'], fixed_ip=ip_addr)
         # A port can have more then one IP address in some cases.
         # If the network is dual-stack (IPv4 + IPv6), this port is associated
         # with 2 subnets
         port_map = [(p["id"], fxip["ip_address"])
                     for p in ports
                     for fxip in p["fixed_ips"]
-                    if netaddr.valid_ipv4(fxip["ip_address"])]
+                    if netaddr.valid_ipv4(fxip["ip_address"])
+                    and p['status'] == 'ACTIVE']
+        inactive = [p for p in ports if p['status'] != 'ACTIVE']
+        if inactive:
+            LOG.warning("Instance has ports that are not ACTIVE: %s", inactive)
 
         self.assertNotEqual(0, len(port_map),
                             "No IPv4 addresses found in: %s" % ports)
@@ -939,11 +954,12 @@ class NetworkScenarioTest(ScenarioTest):
                                             CONF.validation.ping_timeout,
                                             1)
 
-    def _create_security_group(self, client=None, tenant_id=None,
+    def _create_security_group(self, security_group_rules_client=None,
+                               tenant_id=None,
                                namestart='secgroup-smoke',
                                security_groups_client=None):
-        if client is None:
-            client = self.network_client
+        if security_group_rules_client is None:
+            security_group_rules_client = self.security_group_rules_client
         if security_groups_client is None:
             security_groups_client = self.security_groups_client
         if tenant_id is None:
@@ -954,7 +970,8 @@ class NetworkScenarioTest(ScenarioTest):
 
         # Add rules to the security group
         rules = self._create_loginable_secgroup_rule(
-            client=client, secgroup=secgroup,
+            security_group_rules_client=security_group_rules_client,
+            secgroup=secgroup,
             security_groups_client=security_groups_client)
         for rule in rules:
             self.assertEqual(tenant_id, rule.tenant_id)
@@ -983,7 +1000,7 @@ class NetworkScenarioTest(ScenarioTest):
         sg_dict['tenant_id'] = tenant_id
         result = client.create_security_group(**sg_dict)
         secgroup = net_resources.DeletableSecurityGroup(
-            client=client,
+            client=client, routers_client=self.routers_client,
             **result['security_group']
         )
         self.assertEqual(secgroup.name, sg_name)
@@ -1010,7 +1027,8 @@ class NetworkScenarioTest(ScenarioTest):
         return net_resources.DeletableSecurityGroup(client=client,
                                                     **sgs[0])
 
-    def _create_security_group_rule(self, secgroup=None, client=None,
+    def _create_security_group_rule(self, secgroup=None,
+                                    sec_group_rules_client=None,
                                     tenant_id=None,
                                     security_groups_client=None, **kwargs):
         """Create a rule from a dictionary of rule parameters.
@@ -1030,8 +1048,8 @@ class NetworkScenarioTest(ScenarioTest):
                     port_range_max: 22
                     }
         """
-        if client is None:
-            client = self.network_client
+        if sec_group_rules_client is None:
+            sec_group_rules_client = self.security_group_rules_client
         if security_groups_client is None:
             security_groups_client = self.security_groups_client
         if not tenant_id:
@@ -1044,18 +1062,18 @@ class NetworkScenarioTest(ScenarioTest):
                        tenant_id=secgroup.tenant_id)
         ruleset.update(kwargs)
 
-        sg_rule = client.create_security_group_rule(**ruleset)
+        sg_rule = sec_group_rules_client.create_security_group_rule(**ruleset)
         sg_rule = net_resources.DeletableSecurityGroupRule(
-            client=client,
+            client=sec_group_rules_client,
             **sg_rule['security_group_rule']
         )
-        self.addCleanup(self.delete_wrapper, sg_rule.delete)
         self.assertEqual(secgroup.tenant_id, sg_rule.tenant_id)
         self.assertEqual(secgroup.id, sg_rule.security_group_id)
 
         return sg_rule
 
-    def _create_loginable_secgroup_rule(self, client=None, secgroup=None,
+    def _create_loginable_secgroup_rule(self, security_group_rules_client=None,
+                                        secgroup=None,
                                         security_groups_client=None):
         """Create loginable security group rule
 
@@ -1065,8 +1083,8 @@ class NetworkScenarioTest(ScenarioTest):
         belonging to the same security group.
         """
 
-        if client is None:
-            client = self.network_client
+        if security_group_rules_client is None:
+            security_group_rules_client = self.security_group_rules_client
         if security_groups_client is None:
             security_groups_client = self.security_groups_client
         rules = []
@@ -1087,12 +1105,14 @@ class NetworkScenarioTest(ScenarioTest):
                 ethertype='IPv6',
             )
         ]
+        sec_group_rules_client = security_group_rules_client
         for ruleset in rulesets:
             for r_direction in ['ingress', 'egress']:
                 ruleset['direction'] = r_direction
                 try:
                     sg_rule = self._create_security_group_rule(
-                        client=client, secgroup=secgroup,
+                        sec_group_rules_client=sec_group_rules_client,
+                        secgroup=secgroup,
                         security_groups_client=security_groups_client,
                         **ruleset)
                 except lib_exc.Conflict as ex:
@@ -1106,12 +1126,6 @@ class NetworkScenarioTest(ScenarioTest):
 
         return rules
 
-    def _ssh_to_server(self, server, private_key):
-        ssh_login = CONF.validation.image_ssh_user
-        return self.get_remote_client(server,
-                                      username=ssh_login,
-                                      private_key=private_key)
-
     def _get_router(self, client=None, tenant_id=None):
         """Retrieve a router for the given tenant id.
 
@@ -1122,7 +1136,7 @@ class NetworkScenarioTest(ScenarioTest):
         routes traffic to the public network.
         """
         if not client:
-            client = self.network_client
+            client = self.routers_client
         if not tenant_id:
             tenant_id = client.tenant_id
         router_id = CONF.network.public_router_id
@@ -1141,14 +1155,14 @@ class NetworkScenarioTest(ScenarioTest):
     def _create_router(self, client=None, tenant_id=None,
                        namestart='router-smoke'):
         if not client:
-            client = self.network_client
+            client = self.routers_client
         if not tenant_id:
             tenant_id = client.tenant_id
         name = data_utils.rand_name(namestart)
         result = client.create_router(name=name,
                                       admin_state_up=True,
                                       tenant_id=tenant_id)
-        router = net_resources.DeletableRouter(client=client,
+        router = net_resources.DeletableRouter(routers_client=client,
                                                **result['router'])
         self.assertEqual(router.name, name)
         self.addCleanup(self.delete_wrapper, router.delete)
@@ -1159,8 +1173,8 @@ class NetworkScenarioTest(ScenarioTest):
         self.assertEqual(admin_state_up, router.admin_state_up)
 
     def create_networks(self, client=None, networks_client=None,
-                        subnets_client=None, tenant_id=None,
-                        dns_nameservers=None):
+                        routers_client=None, subnets_client=None,
+                        tenant_id=None, dns_nameservers=None):
         """Create a network with a subnet connected to a router.
 
         The baremetal driver is a special case since all nodes are
@@ -1188,10 +1202,12 @@ class NetworkScenarioTest(ScenarioTest):
             network = self._create_network(
                 client=client, networks_client=networks_client,
                 tenant_id=tenant_id)
-            router = self._get_router(client=client, tenant_id=tenant_id)
+            router = self._get_router(client=routers_client,
+                                      tenant_id=tenant_id)
 
             subnet_kwargs = dict(network=network, client=client,
-                                 subnets_client=subnets_client)
+                                 subnets_client=subnets_client,
+                                 routers_client=routers_client)
             # use explicit check because empty list is a valid option
             if dns_nameservers is not None:
                 subnet_kwargs['dns_nameservers'] = dns_nameservers
@@ -1312,13 +1328,6 @@ class BaremetalScenarioTest(ScenarioTest):
 
     def add_keypair(self):
         self.keypair = self.create_keypair()
-
-    def verify_connectivity(self, ip=None):
-        if ip:
-            dest = self.get_remote_client(ip)
-        else:
-            dest = self.get_remote_client(self.instance)
-        dest.validate_authentication()
 
     def boot_instance(self):
         self.instance = self.create_server(

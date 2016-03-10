@@ -16,7 +16,6 @@ import logging
 import netaddr
 
 from tempest.api.orchestration import base
-from tempest.common import credentials_factory as credentials
 from tempest.common.utils import data_utils
 from tempest import config
 from tempest import exceptions
@@ -31,14 +30,16 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
 
     @classmethod
     def skip_checks(cls):
+        msg = "Skipped until Bug: 1547261 is resolved."
+        raise cls.skipException(msg)
         super(NeutronResourcesTestJSON, cls).skip_checks()
         if not CONF.service_available.neutron:
             raise cls.skipException("Neutron support is required")
 
     @classmethod
     def setup_credentials(cls):
+        cls.set_network_resources()
         super(NeutronResourcesTestJSON, cls).setup_credentials()
-        cls.os = credentials.ConfiguredUserManager()
 
     @classmethod
     def setup_clients(cls):
@@ -150,7 +151,7 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
     def test_created_router(self):
         """Verifies created router."""
         router_id = self.test_resources.get('Router')['physical_resource_id']
-        body = self.network_client.show_router(router_id)
+        body = self.routers_client.show_router(router_id)
         router = body['router']
         self.assertEqual(self.neutron_basic_template['resources'][
             'Router']['properties']['name'], router['name'])

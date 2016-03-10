@@ -15,10 +15,9 @@
 
 import uuid
 
-from tempest_lib import exceptions as lib_exc
-
 from tempest.api.identity import base
 from tempest.common.utils import data_utils
+from tempest.lib import exceptions as lib_exc
 from tempest import test
 
 
@@ -27,9 +26,9 @@ class RolesNegativeTestJSON(base.BaseIdentityV2AdminTest):
     def _get_role_params(self):
         self.data.setup_test_user()
         self.data.setup_test_role()
-        user = self.get_user_by_name(self.data.test_user)
-        tenant = self.get_tenant_by_name(self.data.test_tenant)
-        role = self.get_role_by_name(self.data.test_role)
+        user = self.get_user_by_name(self.data.user['name'])
+        tenant = self.get_tenant_by_name(self.data.tenant['name'])
+        role = self.get_role_by_name(self.data.role['name'])
         return (user, tenant, role)
 
     @test.attr(type=['negative'])

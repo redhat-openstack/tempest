@@ -15,12 +15,12 @@
 
 from oslo_log import log as logging
 from oslo_utils import excutils
-from tempest_lib.common.utils import data_utils
 
 from tempest.common import fixed_network
-from tempest.common import service_client
 from tempest.common import waiters
 from tempest import config
+from tempest.lib.common import rest_client
+from tempest.lib.common.utils import data_utils
 
 CONF = config.CONF
 
@@ -29,7 +29,8 @@ LOG = logging.getLogger(__name__)
 
 def create_test_server(clients, validatable=False, validation_resources=None,
                        tenant_network=None, wait_until=None,
-                       volume_backed=False, **kwargs):
+                       volume_backed=False, name=None, flavor=None,
+                       image_id=None, **kwargs):
     """Common wrapper utility returning a test server.
 
     This method is a common wrapper returning a test server that can be
@@ -48,9 +49,16 @@ def create_test_server(clients, validatable=False, validation_resources=None,
 
     # TODO(jlanoux) add support of wait_until PINGABLE/SSHABLE
 
-    name = kwargs.pop('name', data_utils.rand_name(__name__ + "-instance"))
-    flavor = kwargs.pop('flavor', CONF.compute.flavor_ref)
-    image_id = kwargs.pop('image_id', CONF.compute.image_ref)
+    name = name
+    flavor = flavor
+    image_id = image_id
+
+    if name is None:
+        name = data_utils.rand_name(__name__ + "-instance")
+    if flavor is None:
+        flavor = CONF.compute.flavor_ref
+    if image_id is None:
+        image_id = CONF.compute.image_ref
 
     kwargs = fixed_network.set_networks_kwarg(
         tenant_network, kwargs) or {}
@@ -121,7 +129,7 @@ def create_test_server(clients, validatable=False, validation_resources=None,
         servers = \
             [s for s in body_servers['servers'] if s['name'].startswith(name)]
     else:
-        body = service_client.ResponseBody(body.response, body['server'])
+        body = rest_client.ResponseBody(body.response, body['server'])
         servers = [body]
 
     # The name of the method to associate a floating IP to as server is too

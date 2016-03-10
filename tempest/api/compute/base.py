@@ -16,13 +16,15 @@
 import time
 
 from oslo_log import log as logging
-from tempest_lib import exceptions as lib_exc
 
+from tempest.api.compute import api_microversion_fixture
 from tempest.common import api_version_utils
 from tempest.common import compute
 from tempest.common.utils import data_utils
 from tempest.common import waiters
 from tempest import config
+from tempest import exceptions
+from tempest.lib import exceptions as lib_exc
 import tempest.test
 
 CONF = config.CONF
@@ -55,13 +57,6 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
     @classmethod
     def setup_credentials(cls):
         cls.set_network_resources()
-        cls.request_microversion = (
-            api_version_utils.select_request_microversion(
-                cls.min_microversion,
-                CONF.compute_feature_enabled.min_microversion))
-        if cls.request_microversion:
-            cls.services_microversion = {
-                CONF.compute.catalog_type: cls.request_microversion}
         super(BaseV2ComputeTest, cls).setup_credentials()
 
     @classmethod
@@ -107,6 +102,10 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
     @classmethod
     def resource_setup(cls):
         super(BaseV2ComputeTest, cls).resource_setup()
+        cls.request_microversion = (
+            api_version_utils.select_request_microversion(
+                cls.min_microversion,
+                CONF.compute_feature_enabled.min_microversion))
         cls.build_interval = CONF.compute.build_interval
         cls.build_timeout = CONF.compute.build_timeout
         cls.image_ref = CONF.compute.image_ref
@@ -356,16 +355,24 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
     def get_server_ip(cls, server):
         """Get the server fixed or floating IP.
 
-        For the floating IP, the address created by the validation resources
-        is returned.
-        For the fixed IP, the server is returned and the current mechanism of
-        address extraction in the remote_client is followed.
+        Based on the configuration we're in, return a correct ip
+        address for validating that a guest is up.
         """
         if CONF.validation.connect_method == 'floating':
-            ip_or_server = cls.validation_resources['floating_ip']['ip']
+            return cls.validation_resources['floating_ip']['ip']
         elif CONF.validation.connect_method == 'fixed':
-            ip_or_server = server
-        return ip_or_server
+            addresses = server['addresses'][CONF.validation.network_for_ssh]
+            for address in addresses:
+                if address['version'] == CONF.validation.ip_version_for_ssh:
+                    return address['addr']
+            raise exceptions.ServerUnreachable()
+        else:
+            raise exceptions.InvalidConfiguration()
+
+    def setUp(self):
+        super(BaseV2ComputeTest, self).setUp()
+        self.useFixture(api_microversion_fixture.APIMicroversionFixture(
+            self.request_microversion))
 
 
 class BaseV2ComputeAdminTest(BaseV2ComputeTest):

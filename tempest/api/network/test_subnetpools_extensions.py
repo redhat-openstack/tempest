@@ -15,8 +15,8 @@
 from tempest.api.network import base
 from tempest.common.utils import data_utils
 from tempest import config
+from tempest.lib import exceptions as lib_exc
 from tempest import test
-from tempest_lib import exceptions as lib_exc
 
 CONF = config.CONF
 
@@ -30,7 +30,7 @@ class SubnetPoolsTestJSON(base.BaseNetworkTest):
         Lists subnet pool.
         Show subnet pool details.
 
-    v2.0 of the Neutron API is assumed. It is assumed that subnetpools
+    v2.0 of the Neutron API is assumed. It is assumed that subnet_allocation
     options mentioned in the [network-feature-enabled] section and
     default_network option mentioned in the [network] section of
     etc/tempest.conf:
@@ -40,8 +40,8 @@ class SubnetPoolsTestJSON(base.BaseNetworkTest):
     @classmethod
     def skip_checks(cls):
         super(SubnetPoolsTestJSON, cls).skip_checks()
-        if not test.is_extension_enabled('subnetpools', 'network'):
-            msg = "subnet pools extension not enabled."
+        if not test.is_extension_enabled('subnet_allocation', 'network'):
+            msg = "subnet_allocation extension not enabled."
             raise cls.skipException(msg)
 
     @test.attr(type='smoke')

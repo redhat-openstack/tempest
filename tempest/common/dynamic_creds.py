@@ -15,7 +15,6 @@
 import netaddr
 from oslo_log import log as logging
 import six
-from tempest_lib import exceptions as lib_exc
 
 from tempest import clients
 from tempest.common import cred_client
@@ -23,6 +22,7 @@ from tempest.common import cred_provider
 from tempest.common.utils import data_utils
 from tempest import config
 from tempest import exceptions
+from tempest.lib import exceptions as lib_exc
 
 CONF = config.CONF
 LOG = logging.getLogger(__name__)
@@ -57,11 +57,14 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
         self._creds = {}
         self.ports = []
         self.default_admin_creds = admin_creds
-        (self.identity_admin_client, self.tenants_admin_client,
-         self.roles_admin_client,
+        (self.identity_admin_client,
+         self.tenants_admin_client,
          self.users_admin_client,
+         self.roles_admin_client,
+         self.domains_admin_client,
          self.network_admin_client,
          self.networks_admin_client,
+         self.routers_admin_client,
          self.subnets_admin_client,
          self.ports_admin_client,
          self.security_groups_admin_client) = self._get_admin_clients()
@@ -75,8 +78,9 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
         self.creds_client = cred_client.get_creds_client(
             self.identity_admin_client,
             self.tenants_admin_client,
-            self.roles_admin_client,
             self.users_admin_client,
+            self.roles_admin_client,
+            self.domains_admin_client,
             self.creds_domain_name)
 
     def _get_admin_clients(self):
@@ -88,13 +92,15 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
         """
         os = clients.Manager(self.default_admin_creds)
         if self.identity_version == 'v2':
-            return (os.identity_client, os.tenants_client, os.roles_client,
-                    os.users_client, os.network_client, os.networks_client,
-                    os.subnets_client, os.ports_client,
-                    os.security_groups_client)
+            return (os.identity_client, os.tenants_client, os.users_client,
+                    os.roles_client, None, os.network_client,
+                    os.networks_client, os.routers_client, os.subnets_client,
+                    os.ports_client, os.security_groups_client)
         else:
-            return (os.identity_v3_client, None, None, None, os.network_client,
-                    os.networks_client, os.subnets_client, os.ports_client,
+            return (os.identity_v3_client, os.projects_client,
+                    os.users_v3_client, os.roles_v3_client, os.domains_client,
+                    os.network_client, os.networks_client, os.routers_client,
+                    os.subnets_client, os.ports_client,
                     os.security_groups_client)
 
     def _create_creds(self, suffix="", admin=False, roles=None):
@@ -180,12 +186,19 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
                 router = self._create_router(router_name, tenant_id)
                 self._add_router_interface(router['id'], subnet['id'])
         except Exception:
-            if router:
-                self._clear_isolated_router(router['id'], router['name'])
-            if subnet:
-                self._clear_isolated_subnet(subnet['id'], subnet['name'])
-            if network:
-                self._clear_isolated_network(network['id'], network['name'])
+            try:
+                if router:
+                    self._clear_isolated_router(router['id'], router['name'])
+                if subnet:
+                    self._clear_isolated_subnet(subnet['id'], subnet['name'])
+                if network:
+                    self._clear_isolated_network(network['id'],
+                                                 network['name'])
+            except Exception as cleanup_exception:
+                msg = "There was an exception trying to setup network " \
+                      "resources for tenant %s, and this error happened " \
+                      "trying to clean them up: %s"
+                LOG.warning(msg % (tenant_id, cleanup_exception))
             raise
         return network, subnet, router
 
@@ -226,15 +239,15 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
     def _create_router(self, router_name, tenant_id):
         external_net_id = dict(
             network_id=CONF.network.public_network_id)
-        resp_body = self.network_admin_client.create_router(
+        resp_body = self.routers_admin_client.create_router(
             router_name,
             external_gateway_info=external_net_id,
             tenant_id=tenant_id)
         return resp_body['router']
 
     def _add_router_interface(self, router_id, subnet_id):
-        self.network_admin_client.add_router_interface_with_subnet_id(
-            router_id, subnet_id)
+        self.routers_admin_client.add_router_interface(router_id,
+                                                       subnet_id=subnet_id)
 
     def get_credentials(self, credential_type):
         if self._creds.get(str(credential_type)):
@@ -284,9 +297,9 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
         return self.get_credentials(roles)
 
     def _clear_isolated_router(self, router_id, router_name):
-        net_client = self.network_admin_client
+        client = self.routers_admin_client
         try:
-            net_client.delete_router(router_id)
+            client.delete_router(router_id)
         except lib_exc.NotFound:
             LOG.warning('router with name: %s not found for delete' %
                         router_name)
@@ -320,7 +333,7 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
                             (secgroup['name'], secgroup['id']))
 
     def _clear_isolated_net_resources(self):
-        net_client = self.network_admin_client
+        client = self.routers_admin_client
         for cred in self._creds:
             creds = self._creds.get(cred)
             if (not creds or not any([creds.router, creds.network,
@@ -333,8 +346,9 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
             if (not self.network_resources or
                     (self.network_resources.get('router') and creds.subnet)):
                 try:
-                    net_client.remove_router_interface_with_subnet_id(
-                        creds.router['id'], creds.subnet['id'])
+                    client.remove_router_interface(
+                        creds.router['id'],
+                        subnet_id=creds.subnet['id'])
                 except lib_exc.NotFound:
                     LOG.warning('router with name: %s not found for delete' %
                                 creds.router['name'])

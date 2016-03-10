@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo_log import log
+from oslo_log import log as logging
 
 from tempest.common.utils import data_utils
 from tempest.common import waiters
@@ -19,8 +19,7 @@ from tempest.scenario import manager
 from tempest import test
 
 CONF = config.CONF
-
-LOG = log.getLogger(__name__)
+LOG = logging.getLogger(__name__)
 
 
 class TestVolumeBootPattern(manager.ScenarioTest):
@@ -36,6 +35,11 @@ class TestVolumeBootPattern(manager.ScenarioTest):
      * Boot an additional instance from the new snapshot based volume
      * Check written content in the instance booted from snapshot
     """
+
+    # Boot from volume scenario is quite slow, and needs extra
+    # breathing room to get through deletes in the time allotted.
+    TIMEOUT_SCALING_FACTOR = 2
+
     @classmethod
     def skip_checks(cls):
         super(TestVolumeBootPattern, cls).skip_checks()
@@ -70,7 +74,7 @@ class TestVolumeBootPattern(manager.ScenarioTest):
         create_kwargs.update(self._get_bdm(
             vol_id, delete_on_termination=delete_on_termination))
         return self.create_server(
-            image='',
+            image_id='',
             wait_until='ACTIVE',
             **create_kwargs)
 
@@ -105,43 +109,54 @@ class TestVolumeBootPattern(manager.ScenarioTest):
     @test.attr(type='smoke')
     @test.services('compute', 'volume', 'image')
     def test_volume_boot_pattern(self):
+        LOG.info("Creating keypair and security group")
         keypair = self.create_keypair()
         security_group = self._create_security_group()
 
         # create an instance from volume
+        LOG.info("Booting instance 1 from volume")
         volume_origin = self._create_volume_from_image()
         instance_1st = self._boot_instance_from_volume(volume_origin['id'],
                                                        keypair, security_group)
+        LOG.info("Booted first instance: %s" % instance_1st)
 
         # write content to volume on instance
-        ip_instance_1st = self.get_server_or_ip(instance_1st)
+        LOG.info("Setting timestamp in instance %s" % instance_1st)
+        ip_instance_1st = self.get_server_ip(instance_1st)
         timestamp = self.create_timestamp(ip_instance_1st,
                                           private_key=keypair['private_key'])
 
         # delete instance
+        LOG.info("Deleting first instance: %s" % instance_1st)
         self._delete_server(instance_1st)
 
         # create a 2nd instance from volume
         instance_2nd = self._boot_instance_from_volume(volume_origin['id'],
                                                        keypair, security_group)
+        LOG.info("Booted second instance %s" % instance_2nd)
 
         # check the content of written file
-        ip_instance_2nd = self.get_server_or_ip(instance_2nd)
+        LOG.info("Getting timestamp in instance %s" % instance_2nd)
+        ip_instance_2nd = self.get_server_ip(instance_2nd)
         timestamp2 = self.get_timestamp(ip_instance_2nd,
                                         private_key=keypair['private_key'])
         self.assertEqual(timestamp, timestamp2)
 
         # snapshot a volume
+        LOG.info("Creating snapshot from volume: %s" % volume_origin['id'])
         snapshot = self._create_snapshot_from_volume(volume_origin['id'])
 
         # create a 3rd instance from snapshot
+        LOG.info("Creating third instance from snapshot: %s" % snapshot['id'])
         volume = self._create_volume_from_snapshot(snapshot['id'])
         server_from_snapshot = (
             self._boot_instance_from_volume(volume['id'],
                                             keypair, security_group))
 
         # check the content of written file
-        server_from_snapshot_ip = self.get_server_or_ip(server_from_snapshot)
+        LOG.info("Logging into third instance to get timestamp: %s" %
+                 server_from_snapshot)
+        server_from_snapshot_ip = self.get_server_ip(server_from_snapshot)
         timestamp3 = self.get_timestamp(server_from_snapshot_ip,
                                         private_key=keypair['private_key'])
         self.assertEqual(timestamp, timestamp3)

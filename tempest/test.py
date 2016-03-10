@@ -27,7 +27,6 @@ from oslo_serialization import jsonutils as json
 from oslo_utils import importutils
 import six
 from six.moves import urllib
-from tempest_lib import decorators
 import testscenarios
 import testtools
 
@@ -39,6 +38,7 @@ import tempest.common.generator.valid_generator as valid
 import tempest.common.validation_resources as vresources
 from tempest import config
 from tempest import exceptions
+from tempest.lib import decorators
 
 LOG = logging.getLogger(__name__)
 
@@ -180,6 +180,19 @@ def is_extension_enabled(extension_name, service):
     return False
 
 
+def is_scheduler_filter_enabled(filter_name):
+    """Check the list of enabled compute scheduler filters from config. """
+
+    filters = CONF.compute_feature_enabled.scheduler_available_filters
+    if len(filters) == 0:
+        return False
+    if 'all' in filters:
+        return True
+    if filter_name in filters:
+        return True
+    return False
+
+
 at_exit_set = set()
 
 
@@ -226,13 +239,18 @@ class BaseTestCase(testtools.testcase.WithAttributes,
     # Resources required to validate a server using ssh
     validation_resources = {}
     network_resources = {}
-    services_microversion = {}
 
     # NOTE(sdague): log_format is defined inline here instead of using the oslo
     # default because going through the config path recouples config to the
     # stress tests too early, and depending on testr order will fail unit tests
     log_format = ('%(asctime)s %(process)d %(levelname)-8s '
                   '[%(name)s] %(message)s')
+
+    # Client manager class to use in this test case.
+    client_manager = clients.Manager
+
+    # A way to adjust slow test classes
+    TIMEOUT_SCALING_FACTOR = 1
 
     @classmethod
     def setUpClass(cls):
@@ -293,7 +311,7 @@ class BaseTestCase(testtools.testcase.WithAttributes,
                     LOG.exception("teardown of %s failed: %s" % (name, te))
                 if not etype:
                     etype, value, trace = sys_exec_info
-        # If exceptions were raised during teardown, an not before, re-raise
+        # If exceptions were raised during teardown, and not before, re-raise
         # the first one
         if re_raise and etype is not None:
             try:
@@ -404,7 +422,7 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         at_exit_set.add(self.__class__)
         test_timeout = os.environ.get('OS_TEST_TIMEOUT', 0)
         try:
-            test_timeout = int(test_timeout)
+            test_timeout = int(test_timeout) * self.TIMEOUT_SCALING_FACTOR
         except ValueError:
             test_timeout = 0
         if test_timeout > 0:
@@ -437,14 +455,16 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         """
         if CONF.identity.auth_version == 'v2':
             client = self.os_admin.identity_client
+            users_client = self.os_admin.users_client
             project_client = self.os_admin.tenants_client
             roles_client = self.os_admin.roles_client
-            users_client = self.os_admin.users_client
+            domains_client = None
         else:
             client = self.os_admin.identity_v3_client
-            project_client = None
-            roles_client = None
-            users_client = None
+            users_client = self.os_admin.users_v3_client
+            project_client = self.os_admin.projects_client
+            roles_client = self.os_admin.roles_v3_client
+            domains_client = self.os_admin.domains_client
 
         try:
             domain = client.auth_provider.credentials.project_domain_name
@@ -452,8 +472,9 @@ class BaseTestCase(testtools.testcase.WithAttributes,
             domain = 'Default'
 
         return cred_client.get_creds_client(client, project_client,
-                                            roles_client,
                                             users_client,
+                                            roles_client,
+                                            domains_client,
                                             project_domain_name=domain)
 
     @classmethod
@@ -519,8 +540,7 @@ class BaseTestCase(testtools.testcase.WithAttributes,
             else:
                 raise exceptions.InvalidCredentials(
                     "Invalid credentials type %s" % credential_type)
-        return clients.Manager(credentials=creds, service=cls._service,
-                               api_microversions=cls.services_microversion)
+        return cls.client_manager(credentials=creds, service=cls._service)
 
     @classmethod
     def clear_credentials(cls):
@@ -600,15 +620,14 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         networks_client = cls.get_client_manager().compute_networks_client
         cred_provider = cls._get_credentials_provider()
         # In case of nova network, isolated tenants are not able to list the
-        # network configured in fixed_network_name, even if the can use it
+        # network configured in fixed_network_name, even if they can use it
         # for their servers, so using an admin network client to validate
         # the network name
         if (not CONF.service_available.neutron and
                 credentials.is_admin_available(
                     identity_version=cls.get_identity_version())):
             admin_creds = cred_provider.get_admin_creds()
-            admin_manager = clients.Manager(
-                admin_creds, api_microversions=cls.services_microversion)
+            admin_manager = clients.Manager(admin_creds)
             networks_client = admin_manager.compute_networks_client
         return fixed_network.get_tenant_network(
             cred_provider, networks_client, CONF.compute.fixed_network_name)
@@ -790,9 +809,9 @@ class NegativeAutoTest(BaseTestCase):
 
     @classmethod
     def set_resource(cls, name, resource):
-        """Register a resoruce for a test
+        """Register a resource for a test
 
-        This function can be used in setUpClass context to register a resoruce
+        This function can be used in setUpClass context to register a resource
         for a test.
 
         :param name: The name of the kind of resource such as "flavor", "role",

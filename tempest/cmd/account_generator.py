@@ -89,21 +89,22 @@ import traceback
 
 from cliff import command
 from oslo_log import log as logging
-import tempest_lib.auth
-from tempest_lib.common.utils import data_utils
-import tempest_lib.exceptions
-from tempest_lib.services.network import networks_client
-from tempest_lib.services.network import subnets_client
 import yaml
 
 from tempest.common import identity
 from tempest import config
 from tempest import exceptions as exc
+import tempest.lib.auth
+from tempest.lib.common.utils import data_utils
+import tempest.lib.exceptions
+from tempest.lib.services.network import networks_client
+from tempest.lib.services.network import subnets_client
 from tempest.services.identity.v2.json import identity_client
 from tempest.services.identity.v2.json import roles_client
 from tempest.services.identity.v2.json import tenants_client
 from tempest.services.identity.v2.json import users_client
 from tempest.services.network.json import network_client
+from tempest.services.network.json import routers_client
 
 LOG = None
 CONF = config.CONF
@@ -121,7 +122,7 @@ def setup_logging():
 
 
 def get_admin_clients(opts):
-    _creds = tempest_lib.auth.KeystoneV2Credentials(
+    _creds = tempest.lib.auth.KeystoneV2Credentials(
         username=opts.os_username,
         password=opts.os_password,
         tenant_name=opts.os_tenant_name)
@@ -131,7 +132,7 @@ def get_admin_clients(opts):
         'ca_certs': CONF.identity.ca_certificates_file,
         'trace_requests': CONF.debug.trace_requests
     }
-    _auth = tempest_lib.auth.KeystoneV2AuthProvider(
+    _auth = tempest.lib.auth.KeystoneV2AuthProvider(
         _creds, CONF.identity.uri, **auth_params)
     params = {
         'disable_ssl_certificate_validation':
@@ -171,6 +172,7 @@ def get_admin_clients(opts):
     )
     network_admin = None
     networks_admin = None
+    routers_admin = None
     subnets_admin = None
     neutron_iso_networks = False
     if (CONF.service_available.neutron and
@@ -188,6 +190,12 @@ def get_admin_clients(opts):
             CONF.network.region or CONF.identity.region,
             endpoint_type='adminURL',
             **params)
+        routers_admin = routers_client.RoutersClient(
+            _auth,
+            CONF.network.catalog_type,
+            CONF.network.region or CONF.identity.region,
+            endpoint_type='adminURL',
+            **params)
         subnets_admin = subnets_client.SubnetsClient(
             _auth,
             CONF.network.catalog_type,
@@ -195,12 +203,13 @@ def get_admin_clients(opts):
             endpoint_type='adminURL',
             **params)
     return (identity_admin, tenants_admin, roles_admin, users_admin,
-            neutron_iso_networks, network_admin, networks_admin, subnets_admin)
+            neutron_iso_networks, network_admin, networks_admin, routers_admin,
+            subnets_admin)
 
 
 def create_resources(opts, resources):
     (identity_admin, tenants_admin, roles_admin, users_admin,
-     neutron_iso_networks, network_admin, networks_admin,
+     neutron_iso_networks, network_admin, networks_admin, routers_admin,
      subnets_admin) = get_admin_clients(opts)
     roles = roles_admin.list_roles()['roles']
     for u in resources['users']:
@@ -223,14 +232,14 @@ def create_resources(opts, resources):
     for u in resources['users']:
         try:
             tenant = identity.get_tenant_by_name(tenants_admin, u['tenant'])
-        except tempest_lib.exceptions.NotFound:
+        except tempest.lib.exceptions.NotFound:
             LOG.error("Tenant: %s - not found" % u['tenant'])
             continue
         while True:
             try:
                 identity.get_user_by_username(tenants_admin,
                                               tenant['id'], u['name'])
-            except tempest_lib.exceptions.NotFound:
+            except tempest.lib.exceptions.NotFound:
                 users_admin.create_user(
                     u['name'], u['pass'], tenant['id'],
                     "%s@%s" % (u['name'], tenant['id']),
@@ -246,27 +255,27 @@ def create_resources(opts, resources):
         for u in resources['users']:
             tenant = identity.get_tenant_by_name(tenants_admin, u['tenant'])
             network_name, router_name = create_network_resources(
-                network_admin, networks_admin, subnets_admin, tenant['id'],
-                u['name'])
+                network_admin, networks_admin, routers_admin, subnets_admin,
+                tenant['id'], u['name'])
             u['network'] = network_name
             u['router'] = router_name
         LOG.info('Networks created')
     for u in resources['users']:
         try:
             tenant = identity.get_tenant_by_name(tenants_admin, u['tenant'])
-        except tempest_lib.exceptions.NotFound:
+        except tempest.lib.exceptions.NotFound:
             LOG.error("Tenant: %s - not found" % u['tenant'])
             continue
         try:
             user = identity.get_user_by_username(tenants_admin,
                                                  tenant['id'], u['name'])
-        except tempest_lib.exceptions.NotFound:
+        except tempest.lib.exceptions.NotFound:
             LOG.error("User: %s - not found" % u['user'])
             continue
         for r in u['role_ids']:
             try:
                 roles_admin.assign_user_role(tenant['id'], user['id'], r)
-            except tempest_lib.exceptions.Conflict:
+            except tempest.lib.exceptions.Conflict:
                 # don't care if it's already assigned
                 pass
     LOG.info('Roles assigned')
@@ -274,7 +283,8 @@ def create_resources(opts, resources):
 
 
 def create_network_resources(network_admin_client, networks_admin_client,
-                             subnets_admin_client, tenant_id, name):
+                             routers_admin_client, subnets_admin_client,
+                             tenant_id, name):
 
     def _create_network(name):
         resp_body = networks_admin_client.create_network(
@@ -294,7 +304,7 @@ def create_network_resources(network_admin_client, networks_admin_client,
                         enable_dhcp=True,
                         ip_version=4)
                 break
-            except tempest_lib.exceptions.BadRequest as e:
+            except tempest.lib.exceptions.BadRequest as e:
                 if 'overlaps with another subnet' not in str(e):
                     raise
         else:
@@ -305,15 +315,15 @@ def create_network_resources(network_admin_client, networks_admin_client,
     def _create_router(router_name):
         external_net_id = dict(
             network_id=CONF.network.public_network_id)
-        resp_body = network_admin_client.create_router(
+        resp_body = routers_admin_client.create_router(
             router_name,
             external_gateway_info=external_net_id,
             tenant_id=tenant_id)
         return resp_body['router']
 
     def _add_router_interface(router_id, subnet_id):
-        network_admin_client.add_router_interface_with_subnet_id(
-            router_id, subnet_id)
+        routers_admin_client.add_router_interface(router_id,
+                                                  subnet_id=subnet_id)
 
     network_name = name + "-network"
     network = _create_network(network_name)
@@ -390,7 +400,7 @@ def dump_accounts(opts, resources):
             'password': user['pass'],
             'roles': user['roles']
         }
-        if 'network' or 'router' in user:
+        if 'network' in user or 'router' in user:
             account['resources'] = {}
         if 'network' in user:
             account['resources']['network'] = user['network']
@@ -480,8 +490,8 @@ class TempestAccountGenerator(command.Command):
 def main(opts=None):
     setup_logging()
     if not opts:
-        LOG.warn("Use of: 'tempest-account-generator' is deprecated, "
-                 "please use: 'tempest account-generator'")
+        LOG.warning("Use of: 'tempest-account-generator' is deprecated, "
+                    "please use: 'tempest account-generator'")
         opts = get_options()
     if opts.config_file:
         config.CONF.set_config_path(opts.config_file)

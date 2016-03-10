@@ -19,6 +19,7 @@ import testtools
 from tempest.api.compute import base
 from tempest.common import waiters
 from tempest import config
+from tempest.lib import decorators
 from tempest import test
 
 CONF = config.CONF
@@ -62,7 +63,7 @@ class LiveBlockMigrationTestJSON(base.BaseV2ComputeAdminTest):
     def _get_host_for_server(self, server_id):
         return self._get_server_details(server_id)[self._host_key]
 
-    def _migrate_server_to(self, server_id, dest_host, volume_backed):
+    def _migrate_server_to(self, server_id, dest_host, volume_backed=False):
         block_migration = (CONF.compute_feature_enabled.
                            block_migration_for_live_migration and
                            not volume_backed)
@@ -75,14 +76,6 @@ class LiveBlockMigrationTestJSON(base.BaseV2ComputeAdminTest):
         for target_host in self._get_compute_hostnames():
             if host != target_host:
                 return target_host
-
-    def _get_server_status(self, server_id):
-        return self._get_server_details(server_id)['status']
-
-    def _create_server(self, volume_backed=False):
-            server = self.create_test_server(wait_until="ACTIVE",
-                                             volume_backed=volume_backed)
-            return server['id']
 
     def _volume_clean_up(self, server_id, volume_id):
         body = self.volumes_client.show_volume(volume_id)['volume']
@@ -103,7 +96,8 @@ class LiveBlockMigrationTestJSON(base.BaseV2ComputeAdminTest):
                               volume_backed, *block* migration is not used.
         """
         # Live migrate an instance to another host
-        server_id = self._create_server(volume_backed=volume_backed)
+        server_id = self.create_test_server(wait_until="ACTIVE",
+                                            volume_backed=volume_backed)['id']
         actual_host = self._get_host_for_server(server_id)
         target_host = self._get_host_other_than(actual_host)
 
@@ -133,13 +127,11 @@ class LiveBlockMigrationTestJSON(base.BaseV2ComputeAdminTest):
     @test.idempotent_id('1e107f21-61b2-4988-8f22-b196e938ab88')
     @testtools.skipUnless(CONF.compute_feature_enabled.pause,
                           'Pause is not available.')
-    @testtools.skipUnless(CONF.compute_feature_enabled
-                              .live_migrate_paused_instances,
-                          'Live migration of paused instances is not '
-                          'available.')
     def test_live_block_migration_paused(self):
         self._test_live_migration(state='PAUSED')
 
+    @decorators.skip_because(bug="1549511",
+                             condition=CONF.service_available.neutron)
     @test.idempotent_id('5071cf17-3004-4257-ae61-73a84e28badd')
     @test.services('volume')
     def test_volume_backed_live_migration(self):
@@ -153,7 +145,7 @@ class LiveBlockMigrationTestJSON(base.BaseV2ComputeAdminTest):
                       block_migrate_cinder_iscsi,
                       'Block Live migration not configured for iSCSI')
     def test_iscsi_volume(self):
-        server_id = self._create_server()
+        server_id = self.create_test_server(wait_until="ACTIVE")['id']
         actual_host = self._get_host_for_server(server_id)
         target_host = self._get_host_other_than(actual_host)
 

@@ -77,7 +77,8 @@ class TempestCleanup(command.Command):
     def take_action(self, parsed_args):
         try:
             self.init(parsed_args)
-            self._cleanup()
+            if not parsed_args.init_saved_state:
+                self._cleanup()
         except Exception:
             LOG.exception("Failure during cleanup")
             traceback.print_exc()
@@ -231,7 +232,6 @@ class TempestCleanup(command.Command):
         return 'Cleanup after tempest run'
 
     def _add_admin(self, tenant_id):
-        id_cl = self.admin_mgr.identity_client
         rl_cl = self.admin_mgr.roles_client
         needs_role = True
         roles = rl_cl.list_user_roles(tenant_id, self.admin_id)['roles']
@@ -241,7 +241,7 @@ class TempestCleanup(command.Command):
                 LOG.debug("User already had admin privilege for this tenant")
         if needs_role:
             LOG.debug("Adding admin privilege for : %s" % tenant_id)
-            id_cl.assign_user_role(tenant_id, self.admin_id,
+            rl_cl.assign_user_role(tenant_id, self.admin_id,
                                    self.admin_role_id)
             self.admin_role_added.append(tenant_id)
 
