@@ -42,12 +42,6 @@ import shutil
 import sys
 import urllib2
 
-from tempest_lib import auth
-from tempest_lib import exceptions
-from tempest_lib.services.compute import flavors_client
-from tempest_lib.services.compute import networks_client as nova_net_client
-from tempest_lib.services.compute import servers_client
-from tempest_lib.services.network import networks_client
 # Since tempest can be configured in different directories, we need to use
 # the path starting at cwd.
 sys.path.insert(0, os.getcwd())
@@ -55,6 +49,12 @@ sys.path.insert(0, os.getcwd())
 from tempest.common import api_discovery
 from tempest.common import identity
 import tempest.config
+from tempest.lib import auth
+from tempest.lib import exceptions
+from tempest.lib.services.compute import flavors_client
+from tempest.lib.services.compute import networks_client as nova_net_client
+from tempest.lib.services.compute import servers_client
+from tempest.lib.services.network import networks_client
 from tempest.services.identity.v2.json import identity_client
 from tempest.services.identity.v2.json import roles_client
 from tempest.services.identity.v2.json import tenants_client
