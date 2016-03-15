@@ -44,8 +44,7 @@ class Service(object):
         url = urlparse.urlunparse(parts)
 
         try:
-            h = httplib2.Http(disable_ssl_certificate_validation=True)
-            r, body = h.request(url, 'GET', headers=self.headers)
+            r, body = httplib2.Http().request(url, 'GET', headers=self.headers)
         except Exception as e:
             LOG.error("Request on service '%s' with url '%s' failed" %
                       (self.name, url))
