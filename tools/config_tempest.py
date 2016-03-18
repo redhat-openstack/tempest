@@ -159,7 +159,12 @@ def main():
         clients.auth_provider,
         clients.identity_region,
         object_store_discovery=conf.get_bool_value(swift_discover),
-        api_version=api_version)
+        api_version=api_version,
+        disable_ssl_certificate_validation=conf.get_defaulted(
+            'identity',
+            'disable_ssl_certificate_validation'
+        )
+    )
     if args.create and not args.use_test_accounts:
         create_tempest_users(clients.tenants, clients.roles, clients.users,
                              conf, services)
