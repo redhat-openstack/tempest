@@ -49,10 +49,6 @@ def create_test_server(clients, validatable=False, validation_resources=None,
 
     # TODO(jlanoux) add support of wait_until PINGABLE/SSHABLE
 
-    name = name
-    flavor = flavor
-    image_id = image_id
-
     if name is None:
         name = data_utils.rand_name(__name__ + "-instance")
     if flavor is None:
@@ -102,8 +98,8 @@ def create_test_server(clients, validatable=False, validation_resources=None,
         volume = volumes_client.create_volume(
             display_name=volume_name,
             imageRef=image_id)
-        volumes_client.wait_for_volume_status(volume['volume']['id'],
-                                              'available')
+        waiters.wait_for_volume_status(volumes_client,
+                                       volume['volume']['id'], 'available')
 
         bd_map_v2 = [{
             'uuid': volume['volume']['id'],
@@ -152,14 +148,12 @@ def create_test_server(clients, validatable=False, validation_resources=None,
 
             except Exception:
                 with excutils.save_and_reraise_exception():
-                    if ('preserve_server_on_error' not in kwargs
-                        or kwargs['preserve_server_on_error'] is False):
-                        for server in servers:
-                            try:
-                                clients.servers_client.delete_server(
-                                    server['id'])
-                            except Exception:
-                                LOG.exception('Deleting server %s failed'
-                                              % server['id'])
+                    for server in servers:
+                        try:
+                            clients.servers_client.delete_server(
+                                server['id'])
+                        except Exception:
+                            LOG.exception('Deleting server %s failed'
+                                          % server['id'])
 
     return body, servers
