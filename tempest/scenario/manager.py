@@ -262,7 +262,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         return server
 
     def create_volume(self, size=None, name=None, snapshot_id=None,
-                      imageRef=None, volume_type=None, wait_on_delete=True):
+                      imageRef=None, volume_type=None):
         if name is None:
             name = data_utils.rand_name(self.__class__.__name__)
         kwargs = {'display_name': name,
@@ -273,24 +273,18 @@ class ScenarioTest(tempest.test.BaseTestCase):
             kwargs.update({'size': size})
         volume = self.volumes_client.create_volume(**kwargs)['volume']
 
-        if wait_on_delete:
-            self.addCleanup(self.volumes_client.wait_for_resource_deletion,
-                            volume['id'])
-            self.addCleanup(self.delete_wrapper,
-                            self.volumes_client.delete_volume, volume['id'])
-        else:
-            self.addCleanup_with_wait(
-                waiter_callable=self.volumes_client.wait_for_resource_deletion,
-                thing_id=volume['id'], thing_id_param='id',
-                cleanup_callable=self.delete_wrapper,
-                cleanup_args=[self.volumes_client.delete_volume, volume['id']])
+        self.addCleanup(self.volumes_client.wait_for_resource_deletion,
+                        volume['id'])
+        self.addCleanup(self.delete_wrapper,
+                        self.volumes_client.delete_volume, volume['id'])
 
         # NOTE(e0ne): Cinder API v2 uses name instead of display_name
         if 'display_name' in volume:
             self.assertEqual(name, volume['display_name'])
         else:
             self.assertEqual(name, volume['name'])
-        self.volumes_client.wait_for_volume_status(volume['id'], 'available')
+        waiters.wait_for_volume_status(self.volumes_client,
+                                       volume['id'], 'available')
         # The volume retrieved on creation has a non-up-to-date status.
         # Retrieval after it becomes active ensures correct details.
         volume = self.volumes_client.show_volume(volume['id'])['volume']
@@ -394,8 +388,6 @@ class ScenarioTest(tempest.test.BaseTestCase):
         if properties is None:
             properties = {}
         name = data_utils.rand_name('%s-' % name)
-        image_file = open(path, 'rb')
-        self.addCleanup(image_file.close)
         params = {
             'name': name,
             'container_format': fmt,
@@ -406,7 +398,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
         image = self.image_client.create_image(**params)['image']
         self.addCleanup(self.image_client.delete_image, image['id'])
         self.assertEqual("queued", image['status'])
-        self.image_client.update_image(image['id'], data=image_file)
+        with open(path, 'rb') as image_file:
+            self.image_client.update_image(image['id'], data=image_file)
         return image['id']
 
     def glance_image_create(self):
@@ -486,8 +479,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
                 self.addCleanup(
                     self.delete_wrapper, self.snapshots_client.delete_snapshot,
                     snapshot_id)
-                self.snapshots_client.wait_for_snapshot_status(snapshot_id,
-                                                               'available')
+                waiters.wait_for_snapshot_status(self.snapshots_client,
+                                                 snapshot_id, 'available')
 
         image_name = snapshot_image['name']
         self.assertEqual(name, image_name)
@@ -500,14 +493,16 @@ class ScenarioTest(tempest.test.BaseTestCase):
             server['id'], volumeId=volume_to_attach['id'], device='/dev/%s'
             % CONF.compute.volume_device_name)['volumeAttachment']
         self.assertEqual(volume_to_attach['id'], volume['id'])
-        self.volumes_client.wait_for_volume_status(volume['id'], 'in-use')
+        waiters.wait_for_volume_status(self.volumes_client,
+                                       volume['id'], 'in-use')
 
         # Return the updated volume after the attachment
         return self.volumes_client.show_volume(volume['id'])['volume']
 
     def nova_volume_detach(self, server, volume):
         self.servers_client.detach_volume(server['id'], volume['id'])
-        self.volumes_client.wait_for_volume_status(volume['id'], 'available')
+        waiters.wait_for_volume_status(self.volumes_client,
+                                       volume['id'], 'available')
 
         volume = self.volumes_client.show_volume(volume['id'])['volume']
         self.assertEqual('available', volume['status'])
@@ -608,6 +603,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
     def create_floating_ip(self, thing, pool_name=None):
         """Create a floating IP and associates to a server on Nova"""
 
+        if not pool_name:
+            pool_name = CONF.network.floating_network_name
         floating_ip = (self.compute_floating_ips_client.
                        create_floating_ip(pool=pool_name)['floating_ip'])
         self.addCleanup(self.delete_wrapper,

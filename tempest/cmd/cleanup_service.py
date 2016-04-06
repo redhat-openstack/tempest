@@ -390,6 +390,7 @@ class NetworkService(BaseService):
         self.metering_labels_client = manager.metering_labels_client
         self.metering_label_rules_client = manager.metering_label_rules_client
         self.security_groups_client = manager.security_groups_client
+        self.routers_client = manager.routers_client
 
     def _filter_by_conf_networks(self, item_list):
         if not item_list or not all(('network_id' in i for i in item_list)):
@@ -461,12 +462,13 @@ class NetworkRouterService(NetworkService):
 
     def delete(self):
         client = self.routers_client
+        ports_client = self.ports_client
         routers = self.list()
         for router in routers:
             try:
                 rid = router['id']
                 ports = [port for port
-                         in client.list_router_interfaces(rid)['ports']
+                         in ports_client.list_ports(device_id=rid)['ports']
                          if port["device_owner"] == "network:router_interface"]
                 for port in ports:
                     client.remove_router_interface(rid, port_id=port['id'])

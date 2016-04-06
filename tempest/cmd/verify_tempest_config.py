@@ -97,7 +97,14 @@ def _get_api_versions(os, service):
                              ca_certs=ca_certs)
     __, body = raw_http.request(endpoint, 'GET')
     client_dict[service].reset_path()
-    body = json.loads(body)
+    try:
+        body = json.loads(body)
+    except ValueError:
+        LOG.error(
+            'Failed to get a JSON response from unversioned endpoint %s '
+            '(versioned endpoint was %s). Response is:\n%s',
+            endpoint, client_dict[service].base_url, body[:100])
+        raise
     if service == 'keystone':
         versions = map(lambda x: x['id'], body['versions']['values'])
     else:
@@ -354,8 +361,6 @@ def main(opts=None):
     outfile = sys.stdout
     if update:
         conf_file = _get_config_file()
-        if opts.output:
-            outfile = open(opts.output, 'w+')
         CONF_PARSER = moves.configparser.SafeConfigParser()
         CONF_PARSER.optionxform = str
         CONF_PARSER.readfp(conf_file)
@@ -378,8 +383,9 @@ def main(opts=None):
         display_results(results, update, replace)
         if update:
             conf_file.close()
-            CONF_PARSER.write(outfile)
-        outfile.close()
+            if opts.output:
+                with open(opts.output, 'w+') as outfile:
+                    CONF_PARSER.write(outfile)
     finally:
         icreds.clear_creds()
 

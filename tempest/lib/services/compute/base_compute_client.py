@@ -11,16 +11,29 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
-from tempest.lib.common import rest_client
 
-from tempest.common import api_version_request
-from tempest.common import api_version_utils
-from tempest import exceptions
+from tempest.lib.common import api_version_request
+from tempest.lib.common import api_version_utils
+from tempest.lib.common import rest_client
+from tempest.lib import exceptions
 
 COMPUTE_MICROVERSION = None
 
 
 class BaseComputeClient(rest_client.RestClient):
+    """Base compute service clients class to support microversion.
+
+    This class adds microversion to API request header if that is set
+    and provides interface to select appropriate JSON schema file for
+    response validation.
+
+    :param auth_provider: An auth provider object used to wrap requests in
+                          auth
+    :param str service: The service name to use for the catalog lookup
+    :param str region: The region to use for the catalog lookup
+    :param kwargs: kwargs required by rest_client.RestClient
+    """
+
     api_microversion_header_name = 'X-OpenStack-Nova-API-Version'
 
     def __init__(self, auth_provider, service, region,
@@ -50,9 +63,10 @@ class BaseComputeClient(rest_client.RestClient):
         """Get JSON schema
 
         This method provides the matching schema for requested
-        microversion (self.api_microversion).
+        microversion.
+
         :param schema_versions_info: List of dict which provides schema
-        information with range of valid versions.
+                                     information with range of valid versions.
         Example -
         schema_versions_info = [
             {'min': None, 'max': '2.1', 'schema': schemav21},
@@ -64,12 +78,12 @@ class BaseComputeClient(rest_client.RestClient):
         for items in schema_versions_info:
             min_version = api_version_request.APIVersionRequest(items['min'])
             max_version = api_version_request.APIVersionRequest(items['max'])
-            # This is case where self.api_microversion is None, which means
+            # This is case where COMPUTE_MICROVERSION is None, which means
             # request without microversion So select base v2.1 schema.
             if version.is_null() and items['min'] is None:
                 schema = items['schema']
                 break
-            # else select appropriate schema as per self.api_microversion
+            # else select appropriate schema as per COMPUTE_MICROVERSION
             elif version.matches(min_version, max_version):
                 schema = items['schema']
                 break

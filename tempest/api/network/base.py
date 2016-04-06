@@ -233,7 +233,7 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
         if enable_snat is not None:
             ext_gw_info['enable_snat'] = enable_snat
         body = cls.routers_client.create_router(
-            router_name, external_gateway_info=ext_gw_info,
+            name=router_name, external_gateway_info=ext_gw_info,
             admin_state_up=admin_state_up, **kwargs)
         router = body['router']
         cls.routers.append(router)
@@ -257,7 +257,7 @@ class BaseNetworkTest(tempest.test.BaseTestCase):
 
     @classmethod
     def delete_router(cls, router):
-        body = cls.client.list_router_interfaces(router['id'])
+        body = cls.ports_client.list_ports(device_id=router['id'])
         interfaces = body['ports']
         for i in interfaces:
             try:
