@@ -33,7 +33,7 @@ CONF_PUB_ROUTER = None
 CONF_TENANTS = None
 CONF_USERS = None
 
-IS_CEILOMETER = None
+IS_AODH = None
 IS_CINDER = None
 IS_GLANCE = None
 IS_HEAT = None
@@ -51,14 +51,14 @@ def init_conf():
     global CONF_PUB_ROUTER
     global CONF_TENANTS
     global CONF_USERS
-    global IS_CEILOMETER
+    global IS_AODH
     global IS_CINDER
     global IS_GLANCE
     global IS_HEAT
     global IS_NEUTRON
     global IS_NOVA
 
-    IS_CEILOMETER = CONF.service_available.ceilometer
+    IS_AODH = CONF.service_available.aodh
     IS_CINDER = CONF.service_available.cinder
     IS_GLANCE = CONF.service_available.glance
     IS_HEAT = CONF.service_available.heat
@@ -390,6 +390,7 @@ class NetworkService(BaseService):
         self.metering_labels_client = manager.metering_labels_client
         self.metering_label_rules_client = manager.metering_label_rules_client
         self.security_groups_client = manager.security_groups_client
+        self.routers_client = manager.routers_client
 
     def _filter_by_conf_networks(self, item_list):
         if not item_list or not all(('network_id' in i for i in item_list)):
@@ -709,7 +710,7 @@ class NetworkSubnetService(NetworkService):
 class TelemetryAlarmService(BaseService):
     def __init__(self, manager, **kwargs):
         super(TelemetryAlarmService, self).__init__(kwargs)
-        self.client = manager.telemetry_client
+        self.client = manager.alarming_client
 
     def list(self):
         client = self.client
@@ -975,7 +976,7 @@ class DomainService(BaseService):
 
 def get_tenant_cleanup_services():
     tenant_services = []
-    if IS_CEILOMETER:
+    if IS_AODH:
         tenant_services.append(TelemetryAlarmService)
     if IS_NOVA:
         tenant_services.append(ServerService)
