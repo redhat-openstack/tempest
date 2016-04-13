@@ -151,7 +151,7 @@ def no_testtools_skip_decorator(logical_line):
 
 def _common_service_clients_check(logical_line, physical_line, filename,
                                   ignored_list_file=None):
-    if 'tempest/services/' not in filename:
+    if not re.match('tempest/(lib/)?services/.*', filename):
         return False
 
     if ignored_list_file is not None:
@@ -225,6 +225,27 @@ def delete_resources_on_service_clients(logical_line, physical_line, filename,
         yield (0, msg)
 
 
+def dont_import_local_tempest_into_lib(logical_line, filename):
+    """Check that tempest.lib should not import local tempest code
+
+    T112
+    """
+    if 'tempest/lib/' not in filename:
+        return
+
+    if not ('from tempest' in logical_line
+            or 'import tempest' in logical_line):
+        return
+
+    if ('from tempest.lib' in logical_line
+        or 'import tempest.lib' in logical_line):
+        return
+
+    msg = ("T112: tempest.lib should not import local tempest code to avoid "
+           "circular dependency")
+    yield (0, msg)
+
+
 def factory(register):
     register(import_no_clients_in_api_and_scenario_tests)
     register(scenario_tests_need_service_tags)
@@ -236,3 +257,4 @@ def factory(register):
     register(no_testtools_skip_decorator)
     register(get_resources_on_service_clients)
     register(delete_resources_on_service_clients)
+    register(dont_import_local_tempest_into_lib)

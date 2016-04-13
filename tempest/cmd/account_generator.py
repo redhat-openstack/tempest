@@ -103,7 +103,6 @@ from tempest.services.identity.v2.json import identity_client
 from tempest.services.identity.v2.json import roles_client
 from tempest.services.identity.v2.json import tenants_client
 from tempest.services.identity.v2.json import users_client
-from tempest.services.network.json import network_client
 from tempest.services.network.json import routers_client
 
 LOG = None
@@ -170,7 +169,6 @@ def get_admin_clients(opts):
         endpoint_type='adminURL',
         **params
     )
-    network_admin = None
     networks_admin = None
     routers_admin = None
     subnets_admin = None
@@ -178,12 +176,6 @@ def get_admin_clients(opts):
     if (CONF.service_available.neutron and
         CONF.auth.create_isolated_networks):
         neutron_iso_networks = True
-        network_admin = network_client.NetworkClient(
-            _auth,
-            CONF.network.catalog_type,
-            CONF.network.region or CONF.identity.region,
-            endpoint_type='adminURL',
-            **params)
         networks_admin = networks_client.NetworksClient(
             _auth,
             CONF.network.catalog_type,
@@ -203,13 +195,13 @@ def get_admin_clients(opts):
             endpoint_type='adminURL',
             **params)
     return (identity_admin, tenants_admin, roles_admin, users_admin,
-            neutron_iso_networks, network_admin, networks_admin, routers_admin,
+            neutron_iso_networks, networks_admin, routers_admin,
             subnets_admin)
 
 
 def create_resources(opts, resources):
     (identity_admin, tenants_admin, roles_admin, users_admin,
-     neutron_iso_networks, network_admin, networks_admin, routers_admin,
+     neutron_iso_networks, networks_admin, routers_admin,
      subnets_admin) = get_admin_clients(opts)
     roles = roles_admin.list_roles()['roles']
     for u in resources['users']:
@@ -255,7 +247,7 @@ def create_resources(opts, resources):
         for u in resources['users']:
             tenant = identity.get_tenant_by_name(tenants_admin, u['tenant'])
             network_name, router_name = create_network_resources(
-                network_admin, networks_admin, routers_admin, subnets_admin,
+                networks_admin, routers_admin, subnets_admin,
                 tenant['id'], u['name'])
             u['network'] = network_name
             u['router'] = router_name
@@ -282,7 +274,7 @@ def create_resources(opts, resources):
     LOG.info('Resources deployed successfully!')
 
 
-def create_network_resources(network_admin_client, networks_admin_client,
+def create_network_resources(networks_admin_client,
                              routers_admin_client, subnets_admin_client,
                              tenant_id, name):
 
@@ -292,8 +284,8 @@ def create_network_resources(network_admin_client, networks_admin_client,
         return resp_body['network']
 
     def _create_subnet(subnet_name, network_id):
-        base_cidr = netaddr.IPNetwork(CONF.network.tenant_network_cidr)
-        mask_bits = CONF.network.tenant_network_mask_bits
+        base_cidr = netaddr.IPNetwork(CONF.network.project_network_cidr)
+        mask_bits = CONF.network.project_network_mask_bits
         for subnet_cidr in base_cidr.subnet(mask_bits):
             try:
                 resp_body = subnets_admin_client.\
@@ -316,7 +308,7 @@ def create_network_resources(network_admin_client, networks_admin_client,
         external_net_id = dict(
             network_id=CONF.network.public_network_id)
         resp_body = routers_admin_client.create_router(
-            router_name,
+            name=router_name,
             external_gateway_info=external_net_id,
             tenant_id=tenant_id)
         return resp_body['router']

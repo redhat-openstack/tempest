@@ -18,6 +18,8 @@ Tempest Specific Commandments
 - [T109] Cannot use testtools.skip decorator; instead use
          decorators.skip_because from tempest-lib
 - [T110] Check that service client names of GET should be consistent
+- [T111] Check that service client names of DELETE should be consistent
+- [T112] Check that tempest.lib should not import local tempest code
 - [N322] Method's default argument shouldn't be mutable
 
 Test Data/Configuration
@@ -212,9 +214,9 @@ conditions between tests outside the same class. But there are still a few of
 things to watch out for to try to avoid issues when running your tests in
 parallel.
 
-- Resources outside of a tenant scope still have the potential to conflict. This
+- Resources outside of a project scope still have the potential to conflict. This
   is a larger concern for the admin tests since most resources and actions that
-  require admin privileges are outside of tenants.
+  require admin privileges are outside of projects.
 
 - Races between methods in the same class are not a problem because
   parallelization in tempest is at the test class level, but if there is a json

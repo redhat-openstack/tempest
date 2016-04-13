@@ -99,7 +99,10 @@ class VolumeService(VersionedService):
 
 class IdentityService(VersionedService):
     def get_extensions(self):
-        body = self.do_get(self.service_url + '/extensions')
+        if 'v2.0' in self.service_url:
+            body = self.do_get(self.service_url + '/extensions')
+        else:
+            body = self.do_get(self.service_url + '/v2.0/extensions')
         body = json.loads(body)
         return map(lambda x: x['alias'], body['extensions']['values'])
 

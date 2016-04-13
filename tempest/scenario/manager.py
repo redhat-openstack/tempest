@@ -63,7 +63,6 @@ class ScenarioTest(tempest.test.BaseTestCase):
         cls.servers_client = cls.manager.servers_client
         cls.interface_client = cls.manager.interfaces_client
         # Neutron network client
-        cls.network_client = cls.manager.network_client
         cls.networks_client = cls.manager.networks_client
         cls.ports_client = cls.manager.ports_client
         cls.routers_client = cls.manager.routers_client
@@ -217,7 +216,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
                 networks = kwargs.pop('networks')
 
             # If there are no networks passed to us we look up
-            # for the tenant's private networks and create a port
+            # for the project's private networks and create a port
             # if there is only one private network. The same behaviour
             # as we would expect when passing the call to the clients
             # with no networks
@@ -262,7 +261,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         return server
 
     def create_volume(self, size=None, name=None, snapshot_id=None,
-                      imageRef=None, volume_type=None, wait_on_delete=True):
+                      imageRef=None, volume_type=None):
         if name is None:
             name = data_utils.rand_name(self.__class__.__name__)
         kwargs = {'display_name': name,
@@ -273,24 +272,18 @@ class ScenarioTest(tempest.test.BaseTestCase):
             kwargs.update({'size': size})
         volume = self.volumes_client.create_volume(**kwargs)['volume']
 
-        if wait_on_delete:
-            self.addCleanup(self.volumes_client.wait_for_resource_deletion,
-                            volume['id'])
-            self.addCleanup(self.delete_wrapper,
-                            self.volumes_client.delete_volume, volume['id'])
-        else:
-            self.addCleanup_with_wait(
-                waiter_callable=self.volumes_client.wait_for_resource_deletion,
-                thing_id=volume['id'], thing_id_param='id',
-                cleanup_callable=self.delete_wrapper,
-                cleanup_args=[self.volumes_client.delete_volume, volume['id']])
+        self.addCleanup(self.volumes_client.wait_for_resource_deletion,
+                        volume['id'])
+        self.addCleanup(self.delete_wrapper,
+                        self.volumes_client.delete_volume, volume['id'])
 
         # NOTE(e0ne): Cinder API v2 uses name instead of display_name
         if 'display_name' in volume:
             self.assertEqual(name, volume['display_name'])
         else:
             self.assertEqual(name, volume['name'])
-        self.volumes_client.wait_for_volume_status(volume['id'], 'available')
+        waiters.wait_for_volume_status(self.volumes_client,
+                                       volume['id'], 'available')
         # The volume retrieved on creation has a non-up-to-date status.
         # Retrieval after it becomes active ensures correct details.
         volume = self.volumes_client.show_volume(volume['id'])['volume']
@@ -394,8 +387,6 @@ class ScenarioTest(tempest.test.BaseTestCase):
         if properties is None:
             properties = {}
         name = data_utils.rand_name('%s-' % name)
-        image_file = open(path, 'rb')
-        self.addCleanup(image_file.close)
         params = {
             'name': name,
             'container_format': fmt,
@@ -406,7 +397,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
         image = self.image_client.create_image(**params)['image']
         self.addCleanup(self.image_client.delete_image, image['id'])
         self.assertEqual("queued", image['status'])
-        self.image_client.update_image(image['id'], data=image_file)
+        with open(path, 'rb') as image_file:
+            self.image_client.update_image(image['id'], data=image_file)
         return image['id']
 
     def glance_image_create(self):
@@ -486,8 +478,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
                 self.addCleanup(
                     self.delete_wrapper, self.snapshots_client.delete_snapshot,
                     snapshot_id)
-                self.snapshots_client.wait_for_snapshot_status(snapshot_id,
-                                                               'available')
+                waiters.wait_for_snapshot_status(self.snapshots_client,
+                                                 snapshot_id, 'available')
 
         image_name = snapshot_image['name']
         self.assertEqual(name, image_name)
@@ -500,14 +492,16 @@ class ScenarioTest(tempest.test.BaseTestCase):
             server['id'], volumeId=volume_to_attach['id'], device='/dev/%s'
             % CONF.compute.volume_device_name)['volumeAttachment']
         self.assertEqual(volume_to_attach['id'], volume['id'])
-        self.volumes_client.wait_for_volume_status(volume['id'], 'in-use')
+        waiters.wait_for_volume_status(self.volumes_client,
+                                       volume['id'], 'in-use')
 
         # Return the updated volume after the attachment
         return self.volumes_client.show_volume(volume['id'])['volume']
 
     def nova_volume_detach(self, server, volume):
         self.servers_client.detach_volume(server['id'], volume['id'])
-        self.volumes_client.wait_for_volume_status(volume['id'], 'available')
+        waiters.wait_for_volume_status(self.volumes_client,
+                                       volume['id'], 'available')
 
         volume = self.volumes_client.show_volume(volume['id'])['volume']
         self.assertEqual('available', volume['status'])
@@ -608,6 +602,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
     def create_floating_ip(self, thing, pool_name=None):
         """Create a floating IP and associates to a server on Nova"""
 
+        if not pool_name:
+            pool_name = CONF.network.floating_network_name
         floating_ip = (self.compute_floating_ips_client.
                        create_floating_ip(pool=pool_name)['floating_ip'])
         self.addCleanup(self.delete_wrapper,
@@ -690,17 +686,15 @@ class NetworkScenarioTest(ScenarioTest):
         super(NetworkScenarioTest, cls).resource_setup()
         cls.tenant_id = cls.manager.identity_client.tenant_id
 
-    def _create_network(self, client=None, networks_client=None,
+    def _create_network(self, networks_client=None,
                         routers_client=None, tenant_id=None,
                         namestart='network-smoke-'):
-        if not client:
-            client = self.network_client
         if not networks_client:
             networks_client = self.networks_client
         if not routers_client:
             routers_client = self.routers_client
         if not tenant_id:
-            tenant_id = client.tenant_id
+            tenant_id = networks_client.tenant_id
         name = data_utils.rand_name(namestart)
         result = networks_client.create_network(name=name, tenant_id=tenant_id)
         network = net_resources.DeletableNetwork(
@@ -740,15 +734,13 @@ class NetworkScenarioTest(ScenarioTest):
             *args, **kwargs)
         return agents_list['agents']
 
-    def _create_subnet(self, network, client=None, subnets_client=None,
+    def _create_subnet(self, network, subnets_client=None,
                        routers_client=None, namestart='subnet-smoke',
                        **kwargs):
         """Create a subnet for the given network
 
         within the cidr block configured for tenant networks.
         """
-        if not client:
-            client = self.network_client
         if not subnets_client:
             subnets_client = self.subnets_client
         if not routers_client:
@@ -767,11 +759,11 @@ class NetworkScenarioTest(ScenarioTest):
 
         if ip_version == 6:
             tenant_cidr = netaddr.IPNetwork(
-                CONF.network.tenant_network_v6_cidr)
-            num_bits = CONF.network.tenant_network_v6_mask_bits
+                CONF.network.project_network_v6_cidr)
+            num_bits = CONF.network.project_network_v6_mask_bits
         else:
-            tenant_cidr = netaddr.IPNetwork(CONF.network.tenant_network_cidr)
-            num_bits = CONF.network.tenant_network_mask_bits
+            tenant_cidr = netaddr.IPNetwork(CONF.network.project_network_cidr)
+            num_bits = CONF.network.project_network_mask_bits
 
         result = None
         str_cidr = None
@@ -799,7 +791,7 @@ class NetworkScenarioTest(ScenarioTest):
                     raise
         self.assertIsNotNone(result, 'Unable to allocate tenant network')
         subnet = net_resources.DeletableSubnet(
-            network_client=client, subnets_client=subnets_client,
+            subnets_client=subnets_client,
             routers_client=routers_client, **result['subnet'])
         self.assertEqual(subnet.cidr, str_cidr)
         self.addCleanup(self.delete_wrapper, subnet.delete)
@@ -911,7 +903,7 @@ class NetworkScenarioTest(ScenarioTest):
                                            private_key,
                                            should_connect=True,
                                            servers_for_debug=None):
-        if not CONF.network.tenant_networks_reachable:
+        if not CONF.network.project_networks_reachable:
             msg = 'Tenant networks not configured to be reachable.'
             LOG.info(msg)
             return
@@ -1172,7 +1164,7 @@ class NetworkScenarioTest(ScenarioTest):
         router.update(admin_state_up=admin_state_up)
         self.assertEqual(admin_state_up, router.admin_state_up)
 
-    def create_networks(self, client=None, networks_client=None,
+    def create_networks(self, networks_client=None,
                         routers_client=None, subnets_client=None,
                         tenant_id=None, dns_nameservers=None):
         """Create a network with a subnet connected to a router.
@@ -1180,7 +1172,6 @@ class NetworkScenarioTest(ScenarioTest):
         The baremetal driver is a special case since all nodes are
         on the same shared network.
 
-        :param client: network client to create resources with.
         :param tenant_id: id of tenant to create resources in.
         :param dns_nameservers: list of dns servers to send to subnet.
         :returns: network, subnet, router
@@ -1200,12 +1191,12 @@ class NetworkScenarioTest(ScenarioTest):
             subnet = None
         else:
             network = self._create_network(
-                client=client, networks_client=networks_client,
+                networks_client=networks_client,
                 tenant_id=tenant_id)
             router = self._get_router(client=routers_client,
                                       tenant_id=tenant_id)
 
-            subnet_kwargs = dict(network=network, client=client,
+            subnet_kwargs = dict(network=network,
                                  subnets_client=subnets_client,
                                  routers_client=routers_client)
             # use explicit check because empty list is a valid option
