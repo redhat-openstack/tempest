@@ -18,6 +18,7 @@ import httplib2
 import json
 import logging
 import re
+import requests
 import urlparse
 
 LOG = logging.getLogger(__name__)
@@ -130,6 +131,29 @@ service_dict = {'compute': ComputeService,
 
 def get_service_class(service_name):
     return service_dict.get(service_name, Service)
+
+
+def get_identity_v3_extensions(keystone_v3_url):
+    """Returns discovered identity v3 extensions
+
+    As keystone V3 uses a JSON Home to store the extensions,
+    this method is kept  here just for the sake of functionality, but it
+    implements a different discovery method.
+
+    :param keystone_v3_url: Keystone V3 auth url
+    :return: A list with the discovered extensions
+    """
+    try:
+        r = requests.get(keystone_v3_url,
+                         headers={'Accept': 'application/json-home'})
+    except requests.exceptions.RequestException as re:
+        LOG.error("Request on service '%s' with url '%s' failed" %
+                  ('identity', keystone_v3_url))
+        raise re
+    ext_h = 'http://docs.openstack.org/api/openstack-identity/3/ext/'
+    res = [x for x in json.loads(r.content)['resources'].keys()]
+    ext = [ex for ex in res if 'ext' in ex]
+    return list(set([str(e).replace(ext_h, '').split('/')[0] for e in ext]))
 
 
 def discover(auth_provider, region, object_store_discovery=True,
