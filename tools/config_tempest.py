@@ -450,7 +450,7 @@ class TempestConf(ConfigParser.SafeConfigParser):
         :returns: True if the value was written, False if not (because of
             priority)
         """
-        if not self.has_section(section):
+        if not self.has_section(section) and section.lower() != "default":
             self.add_section(section)
         if not priority and (section, key) in self.priority_sectionkeys:
             LOG.debug("Option '[%s] %s = %s' was defined by user, NOT"
