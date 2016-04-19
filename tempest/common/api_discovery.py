@@ -145,6 +145,7 @@ def get_identity_v3_extensions(keystone_v3_url):
     """
     try:
         r = requests.get(keystone_v3_url,
+                         verify=False,
                          headers={'Accept': 'application/json-home'})
     except requests.exceptions.RequestException as re:
         LOG.error("Request on service '%s' with url '%s' failed" %
