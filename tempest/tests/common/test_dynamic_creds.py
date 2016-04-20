@@ -30,12 +30,11 @@ from tempest.services.identity.v2.json import tenants_client as \
     json_tenants_client
 from tempest.services.identity.v2.json import users_client as \
     json_users_client
-from tempest.services.network.json import network_client as json_network_client
 from tempest.services.network.json import routers_client
-from tempest.tests import base
 from tempest.tests import fake_config
-from tempest.tests import fake_http
-from tempest.tests import fake_identity
+from tempest.tests.lib import base
+from tempest.tests.lib import fake_http
+from tempest.tests.lib import fake_identity
 
 
 class TestDynamicCredentialProvider(base.TestCase):
@@ -48,7 +47,6 @@ class TestDynamicCredentialProvider(base.TestCase):
         super(TestDynamicCredentialProvider, self).setUp()
         self.useFixture(fake_config.ConfigFixture())
         self.stubs.Set(config, 'TempestConfigPrivate', fake_config.FakePrivate)
-        self.fake_http = fake_http.fake_httplib2(return_type=200)
         self.stubs.Set(json_token_client.TokenClient, 'raw_request',
                        fake_identity._fake_v2_response)
         cfg.CONF.set_default('operator_role', 'FakeRole',
@@ -59,10 +57,8 @@ class TestDynamicCredentialProvider(base.TestCase):
 
     def test_tempest_client(self):
         creds = dynamic_creds.DynamicCredentialProvider(**self.fixed_params)
-        self.assertTrue(isinstance(creds.identity_admin_client,
-                                   json_iden_client.IdentityClient))
-        self.assertTrue(isinstance(creds.network_admin_client,
-                                   json_network_client.NetworkClient))
+        self.assertIsInstance(creds.identity_admin_client,
+                              json_iden_client.IdentityClient)
 
     def _get_fake_admin_creds(self):
         return credentials.get_credentials(
@@ -405,7 +401,7 @@ class TestDynamicCredentialProvider(base.TestCase):
             side_effect=side_effect)
         secgroup_list_mock.start()
 
-        return_values = (fake_http.fake_httplib({}, status=204), {})
+        return_values = fake_http.fake_http_response({}, status=204), ''
         remove_secgroup_mock = self.patch(
             'tempest.lib.services.network.security_groups_client.'
             'SecurityGroupsClient.delete', return_value=return_values)

@@ -28,10 +28,9 @@ from tempest import config
 from tempest.lib import auth
 from tempest.lib import exceptions as lib_exc
 from tempest.lib.services.identity.v2 import token_client
-from tempest.tests import base
 from tempest.tests import fake_config
-from tempest.tests import fake_http
-from tempest.tests import fake_identity
+from tempest.tests.lib import base
+from tempest.tests.lib import fake_identity
 
 
 class TestPreProvisionedCredentials(base.TestCase):
@@ -48,7 +47,6 @@ class TestPreProvisionedCredentials(base.TestCase):
         super(TestPreProvisionedCredentials, self).setUp()
         self.useFixture(fake_config.ConfigFixture())
         self.stubs.Set(config, 'TempestConfigPrivate', fake_config.FakePrivate)
-        self.fake_http = fake_http.fake_httplib2(return_type=200)
         self.stubs.Set(token_client.TokenClient, 'raw_request',
                        fake_identity._fake_v2_response)
         self.useFixture(lockutils_fixtures.ExternalLockFixture())
@@ -325,7 +323,7 @@ class TestPreProvisionedCredentials(base.TestCase):
                                                     'id': 'fake-id',
                                                     'label': 'network-2'}]}):
             creds = test_accounts_class.get_creds_by_roles(['role-7'])
-        self.assertTrue(isinstance(creds, cred_provider.TestResources))
+        self.assertIsInstance(creds, cred_provider.TestResources)
         network = creds.network
         self.assertIsNotNone(network)
         self.assertIn('name', network)

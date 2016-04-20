@@ -44,7 +44,6 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
     @classmethod
     def setup_clients(cls):
         super(NeutronResourcesTestJSON, cls).setup_clients()
-        cls.network_client = cls.os.network_client
         cls.subnets_client = cls.os.subnets_client
         cls.ports_client = cls.os.ports_client
 
@@ -58,8 +57,8 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
                             cls._create_keypair()['name'])
         cls.external_network_id = CONF.network.public_network_id
 
-        tenant_cidr = netaddr.IPNetwork(CONF.network.tenant_network_cidr)
-        mask_bits = CONF.network.tenant_network_mask_bits
+        tenant_cidr = netaddr.IPNetwork(CONF.network.project_network_cidr)
+        mask_bits = CONF.network.project_network_mask_bits
         cls.subnet_cidr = tenant_cidr.subnet(mask_bits).next()
 
         # create the stack
