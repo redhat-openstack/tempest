@@ -22,7 +22,7 @@ import six
 from tempest.lib.common import http
 from tempest.lib.common import rest_client
 from tempest.lib import exceptions
-from tempest.tests.lib import base
+from tempest.tests import base
 from tempest.tests.lib import fake_auth_provider
 from tempest.tests.lib import fake_http
 import tempest.tests.utils as utils
@@ -37,9 +37,7 @@ class BaseRestClientTestClass(base.TestCase):
         self.fake_auth_provider = fake_auth_provider.FakeAuthProvider()
         self.rest_client = rest_client.RestClient(
             self.fake_auth_provider, None, None)
-        self.stubs.Set(http.ClosingHttp, 'request',
-                       self.fake_http.request)
-
+        self.patchobject(http.ClosingHttp, 'request', self.fake_http.request)
         self.useFixture(mockpatch.PatchObject(self.rest_client,
                                               '_log_request'))
 

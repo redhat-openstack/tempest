@@ -15,8 +15,8 @@
 from tempest.common import credentials_factory as credentials
 from tempest import config
 from tempest import exceptions
+from tempest.tests import base
 from tempest.tests import fake_config
-from tempest.tests.lib import base
 
 
 class TestLegacyCredentialsProvider(base.TestCase):
@@ -26,7 +26,8 @@ class TestLegacyCredentialsProvider(base.TestCase):
     def setUp(self):
         super(TestLegacyCredentialsProvider, self).setUp()
         self.useFixture(fake_config.ConfigFixture())
-        self.stubs.Set(config, 'TempestConfigPrivate', fake_config.FakePrivate)
+        self.patchobject(config, 'TempestConfigPrivate',
+                         fake_config.FakePrivate)
 
     def test_get_creds_roles_legacy_invalid(self):
         test_accounts_class = credentials.LegacyCredentialProvider(

@@ -12,8 +12,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import uuid
-
 import mock
 from oslo_config import cfg
 from oslotest import mockpatch
@@ -21,16 +19,18 @@ import testtools
 
 from tempest import config
 from tempest import exceptions
+from tempest.lib.common.utils import data_utils
 from tempest import test
+from tempest.tests import base
 from tempest.tests import fake_config
-from tempest.tests.lib import base
 
 
 class BaseDecoratorsTest(base.TestCase):
     def setUp(self):
         super(BaseDecoratorsTest, self).setUp()
         self.config_fixture = self.useFixture(fake_config.ConfigFixture())
-        self.stubs.Set(config, 'TempestConfigPrivate', fake_config.FakePrivate)
+        self.patchobject(config, 'TempestConfigPrivate',
+                         fake_config.FakePrivate)
 
 
 class TestAttrDecorator(BaseDecoratorsTest):
@@ -79,13 +79,13 @@ class TestIdempotentIdDecorator(BaseDecoratorsTest):
         return foo
 
     def test_positive(self):
-        _id = str(uuid.uuid4())
+        _id = data_utils.rand_uuid()
         foo = self._test_helper(_id)
         self.assertIn('id-%s' % _id, getattr(foo, '__testtools_attrs'))
         self.assertTrue(foo.__doc__.startswith('Test idempotent id: %s' % _id))
 
     def test_positive_without_doc(self):
-        _id = str(uuid.uuid4())
+        _id = data_utils.rand_uuid()
         foo = self._test_helper_without_doc(_id)
         self.assertTrue(foo.__doc__.startswith('Test idempotent id: %s' % _id))
 

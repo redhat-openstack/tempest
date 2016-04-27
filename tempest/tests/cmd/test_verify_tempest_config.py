@@ -19,8 +19,8 @@ from oslotest import mockpatch
 
 from tempest.cmd import verify_tempest_config
 from tempest import config
+from tempest.tests import base
 from tempest.tests import fake_config
-from tempest.tests.lib import base
 
 
 class TestGetAPIVersions(base.TestCase):
@@ -41,7 +41,8 @@ class TestDiscovery(base.TestCase):
     def setUp(self):
         super(TestDiscovery, self).setUp()
         self.useFixture(fake_config.ConfigFixture())
-        self.stubs.Set(config, 'TempestConfigPrivate', fake_config.FakePrivate)
+        self.patchobject(config, 'TempestConfigPrivate',
+                         fake_config.FakePrivate)
 
     def test_get_keystone_api_versions(self):
         self.useFixture(mockpatch.PatchObject(

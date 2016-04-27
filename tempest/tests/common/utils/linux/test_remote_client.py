@@ -19,15 +19,16 @@ from oslotest import mockpatch
 
 from tempest.common.utils.linux import remote_client
 from tempest import config
+from tempest.tests import base
 from tempest.tests import fake_config
-from tempest.tests.lib import base
 
 
 class TestRemoteClient(base.TestCase):
     def setUp(self):
         super(TestRemoteClient, self).setUp()
         self.useFixture(fake_config.ConfigFixture())
-        self.stubs.Set(config, 'TempestConfigPrivate', fake_config.FakePrivate)
+        self.patchobject(config, 'TempestConfigPrivate',
+                         fake_config.FakePrivate)
         cfg.CONF.set_default('ip_version_for_ssh', 4, group='validation')
         cfg.CONF.set_default('network_for_ssh', 'public', group='validation')
         cfg.CONF.set_default('connect_timeout', 1, group='validation')

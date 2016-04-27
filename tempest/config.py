@@ -91,7 +91,7 @@ AuthGroup = [
                     "create users and projects",
                deprecated_group='identity'),
     cfg.StrOpt('admin_project_name',
-               help="Project name to use for an  administrative user. This is "
+               help="Project name to use for an administrative user. This is "
                     "needed for authenticating requests made by project "
                     "isolation to create users and projects",
                deprecated_opts=[cfg.DeprecatedOpt('admin_tenant_name',
@@ -99,7 +99,7 @@ AuthGroup = [
                                 cfg.DeprecatedOpt('admin_tenant_name',
                                                   group='identity')]),
     cfg.StrOpt('admin_password',
-               help="Password to use for an  administrative user. This is "
+               help="Password to use for an administrative user. This is "
                     "needed for authenticating requests made by project "
                     "isolation to create users and projects",
                secret=True,
@@ -700,22 +700,10 @@ VolumeGroup = [
                choices=['public', 'admin', 'internal',
                         'publicURL', 'adminURL', 'internalURL'],
                help="The endpoint type to use for the volume service."),
-    cfg.StrOpt('backend1_name',
-               default='',
-               help='Name of the backend1 (must be declared in cinder.conf)',
-               deprecated_for_removal=True),
-    cfg.StrOpt('backend2_name',
-               default='',
-               help='Name of the backend2 (must be declared in cinder.conf)',
-               deprecated_for_removal=True),
     cfg.ListOpt('backend_names',
                 default=['BACKEND_1', 'BACKEND_2'],
                 help='A list of backend names separated by comma. '
-                     'The backend name must be declared in cinder.conf',
-                deprecated_opts=[cfg.DeprecatedOpt('BACKEND_1',
-                                                   group='volume'),
-                                 cfg.DeprecatedOpt('BACKEND_2',
-                                                   group='volume')]),
+                     'The backend name must be declared in cinder.conf'),
     cfg.StrOpt('storage_protocol',
                default='iSCSI',
                help='Backend protocol to target when creating volume types'),

@@ -31,8 +31,8 @@ from tempest.services.identity.v2.json import tenants_client as \
 from tempest.services.identity.v2.json import users_client as \
     json_users_client
 from tempest.services.network.json import routers_client
+from tempest.tests import base
 from tempest.tests import fake_config
-from tempest.tests.lib import base
 from tempest.tests.lib import fake_http
 from tempest.tests.lib import fake_identity
 
@@ -46,9 +46,10 @@ class TestDynamicCredentialProvider(base.TestCase):
     def setUp(self):
         super(TestDynamicCredentialProvider, self).setUp()
         self.useFixture(fake_config.ConfigFixture())
-        self.stubs.Set(config, 'TempestConfigPrivate', fake_config.FakePrivate)
-        self.stubs.Set(json_token_client.TokenClient, 'raw_request',
-                       fake_identity._fake_v2_response)
+        self.patchobject(config, 'TempestConfigPrivate',
+                         fake_config.FakePrivate)
+        self.patchobject(json_token_client.TokenClient, 'raw_request',
+                         fake_identity._fake_v2_response)
         cfg.CONF.set_default('operator_role', 'FakeRole',
                              group='object-storage')
         self._mock_list_ec2_credentials('fake_user_id', 'fake_tenant_id')
