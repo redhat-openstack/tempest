@@ -757,6 +757,11 @@ def configure_discovered_services(conf, services):
     :param services: dictionary of discovered services - expects each service
         to have a dictionary containing 'extensions' and 'versions' keys
     """
+    # check if volume service is disabled
+    if conf.has_section('services') and conf.has_option('services', 'volume'):
+        if not conf.getboolean('services', 'volume'):
+            SERVICE_NAMES.pop('volume')
+            SERVICE_VERSIONS.pop('volume')
     # set service availability
     for service, codename in SERVICE_NAMES.iteritems():
         # ceilometer is still transitioning from metering to telemetry
