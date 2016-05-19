@@ -84,6 +84,19 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
                                        self.volume['id'], 'available')
 
         if shelve_server:
+            # NOTE(andreaf) If we are going to shelve a server, we should
+            # check first whether the server is ssh-able. Otherwise we won't
+            # be able to distinguish failures introduced by shelve from
+            # pre-existing ones. Also it's good to wait for cloud-init to be
+            # done and sshd server to be running before shelving to avoid
+            # breaking the VM
+            linux_client = remote_client.RemoteClient(
+                self.get_server_ip(self.server),
+                self.image_ssh_user,
+                self.admin_pass,
+                self.validation_resources['keypair']['private_key'])
+            linux_client.validate_authentication()
+            # If validation went ok, shelve the server
             compute.shelve_server(self.servers_client, self.server['id'])
 
         # Attach the volume to the server
@@ -116,7 +129,9 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
             self.get_server_ip(self.server),
             self.image_ssh_user,
             self.admin_pass,
-            self.validation_resources['keypair']['private_key'])
+            self.validation_resources['keypair']['private_key'],
+            server=self.server,
+            servers_client=self.servers_client)
 
         partitions = linux_client.get_partitions()
         self.assertIn(self.device, partitions)
@@ -135,7 +150,9 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
             self.get_server_ip(self.server),
             self.image_ssh_user,
             self.admin_pass,
-            self.validation_resources['keypair']['private_key'])
+            self.validation_resources['keypair']['private_key'],
+            server=self.server,
+            servers_client=self.servers_client)
 
         partitions = linux_client.get_partitions()
         self.assertNotIn(self.device, partitions)
@@ -179,7 +196,9 @@ class AttachVolumeShelveTestJSON(AttachVolumeTestJSON):
             self.get_server_ip(self.server['id']),
             self.image_ssh_user,
             self.admin_pass,
-            self.validation_resources['keypair']['private_key'])
+            self.validation_resources['keypair']['private_key'],
+            server=self.server,
+            servers_client=self.servers_client)
 
         command = 'grep vd /proc/partitions | wc -l'
         nb_partitions = linux_client.exec_command(command).strip()

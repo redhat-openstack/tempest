@@ -15,6 +15,7 @@
 
 from __future__ import print_function
 
+import functools
 import logging as std_logging
 import os
 import tempfile
@@ -22,6 +23,7 @@ import tempfile
 from oslo_concurrency import lockutils
 from oslo_config import cfg
 from oslo_log import log as logging
+import testtools
 
 from tempest.test_discover import plugins
 
@@ -670,7 +672,7 @@ ValidationGroup = [
     cfg.StrOpt('network_for_ssh',
                default='public',
                help="Network used for SSH connections. Ignored if "
-                    "use_floatingip_for_ssh=true or run_validation=false.",
+                    "connect_method=floating or run_validation=false.",
                deprecated_opts=[cfg.DeprecatedOpt('network_for_ssh',
                                                   group='compute')]),
 ]
@@ -880,50 +882,6 @@ OrchestrationGroup = [
 ]
 
 
-telemetry_group = cfg.OptGroup(name='telemetry',
-                               title='Telemetry Service Options')
-
-TelemetryGroup = [
-    cfg.StrOpt('catalog_type',
-               default='metering',
-               help="Catalog type of the Telemetry service."),
-    cfg.StrOpt('endpoint_type',
-               default='publicURL',
-               choices=['public', 'admin', 'internal',
-                        'publicURL', 'adminURL', 'internalURL'],
-               help="The endpoint type to use for the telemetry service."),
-    cfg.BoolOpt('too_slow_to_test',
-                default=True,
-                deprecated_for_removal=True,
-                help="This variable is used as flag to enable "
-                     "notification tests")
-]
-
-alarming_group = cfg.OptGroup(name='alarming',
-                              title='Alarming Service Options')
-
-AlarmingGroup = [
-    cfg.StrOpt('catalog_type',
-               default='alarming',
-               help="Catalog type of the Alarming service."),
-    cfg.StrOpt('endpoint_type',
-               default='publicURL',
-               choices=['public', 'admin', 'internal',
-                        'publicURL', 'adminURL', 'internalURL'],
-               help="The endpoint type to use for the alarming service."),
-]
-
-
-telemetry_feature_group = cfg.OptGroup(name='telemetry-feature-enabled',
-                                       title='Enabled Ceilometer Features')
-
-TelemetryFeaturesGroup = [
-    cfg.BoolOpt('events',
-                default=False,
-                help="Runs Ceilometer event-related tests"),
-]
-
-
 dashboard_group = cfg.OptGroup(name="dashboard",
                                title="Dashboard options")
 
@@ -1068,12 +1026,6 @@ ServiceAvailableGroup = [
     cfg.BoolOpt('heat',
                 default=False,
                 help="Whether or not Heat is expected to be available"),
-    cfg.BoolOpt('ceilometer',
-                default=True,
-                help="Whether or not Ceilometer is expected to be available"),
-    cfg.BoolOpt('aodh',
-                default=False,
-                help="Whether or not Aodh is expected to be available"),
     cfg.BoolOpt('horizon',
                 default=True,
                 help="Whether or not Horizon is expected to be available"),
@@ -1147,7 +1099,7 @@ baremetal_group = cfg.OptGroup(name='baremetal',
                                     'shelve, snapshot, and suspend')
 
 
-# NOTE(deva): Ironic tests have been ported to tempest-lib. New config options
+# NOTE(deva): Ironic tests have been ported to tempest.lib. New config options
 #             should be added to ironic/ironic_tempest_plugin/config.py.
 #             However, these options need to remain here for testing stable
 #             branches until Liberty release reaches EOL.
@@ -1219,9 +1171,6 @@ _opts = [
     (object_storage_feature_group, ObjectStoreFeaturesGroup),
     (database_group, DatabaseGroup),
     (orchestration_group, OrchestrationGroup),
-    (telemetry_group, TelemetryGroup),
-    (telemetry_feature_group, TelemetryFeaturesGroup),
-    (alarming_group, AlarmingGroup),
     (dashboard_group, DashboardGroup),
     (data_processing_group, DataProcessingGroup),
     (data_processing_feature_group, DataProcessingFeaturesGroup),
@@ -1290,8 +1239,6 @@ class TempestConfigPrivate(object):
             'object-storage-feature-enabled']
         self.database = _CONF.database
         self.orchestration = _CONF.orchestration
-        self.telemetry = _CONF.telemetry
-        self.telemetry_feature_enabled = _CONF['telemetry-feature-enabled']
         self.dashboard = _CONF.dashboard
         self.data_processing = _CONF['data-processing']
         self.data_processing_feature_enabled = _CONF[
@@ -1385,3 +1332,72 @@ class TempestConfigProxy(object):
 
 
 CONF = TempestConfigProxy()
+
+
+def skip_unless_config(*args):
+    """Decorator to raise a skip if a config opt doesn't exist or is False
+
+    :param str group: The first arg, the option group to check
+    :param str name: The second arg, the option name to check
+    :param str msg: Optional third arg, the skip msg to use if a skip is raised
+    :raises testtools.TestCaseskipException: If the specified config option
+        doesn't exist or it exists and evaluates to False
+    """
+    def decorator(f):
+        group = args[0]
+        name = args[1]
+
+        @functools.wraps(f)
+        def wrapper(self, *func_args, **func_kwargs):
+            if not hasattr(CONF, group):
+                msg = "Config group %s doesn't exist" % group
+                raise testtools.TestCase.skipException(msg)
+
+            conf_group = getattr(CONF, group)
+            if not hasattr(conf_group, name):
+                msg = "Config option %s.%s doesn't exist" % (group,
+                                                             name)
+                raise testtools.TestCase.skipException(msg)
+
+            value = getattr(conf_group, name)
+            if not value:
+                if len(args) == 3:
+                    msg = args[2]
+                else:
+                    msg = "Config option %s.%s is false" % (group,
+                                                            name)
+                raise testtools.TestCase.skipException(msg)
+            return f(self, *func_args, **func_kwargs)
+        return wrapper
+    return decorator
+
+
+def skip_if_config(*args):
+    """Raise a skipException if a config exists and is True
+
+    :param str group: The first arg, the option group to check
+    :param str name: The second arg, the option name to check
+    :param str msg: Optional third arg, the skip msg to use if a skip is raised
+    :raises testtools.TestCase.skipException: If the specified config option
+        exists and evaluates to True
+    """
+    def decorator(f):
+        group = args[0]
+        name = args[1]
+
+        @functools.wraps(f)
+        def wrapper(self, *func_args, **func_kwargs):
+            if hasattr(CONF, group):
+                conf_group = getattr(CONF, group)
+                if hasattr(conf_group, name):
+                    value = getattr(conf_group, name)
+                    if value:
+                        if len(args) == 3:
+                            msg = args[2]
+                        else:
+                            msg = "Config option %s.%s is false" % (group,
+                                                                    name)
+                        raise testtools.TestCase.skipException(msg)
+            return f(self, *func_args, **func_kwargs)
+        return wrapper
+    return decorator

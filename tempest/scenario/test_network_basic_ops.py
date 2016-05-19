@@ -24,7 +24,7 @@ from tempest.common import waiters
 from tempest import config
 from tempest import exceptions
 from tempest.scenario import manager
-from tempest.services.network import resources as net_resources
+from tempest.scenario import network_resources
 from tempest import test
 
 CONF = config.CONF
@@ -269,8 +269,9 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
                 "Old port: %s. Number of new ports: %d" % (
                     CONF.network.build_timeout, old_port,
                     len(self.new_port_list)))
-        new_port = net_resources.DeletablePort(ports_client=self.ports_client,
-                                               **self.new_port_list[0])
+        new_port = network_resources.DeletablePort(
+            ports_client=self.ports_client,
+            **self.new_port_list[0])
 
         def check_new_nic():
             new_nic_list = self._get_server_nics(ssh_client)
@@ -686,8 +687,9 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         unschedule_router = (self.admin_manager.network_agents_client.
                              delete_router_from_l3_agent)
 
-        agent_list = set(a["id"] for a in
-                         self._list_agents(agent_type="L3 agent"))
+        agent_list_alive = set(a["id"] for a in
+                               self._list_agents(agent_type="L3 agent") if
+                               a["alive"] is True)
         self._setup_network_and_servers()
 
         # NOTE(kevinbenton): we have to use the admin credentials to check
@@ -702,7 +704,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         # remove resource from agents
         hosting_agents = set(a["id"] for a in
                              list_hosts(self.router.id)['agents'])
-        no_migration = agent_list == hosting_agents
+        no_migration = agent_list_alive == hosting_agents
         LOG.info("Router will be assigned to {mig} hosting agent".
                  format(mig="the same" if no_migration else "a new"))
 
@@ -722,7 +724,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
 
         # schedule resource to new agent
         target_agent = list(hosting_agents if no_migration else
-                            agent_list - hosting_agents)[0]
+                            agent_list_alive - hosting_agents)[0]
         schedule_router(target_agent,
                         router_id=self.router['id'])
         self.assertEqual(

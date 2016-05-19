@@ -85,6 +85,10 @@ class TempestInit(command.Command):
         parser = super(TempestInit, self).get_parser(prog_name)
         parser.add_argument('dir', nargs='?', default=os.getcwd())
         parser.add_argument('--config-dir', '-c', default=None)
+        parser.add_argument('--show-global-config-dir', '-s',
+                            action='store_true', dest='show_global_dir',
+                            help="Print the global config dir location, "
+                                 "then exit")
         return parser
 
     def generate_testr_conf(self, local_path):
@@ -99,7 +103,6 @@ class TempestInit(command.Command):
         config_parse = moves.configparser.SafeConfigParser()
         config_parse.optionxform = str
         with open(conf_path, 'a+') as conf_file:
-            config_parse.readfp(conf_file)
             # Set local lock_dir in tempest conf
             if not config_parse.has_section('oslo_concurrency'):
                 config_parse.add_section('oslo_concurrency')
@@ -108,6 +111,7 @@ class TempestInit(command.Command):
             config_parse.set('DEFAULT', 'log_dir', log_dir)
             # Set default log filename to tempest.log
             config_parse.set('DEFAULT', 'log_file', 'tempest.log')
+            config_parse.write(conf_file)
 
     def copy_config(self, etc_dir, config_dir):
         shutil.copytree(config_dir, etc_dir)
@@ -156,4 +160,7 @@ class TempestInit(command.Command):
 
     def take_action(self, parsed_args):
         config_dir = parsed_args.config_dir or get_tempest_default_config_dir()
+        if parsed_args.show_global_dir:
+            print("Global config dir is located at: %s" % config_dir)
+            sys.exit(0)
         self.create_working_dir(parsed_args.dir, config_dir)
