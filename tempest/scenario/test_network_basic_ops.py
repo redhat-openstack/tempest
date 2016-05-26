@@ -24,7 +24,7 @@ from tempest.common import waiters
 from tempest import config
 from tempest import exceptions
 from tempest.scenario import manager
-from tempest.services.network import resources as net_resources
+from tempest.scenario import network_resources
 from tempest import test
 
 CONF = config.CONF
@@ -269,8 +269,9 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
                 "Old port: %s. Number of new ports: %d" % (
                     CONF.network.build_timeout, old_port,
                     len(self.new_port_list)))
-        new_port = net_resources.DeletablePort(ports_client=self.ports_client,
-                                               **self.new_port_list[0])
+        new_port = network_resources.DeletablePort(
+            ports_client=self.ports_client,
+            **self.new_port_list[0])
 
         def check_new_nic():
             new_nic_list = self._get_server_nics(ssh_client)
@@ -686,8 +687,9 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         unschedule_router = (self.admin_manager.network_agents_client.
                              delete_router_from_l3_agent)
 
-        agent_list = set(a["id"] for a in
-                         self._list_agents(agent_type="L3 agent"))
+        agent_list_alive = set(a["id"] for a in
+                               self._list_agents(agent_type="L3 agent") if
+                               a["alive"] is True)
         self._setup_network_and_servers()
 
         # NOTE(kevinbenton): we have to use the admin credentials to check
@@ -702,7 +704,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         # remove resource from agents
         hosting_agents = set(a["id"] for a in
                              list_hosts(self.router.id)['agents'])
-        no_migration = agent_list == hosting_agents
+        no_migration = agent_list_alive == hosting_agents
         LOG.info("Router will be assigned to {mig} hosting agent".
                  format(mig="the same" if no_migration else "a new"))
 
@@ -722,7 +724,7 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
 
         # schedule resource to new agent
         target_agent = list(hosting_agents if no_migration else
-                            agent_list - hosting_agents)[0]
+                            agent_list_alive - hosting_agents)[0]
         schedule_router(target_agent,
                         router_id=self.router['id'])
         self.assertEqual(
@@ -752,10 +754,10 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         The test steps are :
         1. Create a new network.
         2. Connect (hotplug) the VM to a new network.
-        3. Check the VM can ping the DHCP interface of this network.
+        3. Check the VM can ping a server on the new network ("peer")
         4. Spoof the mac address of the new VM interface.
         5. Check the Security Group enforces mac spoofing and blocks pings via
-           spoofed interface (VM cannot ping the DHCP interface).
+           spoofed interface (VM cannot ping the peer).
         6. Disable port-security of the spoofed port- set the flag to false.
         7. Retest 3rd step and check that the Security Group allows pings via
         the spoofed interface.
@@ -776,18 +778,18 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         ssh_client = self.get_remote_client(fip.floating_ip_address,
                                             private_key=private_key)
         spoof_nic = ssh_client.get_nic_name_by_mac(spoof_port["mac_address"])
-        dhcp_ports = self._list_ports(device_owner="network:dhcp",
-                                      network_id=self.new_net["id"])
-        new_net_dhcp = dhcp_ports[0]["fixed_ips"][0]["ip_address"]
-        self._check_remote_connectivity(ssh_client, dest=new_net_dhcp,
+        name = data_utils.rand_name('peer')
+        peer = self._create_server(name, self.new_net)
+        peer_address = peer['addresses'][self.new_net.name][0]['addr']
+        self._check_remote_connectivity(ssh_client, dest=peer_address,
                                         nic=spoof_nic, should_succeed=True)
         ssh_client.set_mac_address(spoof_nic, spoof_mac)
         new_mac = ssh_client.get_mac_address(nic=spoof_nic)
         self.assertEqual(spoof_mac, new_mac)
-        self._check_remote_connectivity(ssh_client, dest=new_net_dhcp,
+        self._check_remote_connectivity(ssh_client, dest=peer_address,
                                         nic=spoof_nic, should_succeed=False)
         self.ports_client.update_port(spoof_port["id"],
                                       port_security_enabled=False,
                                       security_groups=[])
-        self._check_remote_connectivity(ssh_client, dest=new_net_dhcp,
+        self._check_remote_connectivity(ssh_client, dest=peer_address,
                                         nic=spoof_nic, should_succeed=True)

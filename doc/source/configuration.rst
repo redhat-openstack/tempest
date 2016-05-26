@@ -9,23 +9,30 @@ they are used in conjunction. The source of truth on each option is the sample
 config file which explains the purpose of each individual option. You can see
 the sample config file here: :ref:`tempest-sampleconf`
 
-Auth/Credentials
+Test Credentials
 ----------------
 
-Tempest currently has two different ways in configuration to provide credentials
-to use when running Tempest. One is a traditional set of configuration options
-in the tempest.conf file. These options are clearly labelled in the ``identity``
-section and let you specify a set of credentials for a regular user, a global
-admin user, and an alternate user, consisting of a username, password, and
-project name.
+Tempest allows for configuring a set of admin credentials in the ``auth``
+section, via the following parameters:
 
-The other method to provide credentials is using the accounts.yaml file. This
-file is used to specify an arbitrary number of users available to run tests
-with. You can specify the location of the file in the ``auth`` section in the
+ #. ``admin_username``
+ #. ``admin_password``
+ #. ``admin_project_name``
+ #. ``admin_domain_name``
+
+Admin credentials are not mandatory to run Tempest, but when provided they
+can be used to:
+
+- Run tests for admin APIs
+- Generate test credentials on the fly (see `Dynamic Credentials`_)
+
+Tempest allows for configuring pre-provisioned test credentials as well.
+This can be done using the accounts.yaml file (see
+`Pre-Provisioned Credentials`_). This file is used to specify an arbitrary
+number of users available to run tests with.
+You can specify the location of the file in the ``auth`` section in the
 tempest.conf file. To see the specific format used in the file please refer to
-the accounts.yaml.sample file included in Tempest.  Eventually the config
-options for providing credentials to Tempest will be deprecated and removed in
-favor of the accounts.yaml file.
+the accounts.yaml.sample file included in Tempest.
 
 Keystone Connection Info
 ^^^^^^^^^^^^^^^^^^^^^^^^
@@ -81,8 +88,9 @@ by dynamic credentials. This option will not have any effect when Tempest is not
 configured to use dynamic credentials.
 
 
-Pre-Provisioned Credentials (aka accounts.yaml or accounts file)
-""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+Pre-Provisioned Credentials
+"""""""""""""""""""""""""""
+
 For a long time using dynamic credentials was the only method available if you
 wanted to enable parallel execution of Tempest tests. However, this was
 insufficient for certain use cases because of the admin credentials requirement
@@ -116,47 +124,7 @@ should have a unique project. This is required to provide proper isolation
 to the tests using the credentials, and failure to do this will likely cause
 unexpected failures in some tests.
 
-
-Legacy Credentials (aka credentials config options)
-"""""""""""""""""""""""""""""""""""""""""""""""""""
-**Starting in the Liberty release this mechanism was deprecated; it will be
-removed in a future release.**
-
-When Tempest was refactored to allow for locking test accounts, the original
-non-project isolated case was converted to internally work similarly to the
-accounts.yaml file. This mechanism was then called the legacy test accounts
-provider. To use the legacy test accounts provider you can specify the sets of
-credentials in the configuration file as detailed above with following nine
-options in the ``identity`` section:
-
- #. ``username``
- #. ``password``
- #. ``project_name``
- #. ``admin_username``
- #. ``admin_password``
- #. ``admin_project_name``
- #. ``alt_username``
- #. ``alt_password``
- #. ``alt_project_name``
-
-If using Identity API v3, use the ``domain_name`` option to specify a
-domain other than the default domain.  The ``auth_version`` setting is
-used to switch between v2 (``v2``) or v3 (``v3``) versions of the Identity
-API.
-
-And in the ``auth`` section:
-
- #. ``use_dynamic_credentials = False``
- #. Comment out ``test_accounts_file`` or keep it empty.
-
-It only makes sense to use this if parallel execution isn't needed, since
-Tempest won't be able to properly isolate tests using this. Additionally, using
-the traditional config options for credentials is not able to provide
-credentials to tests requiring specific roles on accounts. This is because the
-config options do not give sufficient flexibility to describe the roles assigned
-to a user for running the tests. There are additional limitations with regard to
-network configuration when using this credential provider mechanism - see the
-`Networking`_ section below.
+Pre-Provisioned Credentials are also know as accounts.yaml or accounts file.
 
 Compute
 -------

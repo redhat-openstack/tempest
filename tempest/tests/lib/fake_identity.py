@@ -13,9 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
+from oslo_serialization import jsonutils as json
 
-import httplib2
+from tempest.tests.lib import fake_http
 
 FAKE_AUTH_URL = 'http://fake_uri.com/auth'
 
@@ -133,22 +133,86 @@ IDENTITY_V3_RESPONSE = {
     }
 }
 
+IDENTITY_V3_RESPONSE_DOMAIN_SCOPE = {
+    "token": {
+        "methods": [
+            "token",
+            "password"
+        ],
+        "expires_at": "2020-01-01T00:00:10.000123Z",
+        "domain": {
+            "id": "fake_domain_id",
+            "name": "domain_name"
+        },
+        "user": {
+            "domain": {
+                "id": "fake_domain_id",
+                "name": "domain_name"
+            },
+            "id": "fake_user_id",
+            "name": "username"
+        },
+        "issued_at": "2013-05-29T16:55:21.468960Z",
+        "catalog": CATALOG_V3
+    }
+}
+
+IDENTITY_V3_RESPONSE_NO_SCOPE = {
+    "token": {
+        "methods": [
+            "token",
+            "password"
+        ],
+        "expires_at": "2020-01-01T00:00:10.000123Z",
+        "user": {
+            "domain": {
+                "id": "fake_domain_id",
+                "name": "domain_name"
+            },
+            "id": "fake_user_id",
+            "name": "username"
+        },
+        "issued_at": "2013-05-29T16:55:21.468960Z",
+    }
+}
+
 ALT_IDENTITY_V3 = IDENTITY_V3_RESPONSE
 
 
 def _fake_v3_response(self, uri, method="GET", body=None, headers=None,
                       redirections=5, connection_type=None):
     fake_headers = {
+        "x-subject-token": TOKEN
+    }
+    return (fake_http.fake_http_response(fake_headers, status=201),
+            json.dumps(IDENTITY_V3_RESPONSE))
+
+
+def _fake_v3_response_domain_scope(self, uri, method="GET", body=None,
+                                   headers=None, redirections=5,
+                                   connection_type=None):
+    fake_headers = {
         "status": "201",
         "x-subject-token": TOKEN
     }
-    return (httplib2.Response(fake_headers),
-            json.dumps(IDENTITY_V3_RESPONSE))
+    return (fake_http.fake_http_response(fake_headers, status=201),
+            json.dumps(IDENTITY_V3_RESPONSE_DOMAIN_SCOPE))
+
+
+def _fake_v3_response_no_scope(self, uri, method="GET", body=None,
+                               headers=None, redirections=5,
+                               connection_type=None):
+    fake_headers = {
+        "status": "201",
+        "x-subject-token": TOKEN
+    }
+    return (fake_http.fake_http_response(fake_headers, status=201),
+            json.dumps(IDENTITY_V3_RESPONSE_NO_SCOPE))
 
 
 def _fake_v2_response(self, uri, method="GET", body=None, headers=None,
                       redirections=5, connection_type=None):
-    return (httplib2.Response({"status": "200"}),
+    return (fake_http.fake_http_response({}, status=200),
             json.dumps(IDENTITY_V2_RESPONSE))
 
 
@@ -161,4 +225,4 @@ def _fake_auth_failure_response():
             "code": "401"
         }
     }
-    return httplib2.Response({"status": "401"}), json.dumps(body)
+    return fake_http.fake_http_response({}, status=401), json.dumps(body)

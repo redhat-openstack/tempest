@@ -106,6 +106,7 @@ SERVICE_EXTENSION_KEY = {
     'object-store': 'discoverable_apis',
     'network': 'api_extensions',
     'volume': 'api_extensions',
+    'identity': 'api_extensions'
 }
 
 
@@ -158,7 +159,12 @@ def main():
         clients.auth_provider,
         clients.identity_region,
         object_store_discovery=conf.get_bool_value(swift_discover),
-        api_version=api_version)
+        api_version=api_version,
+        disable_ssl_certificate_validation=conf.get_defaulted(
+            'identity',
+            'disable_ssl_certificate_validation'
+        )
+    )
     if args.create and not args.use_test_accounts:
         create_tempest_users(clients.tenants, clients.roles, clients.users,
                              conf, services)
@@ -373,7 +379,7 @@ class ClientManager(object):
             endpoint_type='adminURL',
             **default_params)
 
-        self.images = images_client.ImagesClientV2(
+        self.images = images_client.ImagesClient(
             _auth,
             conf.get_defaulted('image', 'catalog_type'),
             self.identity_region,
@@ -449,7 +455,7 @@ class TempestConf(ConfigParser.SafeConfigParser):
         :returns: True if the value was written, False if not (because of
             priority)
         """
-        if not self.has_section(section):
+        if not self.has_section(section) and section.lower() != "default":
             self.add_section(section)
         if not priority and (section, key) in self.priority_sectionkeys:
             LOG.debug("Option '[%s] %s = %s' was defined by user, NOT"
@@ -761,16 +767,6 @@ def configure_discovered_services(conf, services):
             service = 'data_processing'
         conf.set('service_available', codename, str(service in services))
 
-    # set service extensions
-    for service, ext_key in SERVICE_EXTENSION_KEY.iteritems():
-        if service in services:
-            extensions = ','.join(services[service]['extensions'])
-            if service == 'object-store':
-                # tempest.conf is inconsistent and uses 'object-store' for the
-                # catalog name but 'object-storage-feature-enabled'
-                service = 'object-storage'
-            conf.set(service + '-feature-enabled', ext_key, extensions)
-
     # set supported API versions for services with more of them
     for service, versions in SERVICE_VERSIONS.iteritems():
         supported_versions = services[service]['versions']
@@ -779,6 +775,22 @@ def configure_discovered_services(conf, services):
             is_supported = any(version in item
                                for item in supported_versions)
             conf.set(section, 'api_' + version, str(is_supported))
+
+    # set service extensions
+    keystone_v3_support = conf.get('identity-feature-enabled', 'api_v3')
+    for service, ext_key in SERVICE_EXTENSION_KEY.iteritems():
+        if service in services:
+            extensions = ','.join(services[service]['extensions'])
+            if service == 'object-store':
+                # tempest.conf is inconsistent and uses 'object-store' for the
+                # catalog name but 'object-storage-feature-enabled'
+                service = 'object-storage'
+            if service == 'identity' and keystone_v3_support:
+                identity_v3_ext = api_discovery.get_identity_v3_extensions(
+                    conf.get("identity", "uri_v3"))
+                extensions = list(set(extensions.split(',') + identity_v3_ext))
+                extensions = ','.join(extensions)
+            conf.set(service + '-feature-enabled', ext_key, extensions)
 
 
 def _download_file(url, destination):

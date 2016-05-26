@@ -14,10 +14,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import httplib2
 import json
 import logging
 import re
+import requests
+import urllib3
 import urlparse
 
 LOG = logging.getLogger(__name__)
@@ -29,10 +30,11 @@ class ServiceError(Exception):
 
 
 class Service(object):
-    def __init__(self, name, service_url, token):
+    def __init__(self, name, service_url, token, disable_ssl_validation):
         self.name = name
         self.service_url = service_url
         self.headers = {'Accept': 'application/json', 'X-Auth-Token': token}
+        self.disable_ssl_validation = disable_ssl_validation
 
     def do_get(self, url, top_level=False, top_level_path=""):
         parts = list(urlparse.urlparse(url))
@@ -44,8 +46,12 @@ class Service(object):
         url = urlparse.urlunparse(parts)
 
         try:
-            h = httplib2.Http(disable_ssl_certificate_validation=True)
-            r, body = h.request(url, 'GET', headers=self.headers)
+            if self.disable_ssl_validation:
+                urllib3.disable_warnings()
+                http = urllib3.PoolManager(cert_reqs='CERT_NONE')
+            else:
+                http = urllib3.PoolManager()
+            r = http.request('GET', url, headers=self.headers)
         except Exception as e:
             LOG.error("Request on service '%s' with url '%s' failed" %
                       (self.name, url))
@@ -53,7 +59,7 @@ class Service(object):
         if r.status >= 400:
             raise ServiceError("Request on service '%s' with url '%s' failed"
                                " with code %d" % (self.name, url, r.status))
-        return body
+        return r.data
 
     def get_extensions(self):
         return []
@@ -132,8 +138,32 @@ def get_service_class(service_name):
     return service_dict.get(service_name, Service)
 
 
+def get_identity_v3_extensions(keystone_v3_url):
+    """Returns discovered identity v3 extensions
+
+    As keystone V3 uses a JSON Home to store the extensions,
+    this method is kept  here just for the sake of functionality, but it
+    implements a different discovery method.
+
+    :param keystone_v3_url: Keystone V3 auth url
+    :return: A list with the discovered extensions
+    """
+    try:
+        r = requests.get(keystone_v3_url,
+                         verify=False,
+                         headers={'Accept': 'application/json-home'})
+    except requests.exceptions.RequestException as re:
+        LOG.error("Request on service '%s' with url '%s' failed" %
+                  ('identity', keystone_v3_url))
+        raise re
+    ext_h = 'http://docs.openstack.org/api/openstack-identity/3/ext/'
+    res = [x for x in json.loads(r.content)['resources'].keys()]
+    ext = [ex for ex in res if 'ext' in ex]
+    return list(set([str(e).replace(ext_h, '').split('/')[0] for e in ext]))
+
+
 def discover(auth_provider, region, object_store_discovery=True,
-             api_version=2):
+             api_version=2, disable_ssl_certificate_validation=True):
     """Returns a dict with discovered apis.
 
     :param auth_provider: An AuthProvider to obtain service urls.
@@ -161,7 +191,8 @@ def discover(auth_provider, region, object_store_discovery=True,
             ep = entry['endpoints'][0]
         services[name]['url'] = ep[public_url]
         service_class = get_service_class(name)
-        service = service_class(name, services[name]['url'], token)
+        service = service_class(name, services[name]['url'], token,
+                                disable_ssl_certificate_validation)
         if name == 'object-store' and not object_store_discovery:
             services[name]['extensions'] = []
         else:

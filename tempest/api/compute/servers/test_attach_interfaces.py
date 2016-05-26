@@ -16,6 +16,7 @@
 import time
 
 from tempest.api.compute import base
+from tempest.common.utils import net_utils
 from tempest import config
 from tempest import exceptions
 from tempest.lib import exceptions as lib_exc
@@ -44,6 +45,8 @@ class AttachInterfacesTestJSON(base.BaseV2ComputeTest):
     def setup_clients(cls):
         super(AttachInterfacesTestJSON, cls).setup_clients()
         cls.client = cls.os.interfaces_client
+        cls.networks_client = cls.os.networks_client
+        cls.subnets_client = cls.os.subnets_client
         cls.ports_client = cls.os.ports_client
 
     def wait_for_interface_status(self, server, port_id, status):
@@ -120,6 +123,25 @@ class AttachInterfacesTestJSON(base.BaseV2ComputeTest):
         self._check_interface(iface, port_id=port_id)
         return iface
 
+    def _test_create_interface_by_fixed_ips(self, server, ifs):
+        network_id = ifs[0]['net_id']
+        subnet_id = ifs[0]['fixed_ips'][0]['subnet_id']
+        ip_list = net_utils.get_unused_ip_addresses(self.ports_client,
+                                                    self.subnets_client,
+                                                    network_id,
+                                                    subnet_id,
+                                                    1)
+
+        fixed_ips = [{'ip_address': ip_list[0]}]
+        iface = self.client.create_interface(
+            server['id'], net_id=network_id,
+            fixed_ips=fixed_ips)['interfaceAttachment']
+        self.addCleanup(self.ports_client.delete_port, iface['port_id'])
+        iface = self.wait_for_interface_status(
+            server['id'], iface['port_id'], 'ACTIVE')
+        self._check_interface(iface, fixed_ip=ip_list[0])
+        return iface
+
     def _test_show_interface(self, server, ifs):
         iface = ifs[0]
         _iface = self.client.show_interface(
@@ -180,6 +202,9 @@ class AttachInterfacesTestJSON(base.BaseV2ComputeTest):
         ifs.append(iface)
 
         iface = self._test_create_interface_by_port_id(server, ifs)
+        ifs.append(iface)
+
+        iface = self._test_create_interface_by_fixed_ips(server, ifs)
         ifs.append(iface)
 
         _ifs = (self.client.list_interfaces(server['id'])

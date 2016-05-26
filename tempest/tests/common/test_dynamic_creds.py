@@ -33,8 +33,8 @@ from tempest.services.identity.v2.json import users_client as \
 from tempest.services.network.json import routers_client
 from tempest.tests import base
 from tempest.tests import fake_config
-from tempest.tests import fake_http
-from tempest.tests import fake_identity
+from tempest.tests.lib import fake_http
+from tempest.tests.lib import fake_identity
 
 
 class TestDynamicCredentialProvider(base.TestCase):
@@ -46,10 +46,10 @@ class TestDynamicCredentialProvider(base.TestCase):
     def setUp(self):
         super(TestDynamicCredentialProvider, self).setUp()
         self.useFixture(fake_config.ConfigFixture())
-        self.stubs.Set(config, 'TempestConfigPrivate', fake_config.FakePrivate)
-        self.fake_http = fake_http.fake_httplib2(return_type=200)
-        self.stubs.Set(json_token_client.TokenClient, 'raw_request',
-                       fake_identity._fake_v2_response)
+        self.patchobject(config, 'TempestConfigPrivate',
+                         fake_config.FakePrivate)
+        self.patchobject(json_token_client.TokenClient, 'raw_request',
+                         fake_identity._fake_v2_response)
         cfg.CONF.set_default('operator_role', 'FakeRole',
                              group='object-storage')
         self._mock_list_ec2_credentials('fake_user_id', 'fake_tenant_id')
@@ -402,7 +402,7 @@ class TestDynamicCredentialProvider(base.TestCase):
             side_effect=side_effect)
         secgroup_list_mock.start()
 
-        return_values = (fake_http.fake_httplib({}, status=204), {})
+        return_values = fake_http.fake_http_response({}, status=204), ''
         remove_secgroup_mock = self.patch(
             'tempest.lib.services.network.security_groups_client.'
             'SecurityGroupsClient.delete', return_value=return_values)

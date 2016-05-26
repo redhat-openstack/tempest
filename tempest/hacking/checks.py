@@ -19,8 +19,7 @@ import pep8
 
 
 PYTHON_CLIENTS = ['cinder', 'glance', 'keystone', 'nova', 'swift', 'neutron',
-                  'trove', 'ironic', 'savanna', 'heat', 'ceilometer',
-                  'sahara']
+                  'trove', 'ironic', 'savanna', 'heat', 'sahara']
 
 PYTHON_CLIENT_RE = re.compile('import (%s)client' % '|'.join(PYTHON_CLIENTS))
 TEST_DEFINITION = re.compile(r'^\s*def test.*')
@@ -119,11 +118,6 @@ def no_hyphen_at_end_of_rand_name(logical_line, filename):
 
     T108
     """
-    if './tempest/api/network/' in filename:
-        # Network API tests are migrating from Tempest to Neutron repo now.
-        # So here should avoid network API tests checks.
-        return
-
     msg = "T108: hyphen should not be specified at the end of rand_name()"
     if RAND_NAME_HYPHEN_RE.match(logical_line):
         return 0, msg
@@ -146,7 +140,7 @@ def no_testtools_skip_decorator(logical_line):
     """
     if TESTTOOLS_SKIP_DECORATOR.match(logical_line):
         yield (0, "T109: Cannot use testtools.skip decorator; instead use "
-               "decorators.skip_because from tempest-lib")
+               "decorators.skip_because from tempest.lib")
 
 
 def _common_service_clients_check(logical_line, physical_line, filename,
@@ -246,6 +240,22 @@ def dont_import_local_tempest_into_lib(logical_line, filename):
     yield (0, msg)
 
 
+def use_rand_uuid_instead_of_uuid4(logical_line, filename):
+    """Check that tests use data_utils.rand_uuid() instead of uuid.uuid4()
+
+    T113
+    """
+    if 'tempest/lib/' in filename:
+        return
+
+    if 'uuid.uuid4()' not in logical_line:
+        return
+
+    msg = ("T113: Tests should use data_utils.rand_uuid()/rand_uuid_hex() "
+           "instead of uuid.uuid4()/uuid.uuid4().hex")
+    yield (0, msg)
+
+
 def factory(register):
     register(import_no_clients_in_api_and_scenario_tests)
     register(scenario_tests_need_service_tags)
@@ -258,3 +268,4 @@ def factory(register):
     register(get_resources_on_service_clients)
     register(delete_resources_on_service_clients)
     register(dont_import_local_tempest_into_lib)
+    register(use_rand_uuid_instead_of_uuid4)

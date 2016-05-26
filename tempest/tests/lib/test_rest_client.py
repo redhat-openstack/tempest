@@ -15,14 +15,14 @@
 import copy
 import json
 
-import httplib2
 import jsonschema
 from oslotest import mockpatch
 import six
 
+from tempest.lib.common import http
 from tempest.lib.common import rest_client
 from tempest.lib import exceptions
-from tempest.tests.lib import base
+from tempest.tests import base
 from tempest.tests.lib import fake_auth_provider
 from tempest.tests.lib import fake_http
 import tempest.tests.utils as utils
@@ -37,7 +37,7 @@ class BaseRestClientTestClass(base.TestCase):
         self.fake_auth_provider = fake_auth_provider.FakeAuthProvider()
         self.rest_client = rest_client.RestClient(
             self.fake_auth_provider, None, None)
-        self.stubs.Set(httplib2.Http, 'request', self.fake_http.request)
+        self.patchobject(http.ClosingHttp, 'request', self.fake_http.request)
         self.useFixture(mockpatch.PatchObject(self.rest_client,
                                               '_log_request'))
 
@@ -292,7 +292,9 @@ class TestRestClientErrorCheckerJSON(base.TestCase):
         if absolute_limit is False:
             resp_dict.update({'retry-after': 120})
             resp_body.update({'overLimit': {'message': 'fake_message'}})
-        resp = httplib2.Response(resp_dict)
+        resp = fake_http.fake_http_response(headers=resp_dict,
+                                            status=int(r_code),
+                                            body=json.dumps(resp_body))
         data = {
             "method": "fake_method",
             "url": "fake_url",
@@ -543,6 +545,65 @@ class TestRestClientUtils(BaseRestClientTestClass):
 
         self.fake_auth_provider.get_token = get_token
         self.assertIsNotNone(str(self.rest_client))
+
+
+class TestRateLimiting(BaseRestClientTestClass):
+
+    def setUp(self):
+        self.fake_http = fake_http.fake_httplib2()
+        super(TestRateLimiting, self).setUp()
+
+    def test__get_retry_after_delay_with_integer(self):
+        resp = {'retry-after': '123'}
+        self.assertEqual(123, self.rest_client._get_retry_after_delay(resp))
+
+    def test__get_retry_after_delay_with_http_date(self):
+        resp = {
+            'date': 'Mon, 4 Apr 2016 21:56:23 GMT',
+            'retry-after': 'Mon, 4 Apr 2016 21:58:26 GMT',
+        }
+        self.assertEqual(123, self.rest_client._get_retry_after_delay(resp))
+
+    def test__get_retry_after_delay_of_zero_with_integer(self):
+        resp = {'retry-after': '0'}
+        self.assertEqual(1, self.rest_client._get_retry_after_delay(resp))
+
+    def test__get_retry_after_delay_of_zero_with_http_date(self):
+        resp = {
+            'date': 'Mon, 4 Apr 2016 21:56:23 GMT',
+            'retry-after': 'Mon, 4 Apr 2016 21:56:23 GMT',
+        }
+        self.assertEqual(1, self.rest_client._get_retry_after_delay(resp))
+
+    def test__get_retry_after_delay_with_missing_date_header(self):
+        resp = {
+            'retry-after': 'Mon, 4 Apr 2016 21:58:26 GMT',
+        }
+        self.assertRaises(ValueError, self.rest_client._get_retry_after_delay,
+                          resp)
+
+    def test__get_retry_after_delay_with_invalid_http_date(self):
+        resp = {
+            'retry-after': 'Mon, 4 AAA 2016 21:58:26 GMT',
+            'date': 'Mon, 4 Apr 2016 21:56:23 GMT',
+        }
+        self.assertRaises(ValueError, self.rest_client._get_retry_after_delay,
+                          resp)
+
+    def test__get_retry_after_delay_with_missing_retry_after_header(self):
+        self.assertRaises(ValueError, self.rest_client._get_retry_after_delay,
+                          {})
+
+    def test_is_absolute_limit_gives_false_with_retry_after(self):
+        resp = {'retry-after': 123}
+
+        # is_absolute_limit() requires the overLimit body to be unwrapped
+        resp_body = self.rest_client._parse_resp("""{
+            "overLimit": {
+                "message": ""
+            }
+        }""")
+        self.assertFalse(self.rest_client.is_absolute_limit(resp, resp_body))
 
 
 class TestProperties(BaseRestClientTestClass):

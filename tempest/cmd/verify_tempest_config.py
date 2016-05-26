@@ -15,8 +15,8 @@
 #    under the License.
 
 import argparse
-import httplib2
 import os
+import re
 import sys
 import traceback
 
@@ -29,6 +29,7 @@ from six.moves.urllib import parse as urlparse
 from tempest import clients
 from tempest.common import credentials_factory as credentials
 from tempest import config
+import tempest.lib.common.http
 
 
 CONF = config.CONF
@@ -77,9 +78,16 @@ def verify_glance_api_versions(os, update):
                             not CONF.image_feature_enabled.api_v2, update)
 
 
+def _remove_version_project(url_path):
+    # The regex matches strings like /v2.0, /v3/, /v2.1/project-id/
+    return re.sub(r'/v\d+(\.\d+)?(/[^/]+)?', '', url_path)
+
+
 def _get_unversioned_endpoint(base_url):
     endpoint_parts = urlparse.urlparse(base_url)
-    endpoint = endpoint_parts.scheme + '://' + endpoint_parts.netloc
+    new_path = _remove_version_project(endpoint_parts.path)
+    endpoint_parts = endpoint_parts._replace(path=new_path)
+    endpoint = urlparse.urlunparse(endpoint_parts)
     return endpoint
 
 
@@ -89,13 +97,16 @@ def _get_api_versions(os, service):
         'keystone': os.identity_client,
         'cinder': os.volumes_client,
     }
-    client_dict[service].skip_path()
+    if service != 'keystone':
+        # Since keystone may be listening on a path, do not remove the path.
+        client_dict[service].skip_path()
     endpoint = _get_unversioned_endpoint(client_dict[service].base_url)
-    dscv = CONF.identity.disable_ssl_certificate_validation
-    ca_certs = CONF.identity.ca_certificates_file
-    raw_http = httplib2.Http(disable_ssl_certificate_validation=dscv,
-                             ca_certs=ca_certs)
-    __, body = raw_http.request(endpoint, 'GET')
+
+    http = tempest.lib.common.http.ClosingHttp(
+        CONF.identity.disable_ssl_certificate_validation,
+        CONF.identity.ca_certificates_file)
+
+    __, body = http.request(endpoint, 'GET')
     client_dict[service].reset_path()
     try:
         body = json.loads(body)
@@ -271,8 +282,6 @@ def check_service_availability(os, update):
         'object_storage': 'swift',
         'compute': 'nova',
         'orchestration': 'heat',
-        'metering': 'ceilometer',
-        'telemetry': 'ceilometer',
         'data_processing': 'sahara',
         'baremetal': 'ironic',
         'identity': 'keystone',
@@ -364,7 +373,16 @@ def main(opts=None):
         CONF_PARSER = moves.configparser.SafeConfigParser()
         CONF_PARSER.optionxform = str
         CONF_PARSER.readfp(conf_file)
-    icreds = credentials.get_credentials_provider('verify_tempest_config')
+
+    # Indicate not to create network resources as part of getting credentials
+    net_resources = {
+        'network': False,
+        'router': False,
+        'subnet': False,
+        'dhcp': False
+    }
+    icreds = credentials.get_credentials_provider(
+        'verify_tempest_config', network_resources=net_resources)
     try:
         os = clients.Manager(icreds.get_primary_creds())
         services = check_service_availability(os, update)

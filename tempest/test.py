@@ -19,7 +19,6 @@ import os
 import re
 import sys
 import time
-import uuid
 
 import fixtures
 from oslo_log import log as logging
@@ -38,6 +37,7 @@ import tempest.common.generator.valid_generator as valid
 import tempest.common.validation_resources as vresources
 from tempest import config
 from tempest import exceptions
+from tempest.lib.common.utils import data_utils
 from tempest.lib import decorators
 
 LOG = logging.getLogger(__name__)
@@ -78,7 +78,6 @@ def get_service_list():
         'identity': True,
         'object_storage': CONF.service_available.swift,
         'dashboard': CONF.service_available.horizon,
-        'telemetry': CONF.service_available.ceilometer,
         'data_processing': CONF.service_available.sahara,
         'database': CONF.service_available.trove
     }
@@ -94,7 +93,7 @@ def services(*args):
     def decorator(f):
         services = ['compute', 'image', 'baremetal', 'volume', 'orchestration',
                     'network', 'identity', 'object_storage', 'dashboard',
-                    'telemetry', 'data_processing', 'database']
+                    'data_processing', 'database']
         for service in args:
             if service not in services:
                 raise exceptions.InvalidServiceTag('%s is not a valid '
@@ -350,11 +349,14 @@ class BaseTestCase(testtools.testcase.WithAttributes,
 
     @classmethod
     def setup_credentials(cls):
-        """Allocate credentials and the client managers from them.
+        """Allocate credentials and create the client managers from them.
 
-        A test class that requires network resources must override
-        setup_credentials and defined the required resources before super
-        is invoked.
+        For every element of credentials param function creates tenant/user,
+        Then it creates client manager for that credential.
+
+        Network related tests must override this function with
+        set_network_resources() method, otherwise it will create
+        network resources(network resources are created in a later step).
         """
         for credentials_type in cls.credentials:
             # This may raise an exception in case credentials are not available
@@ -714,10 +716,10 @@ class NegativeAutoTest(BaseTestCase):
                 resource = resource['name']
             LOG.debug("Add resource to test %s" % resource)
             scn_name = "inv_res_%s" % (resource)
-            scenario_list.append((scn_name, {"resource": (resource,
-                                                          str(uuid.uuid4())),
-                                             "expected_result": expected_result
-                                             }))
+            scenario_list.append((scn_name, {
+                "resource": (resource, data_utils.rand_uuid()),
+                "expected_result": expected_result
+            }))
         if schema is not None:
             for scenario in generator.generate_scenarios(schema):
                 scenario_list.append((scenario['_negtest_name'],
