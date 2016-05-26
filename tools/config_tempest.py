@@ -379,7 +379,7 @@ class ClientManager(object):
             endpoint_type='adminURL',
             **default_params)
 
-        self.images = images_client.ImagesClientV2(
+        self.images = images_client.ImagesClient(
             _auth,
             conf.get_defaulted('image', 'catalog_type'),
             self.identity_region,
