@@ -16,7 +16,6 @@
 import copy
 import errno
 import os
-import time
 
 from oslo_log import log as logging
 from oslo_serialization import jsonutils as json
@@ -24,9 +23,7 @@ import six
 from six.moves.urllib import parse as urllib
 
 from tempest.common import glance_http
-from tempest import exceptions
 from tempest.lib.common import rest_client
-from tempest.lib.common.utils import misc as misc_utils
 from tempest.lib import exceptions as lib_exc
 
 LOG = logging.getLogger(__name__)
@@ -198,7 +195,8 @@ class ImagesClient(rest_client.RestClient):
         body = json.loads(body)
         return rest_client.ResponseBody(resp, body)
 
-    def get_image_meta(self, image_id):
+    def check_image(self, image_id):
+        """Check image metadata."""
         url = 'v1/images/%s' % image_id
         resp, __ = self.head(url)
         self.expected_success(200, resp.status)
@@ -206,6 +204,7 @@ class ImagesClient(rest_client.RestClient):
         return rest_client.ResponseBody(resp, body)
 
     def show_image(self, image_id):
+        """Get image details plus the image itself."""
         url = 'v1/images/%s' % image_id
         resp, body = self.get(url)
         self.expected_success(200, resp.status)
@@ -213,7 +212,7 @@ class ImagesClient(rest_client.RestClient):
 
     def is_resource_deleted(self, id):
         try:
-            if self.get_image_meta(id)['status'] == 'deleted':
+            if self.check_image(id)['status'] == 'deleted':
                 return True
         except lib_exc.NotFound:
             return True
@@ -256,40 +255,3 @@ class ImagesClient(rest_client.RestClient):
         resp, __ = self.delete(url)
         self.expected_success(204, resp.status)
         return rest_client.ResponseBody(resp)
-
-    # NOTE(afazekas): just for the wait function
-    def _get_image_status(self, image_id):
-        meta = self.get_image_meta(image_id)
-        status = meta['status']
-        return status
-
-    # NOTE(afazkas): Wait reinvented again. It is not in the correct layer
-    def wait_for_image_status(self, image_id, status):
-        """Waits for a Image to reach a given status."""
-        start_time = time.time()
-        old_value = value = self._get_image_status(image_id)
-        while True:
-            dtime = time.time() - start_time
-            time.sleep(self.build_interval)
-            if value != old_value:
-                LOG.info('Value transition from "%s" to "%s"'
-                         'in %d second(s).', old_value,
-                         value, dtime)
-            if value == status:
-                return value
-
-            if value == 'killed':
-                raise exceptions.ImageKilledException(image_id=image_id,
-                                                      status=status)
-            if dtime > self.build_timeout:
-                message = ('Time Limit Exceeded! (%ds)'
-                           'while waiting for %s, '
-                           'but we got %s.' %
-                           (self.build_timeout, status, value))
-                caller = misc_utils.find_test_caller()
-                if caller:
-                    message = '(%s) %s' % (caller, message)
-                raise exceptions.TimeoutException(message)
-            time.sleep(self.build_interval)
-            old_value = value
-            value = self._get_image_status(image_id)

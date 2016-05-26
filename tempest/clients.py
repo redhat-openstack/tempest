@@ -131,7 +131,8 @@ from tempest.services.identity.v3.json.trusts_client import TrustsClient
 from tempest.services.identity.v3.json.users_clients import \
     UsersClient as UsersV3Client
 from tempest.services.image.v1.json.images_client import ImagesClient
-from tempest.services.image.v2.json.images_client import ImagesClientV2
+from tempest.services.image.v2.json.images_client import \
+    ImagesClient as ImagesV2Client
 from tempest.services.network.json.routers_client import RoutersClient
 from tempest.services.object_storage.account_client import AccountClient
 from tempest.services.object_storage.container_client import ContainerClient
@@ -197,14 +198,15 @@ class Manager(manager.Manager):
     }
     default_params_with_timeout_values.update(default_params)
 
-    def __init__(self, credentials, service=None):
+    def __init__(self, credentials, service=None, scope='project'):
         """Initialization of Manager class.
 
         Setup all services clients and make them available for tests cases.
         :param credentials: type Credentials or TestResources
         :param service: Service name
+        :param scope: default scope for tokens produced by the auth provider
         """
-        super(Manager, self).__init__(credentials=credentials)
+        super(Manager, self).__init__(credentials=credentials, scope=scope)
         self._set_compute_clients()
         self._set_database_clients()
         self._set_identity_clients()
@@ -330,7 +332,7 @@ class Manager(manager.Manager):
                 build_interval=CONF.image.build_interval,
                 build_timeout=CONF.image.build_timeout,
                 **self.default_params)
-            self.image_client_v2 = ImagesClientV2(
+            self.image_client_v2 = ImagesV2Client(
                 self.auth_provider,
                 CONF.image.catalog_type,
                 CONF.image.region or CONF.identity.region,

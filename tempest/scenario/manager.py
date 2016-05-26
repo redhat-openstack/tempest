@@ -459,13 +459,13 @@ class ScenarioTest(tempest.test.BaseTestCase):
         LOG.debug("Creating a snapshot image for server: %s", server['name'])
         image = _images_client.create_image(server['id'], name=name)
         image_id = image.response['location'].split('images/')[1]
-        _image_client.wait_for_image_status(image_id, 'active')
+        waiters.wait_for_image_status(_image_client, image_id, 'active')
         self.addCleanup_with_wait(
             waiter_callable=_image_client.wait_for_resource_deletion,
             thing_id=image_id, thing_id_param='id',
             cleanup_callable=self.delete_wrapper,
             cleanup_args=[_image_client.delete_image, image_id])
-        snapshot_image = _image_client.get_image_meta(image_id)
+        snapshot_image = _image_client.check_image(image_id)
 
         bdm = snapshot_image.get('properties', {}).get('block_device_mapping')
         if bdm:
