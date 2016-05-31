@@ -13,9 +13,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest_lib.common.utils import data_utils
-
 from tempest.api.volume import base
+from tempest.common.utils import data_utils
+from tempest.common import waiters
 from tempest import config
 from tempest import test
 import testtools
@@ -37,22 +37,21 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
 
         # Create a test shared instance
         srv_name = data_utils.rand_name(cls.__name__ + '-Instance')
-        cls.server = cls.create_server(srv_name)
-        cls.servers_client.wait_for_server_status(cls.server['id'], 'ACTIVE')
+        cls.server = cls.create_server(
+            name=srv_name,
+            wait_until='ACTIVE')
 
         # Create a test shared volume for attach/detach tests
         cls.volume = cls.create_volume()
-        cls.client.wait_for_volume_status(cls.volume['id'], 'available')
-
-    def _delete_image_with_wait(self, image_id):
-        self.image_client.delete_image(image_id)
-        self.image_client.wait_for_resource_deletion(image_id)
+        waiters.wait_for_volume_status(cls.client,
+                                       cls.volume['id'], 'available')
 
     @classmethod
     def resource_cleanup(cls):
         # Delete the test instance
         cls.servers_client.delete_server(cls.server['id'])
-        cls.servers_client.wait_for_server_termination(cls.server['id'])
+        waiters.wait_for_server_termination(cls.servers_client,
+                                            cls.server['id'])
 
         super(VolumesV2ActionsTest, cls).resource_cleanup()
 
@@ -64,11 +63,13 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
         # Volume is attached and detached successfully from an instance
         mountpoint = '/dev/vdc'
         self.client.attach_volume(self.volume['id'],
-                                  self.server['id'],
-                                  mountpoint)
-        self.client.wait_for_volume_status(self.volume['id'], 'in-use')
+                                  instance_uuid=self.server['id'],
+                                  mountpoint=mountpoint)
+        waiters.wait_for_volume_status(self.client,
+                                       self.volume['id'], 'in-use')
         self.client.detach_volume(self.volume['id'])
-        self.client.wait_for_volume_status(self.volume['id'], 'available')
+        waiters.wait_for_volume_status(self.client,
+                                       self.volume['id'], 'available')
 
     @test.idempotent_id('63e21b4c-0a0c-41f6-bfc3-7c2816815599')
     @testtools.skipUnless(CONF.volume_feature_enabled.bootable,
@@ -76,8 +77,10 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
     def test_volume_bootable(self):
         # Verify that a volume bootable flag is retrieved
         for bool_bootable in [True, False]:
-            self.client.set_bootable_volume(self.volume['id'], bool_bootable)
-            fetched_volume = self.client.show_volume(self.volume['id'])
+            self.client.set_bootable_volume(self.volume['id'],
+                                            bootable=bool_bootable)
+            fetched_volume = self.client.show_volume(
+                self.volume['id'])['volume']
             # Get Volume information
             bool_flag = self._is_true(fetched_volume['bootable'])
             self.assertEqual(bool_bootable, bool_flag)
@@ -89,16 +92,17 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
         # Verify that a volume's attachment information is retrieved
         mountpoint = '/dev/vdc'
         self.client.attach_volume(self.volume['id'],
-                                  self.server['id'],
-                                  mountpoint)
-        self.client.wait_for_volume_status(self.volume['id'], 'in-use')
+                                  instance_uuid=self.server['id'],
+                                  mountpoint=mountpoint)
+        waiters.wait_for_volume_status(self.client,
+                                       self.volume['id'], 'in-use')
         # NOTE(gfidente): added in reverse order because functions will be
         # called in reverse order to the order they are added (LIFO)
-        self.addCleanup(self.client.wait_for_volume_status,
+        self.addCleanup(waiters.wait_for_volume_status, self.client,
                         self.volume['id'],
                         'available')
         self.addCleanup(self.client.detach_volume, self.volume['id'])
-        volume = self.client.show_volume(self.volume['id'])
+        volume = self.client.show_volume(self.volume['id'])['volume']
         self.assertIn('attachments', volume)
         attachment = self.client.get_attachment_from_volume(volume)
         self.assertEqual(mountpoint, attachment['device'])
@@ -114,25 +118,26 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
         # there is no way to delete it from Cinder, so we delete it from Glance
         # using the Glance image_client and from Cinder via tearDownClass.
         image_name = data_utils.rand_name('Image')
-        body = self.client.upload_volume(self.volume['id'],
-                                         image_name,
-                                         CONF.volume.disk_format)
+        body = self.client.upload_volume(
+            self.volume['id'], image_name=image_name,
+            disk_format=CONF.volume.disk_format)['os-volume_upload_image']
         image_id = body["image_id"]
         self.addCleanup(self.image_client.delete_image, image_id)
         self.image_client.wait_for_image_status(image_id, 'active')
-        self.client.wait_for_volume_status(self.volume['id'], 'available')
+        waiters.wait_for_volume_status(self.client,
+                                       self.volume['id'], 'available')
 
     @test.idempotent_id('92c4ef64-51b2-40c0-9f7e-4749fbaaba33')
     def test_reserve_unreserve_volume(self):
         # Mark volume as reserved.
         body = self.client.reserve_volume(self.volume['id'])
         # To get the volume info
-        body = self.client.show_volume(self.volume['id'])
+        body = self.client.show_volume(self.volume['id'])['volume']
         self.assertIn('attaching', body['status'])
         # Unmark volume as reserved.
         body = self.client.unreserve_volume(self.volume['id'])
         # To get the volume info
-        body = self.client.show_volume(self.volume['id'])
+        body = self.client.show_volume(self.volume['id'])['volume']
         self.assertIn('available', body['status'])
 
     def _is_true(self, val):
@@ -143,18 +148,19 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
         # Update volume readonly true
         readonly = True
         self.client.update_volume_readonly(self.volume['id'],
-                                           readonly)
+                                           readonly=readonly)
         # Get Volume information
-        fetched_volume = self.client.show_volume(self.volume['id'])
+        fetched_volume = self.client.show_volume(self.volume['id'])['volume']
         bool_flag = self._is_true(fetched_volume['metadata']['readonly'])
         self.assertEqual(True, bool_flag)
 
         # Update volume readonly false
         readonly = False
-        self.client.update_volume_readonly(self.volume['id'], readonly)
+        self.client.update_volume_readonly(self.volume['id'],
+                                           readonly=readonly)
 
         # Get Volume information
-        fetched_volume = self.client.show_volume(self.volume['id'])
+        fetched_volume = self.client.show_volume(self.volume['id'])['volume']
         bool_flag = self._is_true(fetched_volume['metadata']['readonly'])
         self.assertEqual(False, bool_flag)
 

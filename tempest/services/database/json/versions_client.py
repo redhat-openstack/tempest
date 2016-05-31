@@ -13,26 +13,17 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from oslo_serialization import jsonutils as json
 from six.moves.urllib import parse as urllib
 
-from tempest.common import service_client
+from tempest.lib.common import rest_client
 
 
-class DatabaseVersionsClientJSON(service_client.ServiceClient):
+class DatabaseVersionsClient(rest_client.RestClient):
 
-    def __init__(self, auth_provider, service, region,
-                 endpoint_type=None, build_interval=None, build_timeout=None,
-                 disable_ssl_certificate_validation=None, ca_certs=None,
-                 trace_requests=None):
-        dscv = disable_ssl_certificate_validation
-        super(DatabaseVersionsClientJSON, self).__init__(
-            auth_provider, service, region,
-            endpoint_type=endpoint_type,
-            build_interval=build_interval,
-            build_timeout=build_timeout,
-            disable_ssl_certificate_validation=dscv,
-            ca_certs=ca_certs,
-            trace_requests=trace_requests)
+    def __init__(self, auth_provider, service, region, **kwargs):
+        super(DatabaseVersionsClient, self).__init__(
+            auth_provider, service, region, **kwargs)
         self.skip_path()
 
     def list_db_versions(self, params=None):
@@ -43,4 +34,5 @@ class DatabaseVersionsClientJSON(service_client.ServiceClient):
 
         resp, body = self.get(url)
         self.expected_success(200, resp.status)
-        return service_client.ResponseBodyList(resp, self._parse_resp(body))
+        body = json.loads(body)
+        return rest_client.ResponseBody(resp, body)

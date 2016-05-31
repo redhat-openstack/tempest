@@ -10,6 +10,9 @@ Contents:
    overview
    HACKING
    REVIEWING
+   plugin
+   library
+   microversion_testing
 
 ------------
 Field Guides
@@ -23,10 +26,8 @@ where your test contributions should go.
 
    field_guide/index
    field_guide/api
-   field_guide/cli
    field_guide/scenario
    field_guide/stress
-   field_guide/thirdparty
    field_guide/unit_tests
 
 ---------------------------
@@ -37,6 +38,7 @@ Tempest Configuration Guide
    :maxdepth: 2
 
    configuration
+   sampleconf
 
 ---------------------
 Command Documentation
@@ -45,6 +47,7 @@ Command Documentation
 .. toctree::
    :maxdepth: 1
 
+   account_generator
    cleanup
    javelin
 

@@ -17,6 +17,7 @@ import testtools
 
 from tempest.api.compute import base
 from tempest.common.utils.linux import remote_client
+from tempest.common import waiters
 from tempest import config
 from tempest import test
 
@@ -43,13 +44,16 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
 
     @classmethod
     def resource_setup(cls):
+        cls.set_validation_resources()
+
         super(AttachVolumeTestJSON, cls).resource_setup()
         cls.device = CONF.compute.volume_device_name
 
     def _detach(self, server_id, volume_id):
         if self.attachment:
             self.servers_client.detach_volume(server_id, volume_id)
-            self.volumes_client.wait_for_volume_status(volume_id, 'available')
+            waiters.wait_for_volume_status(self.volumes_client,
+                                           volume_id, 'available')
 
     def _delete_volume(self):
         # Delete the created Volumes
@@ -60,27 +64,30 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
 
     def _create_and_attach(self):
         # Start a server and wait for it to become ready
-        admin_pass = self.image_ssh_password
-        self.server = self.create_test_server(wait_until='ACTIVE',
-                                              adminPass=admin_pass)
+        self.admin_pass = self.image_ssh_password
+        self.server = self.create_test_server(
+            validatable=True,
+            wait_until='ACTIVE',
+            adminPass=self.admin_pass)
 
         # Record addresses so that we can ssh later
-        self.server['addresses'] = (
-            self.servers_client.list_addresses(self.server['id']))
+        self.server['addresses'] = self.servers_client.list_addresses(
+            self.server['id'])['addresses']
 
         # Create a volume and wait for it to become ready
         self.volume = self.volumes_client.create_volume(
-            CONF.volume.volume_size, display_name='test')
+            size=CONF.volume.volume_size, display_name='test')['volume']
         self.addCleanup(self._delete_volume)
-        self.volumes_client.wait_for_volume_status(self.volume['id'],
-                                                   'available')
+        waiters.wait_for_volume_status(self.volumes_client,
+                                       self.volume['id'], 'available')
 
         # Attach the volume to the server
         self.attachment = self.servers_client.attach_volume(
             self.server['id'],
-            self.volume['id'],
-            device='/dev/%s' % self.device)
-        self.volumes_client.wait_for_volume_status(self.volume['id'], 'in-use')
+            volumeId=self.volume['id'],
+            device='/dev/%s' % self.device)['volumeAttachment']
+        waiters.wait_for_volume_status(self.volumes_client,
+                                       self.volume['id'], 'in-use')
 
         self.addCleanup(self._detach, self.server['id'], self.volume['id'])
 
@@ -92,31 +99,39 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
         # the volume remains attached.
         self._create_and_attach()
 
-        self.servers_client.stop(self.server['id'])
-        self.servers_client.wait_for_server_status(self.server['id'],
-                                                   'SHUTOFF')
+        self.servers_client.stop_server(self.server['id'])
+        waiters.wait_for_server_status(self.servers_client, self.server['id'],
+                                       'SHUTOFF')
 
-        self.servers_client.start(self.server['id'])
-        self.servers_client.wait_for_server_status(self.server['id'], 'ACTIVE')
+        self.servers_client.start_server(self.server['id'])
+        waiters.wait_for_server_status(self.servers_client, self.server['id'],
+                                       'ACTIVE')
 
-        linux_client = remote_client.RemoteClient(self.server,
-                                                  self.image_ssh_user,
-                                                  self.server['adminPass'])
+        linux_client = remote_client.RemoteClient(
+            self.get_server_ip(self.server),
+            self.image_ssh_user,
+            self.admin_pass,
+            self.validation_resources['keypair']['private_key'])
+
         partitions = linux_client.get_partitions()
         self.assertIn(self.device, partitions)
 
         self._detach(self.server['id'], self.volume['id'])
         self.attachment = None
-        self.servers_client.stop(self.server['id'])
-        self.servers_client.wait_for_server_status(self.server['id'],
-                                                   'SHUTOFF')
+        self.servers_client.stop_server(self.server['id'])
+        waiters.wait_for_server_status(self.servers_client, self.server['id'],
+                                       'SHUTOFF')
 
-        self.servers_client.start(self.server['id'])
-        self.servers_client.wait_for_server_status(self.server['id'], 'ACTIVE')
+        self.servers_client.start_server(self.server['id'])
+        waiters.wait_for_server_status(self.servers_client, self.server['id'],
+                                       'ACTIVE')
 
-        linux_client = remote_client.RemoteClient(self.server,
-                                                  self.image_ssh_user,
-                                                  self.server['adminPass'])
+        linux_client = remote_client.RemoteClient(
+            self.get_server_ip(self.server),
+            self.image_ssh_user,
+            self.admin_pass,
+            self.validation_resources['keypair']['private_key'])
+
         partitions = linux_client.get_partitions()
         self.assertNotIn(self.device, partitions)
 
@@ -126,14 +141,14 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
         self._create_and_attach()
         # List Volume attachment of the server
         body = self.servers_client.list_volume_attachments(
-            self.server['id'])
+            self.server['id'])['volumeAttachments']
         self.assertEqual(1, len(body))
         self.assertIn(self.attachment, body)
 
         # Get Volume attachment of the server
-        body = self.servers_client.get_volume_attachment(
+        body = self.servers_client.show_volume_attachment(
             self.server['id'],
-            self.attachment['id'])
+            self.attachment['id'])['volumeAttachment']
         self.assertEqual(self.server['id'], body['serverId'])
         self.assertEqual(self.volume['id'], body['volumeId'])
         self.assertEqual(self.attachment['id'], body['id'])

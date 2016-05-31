@@ -13,15 +13,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
 from xml.etree import ElementTree as etree
 
+from oslo_serialization import jsonutils as json
 from six.moves.urllib import parse as urllib
 
-from tempest.common import service_client
+from tempest.lib.common import rest_client
 
 
-class ContainerClient(service_client.ServiceClient):
+class ContainerClient(rest_client.RestClient):
 
     def create_container(
             self, container_name,
@@ -29,9 +29,9 @@ class ContainerClient(service_client.ServiceClient):
             remove_metadata=None,
             metadata_prefix='X-Container-Meta-',
             remove_metadata_prefix='X-Remove-Container-Meta-'):
-        """
-           Creates a container, with optional metadata passed in as a
-           dictionary
+        """Creates a container
+
+        with optional metadata passed in as a dictionary
         """
         url = str(container_name)
         headers = {}
@@ -90,19 +90,17 @@ class ContainerClient(service_client.ServiceClient):
         return resp, body
 
     def list_container_metadata(self, container_name):
-        """
-        Retrieves container metadata headers
-        """
+        """Retrieves container metadata headers"""
         url = str(container_name)
         resp, body = self.head(url)
         self.expected_success(204, resp.status)
         return resp, body
 
     def list_all_container_objects(self, container, params=None):
-        """
-            Returns complete list of all objects in the container, even if
-            item count is beyond 10,000 item listing limit.
-            Does not require any parameters aside from container name.
+        """Returns complete list of all objects in the container
+
+        even if item count is beyond 10,000 item listing limit.
+        Does not require any parameters aside from container name.
         """
         # TODO(dwalleck): Rewrite using json format to avoid newlines at end of
         # obj names. Set limit to API limit - 1 (max returned items = 9999)
@@ -119,28 +117,9 @@ class ContainerClient(service_client.ServiceClient):
             params={'limit': limit, 'format': 'json'})
         self.expected_success(200, resp.status)
         return objlist
-        """tmp = []
-        for obj in objlist:
-            tmp.append(obj['name'])
-        objlist = tmp
-
-        if len(objlist) >= limit:
-
-            # Increment marker
-            marker = objlist[len(objlist) - 1]
-
-            # Get the next chunk of the list
-            objlist.extend(_list_all_container_objects(container,
-                                                      params={'marker': marker,
-                                                              'limit': limit}))
-            return objlist
-        else:
-            # Return final, complete list
-            return objlist"""
 
     def list_container_contents(self, container, params=None):
-        """
-           List the objects in a container, given the container name
+        """List the objects in a container, given the container name
 
            Returns the container object listing as a plain text list, or as
            xml or json if that option is specified via the 'format' argument.

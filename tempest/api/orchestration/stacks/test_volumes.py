@@ -10,18 +10,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import logging
-
-from tempest_lib.common.utils import data_utils
-from tempest_lib import exceptions as lib_exc
-
 from tempest.api.orchestration import base
+from tempest.common.utils import data_utils
 from tempest import config
+from tempest.lib import exceptions as lib_exc
 from tempest import test
 
 
 CONF = config.CONF
-LOG = logging.getLogger(__name__)
 
 
 class CinderResourcesTest(base.BaseOrchestrationTest):
@@ -34,20 +30,28 @@ class CinderResourcesTest(base.BaseOrchestrationTest):
 
     def _cinder_verify(self, volume_id, template):
         self.assertIsNotNone(volume_id)
-        volume = self.volumes_client.show_volume(volume_id)
+        volume = self.volumes_client.show_volume(volume_id)['volume']
         self.assertEqual('available', volume.get('status'))
+        self.assertEqual(CONF.volume.volume_size, volume.get('size'))
+
+        # Some volume properties have been renamed with Cinder v2
+        if CONF.volume_feature_enabled.api_v2:
+            description_field = 'description'
+            name_field = 'name'
+        else:
+            description_field = 'display_description'
+            name_field = 'display_name'
+
         self.assertEqual(template['resources']['volume']['properties'][
-            'size'], volume.get('size'))
+            'description'], volume.get(description_field))
         self.assertEqual(template['resources']['volume']['properties'][
-            'description'], volume.get('display_description'))
-        self.assertEqual(template['resources']['volume']['properties'][
-            'name'], volume.get('display_name'))
+            'name'], volume.get(name_field))
 
     def _outputs_verify(self, stack_identifier, template):
         self.assertEqual('available',
                          self.get_stack_output(stack_identifier, 'status'))
-        self.assertEqual(str(template['resources']['volume']['properties'][
-            'size']), self.get_stack_output(stack_identifier, 'size'))
+        self.assertEqual(str(CONF.volume.volume_size),
+                         self.get_stack_output(stack_identifier, 'size'))
         self.assertEqual(template['resources']['volume']['properties'][
             'description'], self.get_stack_output(stack_identifier,
                                                   'display_description'))
@@ -60,7 +64,12 @@ class CinderResourcesTest(base.BaseOrchestrationTest):
         """Create and delete a volume via OS::Cinder::Volume."""
         stack_name = data_utils.rand_name('heat')
         template = self.read_template('cinder_basic')
-        stack_identifier = self.create_stack(stack_name, template)
+        stack_identifier = self.create_stack(
+            stack_name,
+            template,
+            parameters={
+                'volume_size': CONF.volume.volume_size
+            })
         self.client.wait_for_stack_status(stack_identifier, 'CREATE_COMPLETE')
 
         # Verify with cinder that the volume exists, with matching details
@@ -89,7 +98,12 @@ class CinderResourcesTest(base.BaseOrchestrationTest):
         """Ensure the 'Retain' deletion policy is respected."""
         stack_name = data_utils.rand_name('heat')
         template = self.read_template('cinder_basic_delete_retain')
-        stack_identifier = self.create_stack(stack_name, template)
+        stack_identifier = self.create_stack(
+            stack_name,
+            template,
+            parameters={
+                'volume_size': CONF.volume.volume_size
+            })
         self.client.wait_for_stack_status(stack_identifier, 'CREATE_COMPLETE')
 
         # Verify with cinder that the volume exists, with matching details

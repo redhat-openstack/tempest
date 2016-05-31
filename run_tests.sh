@@ -19,7 +19,7 @@ function usage {
 
 testrargs=""
 just_pep8=0
-venv=.venv
+venv=${VENV:-.venv}
 with_venv=tools/with_venv.sh
 serial=0
 always_venv=0
@@ -90,9 +90,9 @@ function run_tests {
   fi
 
   if [ $serial -eq 1 ]; then
-      ${wrapper} testr run --subunit $testrargs | ${wrapper} subunit-2to1 | ${wrapper} tools/colorizer.py
+      ${wrapper} testr run --subunit $testrargs | ${wrapper} subunit-trace -n -f
   else
-      ${wrapper} testr run --parallel --subunit $testrargs | ${wrapper} subunit-2to1 | ${wrapper} tools/colorizer.py
+      ${wrapper} testr run --parallel --subunit $testrargs | ${wrapper} subunit-trace -n -f
   fi
 }
 

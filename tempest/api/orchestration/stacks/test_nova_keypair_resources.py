@@ -10,16 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-
-import logging
-
-from tempest_lib.common.utils import data_utils
-
 from tempest.api.orchestration import base
+from tempest.common.utils import data_utils
 from tempest import test
-
-
-LOG = logging.getLogger(__name__)
 
 
 class NovaKeyPairResourcesYAMLTest(base.BaseOrchestrationTest):
@@ -44,7 +37,8 @@ class NovaKeyPairResourcesYAMLTest(base.BaseOrchestrationTest):
 
         cls.stack_id = cls.stack_identifier.split('/')[1]
         cls.client.wait_for_stack_status(cls.stack_id, 'CREATE_COMPLETE')
-        resources = cls.client.list_resources(cls.stack_identifier)
+        resources = (cls.client.list_resources(cls.stack_identifier)
+                     ['resources'])
         cls.test_resources = {}
         for resource in resources:
             cls.test_resources[resource['logical_resource_id']] = resource
@@ -71,7 +65,7 @@ class NovaKeyPairResourcesYAMLTest(base.BaseOrchestrationTest):
 
     @test.idempotent_id('8d77dec7-91fd-45a6-943d-5abd45e338a4')
     def test_stack_keypairs_output(self):
-        stack = self.client.show_stack(self.stack_name)
+        stack = self.client.show_stack(self.stack_name)['stack']
         self.assertIsInstance(stack, dict)
 
         output_map = {}

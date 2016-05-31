@@ -17,7 +17,8 @@ from tempest.tests import base
 
 
 class HackingTestCase(base.TestCase):
-    """
+    """Test class for hacking rule
+
     This class tests the hacking checks in tempest.hacking.checks by passing
     strings to the check methods like the pep8/flake8 parser would. The parser
     loops over each line in the file and then passes the parameters to the
@@ -119,6 +120,13 @@ class HackingTestCase(base.TestCase):
         self.assertFalse(checks.service_tags_not_in_module_path(
             "@test.services('compute')", './tempest/api/image/fake_test.py'))
 
+    def test_no_hyphen_at_end_of_rand_name(self):
+        self.assertIsNone(checks.no_hyphen_at_end_of_rand_name(
+            'data_utils.rand_name("fake-resource")', './tempest/test_foo.py'))
+        self.assertEqual(2, len(list(checks.no_hyphen_at_end_of_rand_name(
+            'data_utils.rand_name("fake-resource-")', './tempest/test_foo.py')
+        )))
+
     def test_no_mutable_default_args(self):
         self.assertEqual(1, len(list(checks.no_mutable_default_args(
             " def function1(para={}):"))))
@@ -131,3 +139,31 @@ class HackingTestCase(base.TestCase):
 
         self.assertEqual(0, len(list(checks.no_mutable_default_args(
             "defined, undefined = [], {}"))))
+
+    def test_no_testtools_skip_decorator(self):
+        self.assertEqual(1, len(list(checks.no_testtools_skip_decorator(
+            " @testtools.skip('Bug xxx')"))))
+        self.assertEqual(0, len(list(checks.no_testtools_skip_decorator(
+            " @testtools.skipUnless(CONF.something, 'msg')"))))
+        self.assertEqual(0, len(list(checks.no_testtools_skip_decorator(
+            " @testtools.skipIf(CONF.something, 'msg')"))))
+
+    def test_dont_import_local_tempest_code_into_lib(self):
+        self.assertEqual(0, len(list(checks.dont_import_local_tempest_into_lib(
+            "from tempest.common import waiters",
+            './tempest/common/compute.py'))))
+        self.assertEqual(0, len(list(checks.dont_import_local_tempest_into_lib(
+            "from tempest import config",
+            './tempest/common/compute.py'))))
+        self.assertEqual(0, len(list(checks.dont_import_local_tempest_into_lib(
+            "import tempest.exception",
+            './tempest/common/compute.py'))))
+        self.assertEqual(1, len(list(checks.dont_import_local_tempest_into_lib(
+            "from tempest.common import waiters",
+            './tempest/lib/common/compute.py'))))
+        self.assertEqual(1, len(list(checks.dont_import_local_tempest_into_lib(
+            "from tempest import config",
+            './tempest/lib/common/compute.py'))))
+        self.assertEqual(1, len(list(checks.dont_import_local_tempest_into_lib(
+            "import tempest.exception",
+            './tempest/lib/common/compute.py'))))

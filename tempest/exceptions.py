@@ -17,8 +17,7 @@ import testtools
 
 
 class TempestException(Exception):
-    """
-    Base Tempest Exception
+    """Base Tempest Exception
 
     To correctly use this class, inherit from it and define
     a 'message' property. That message will get printf'd
@@ -64,7 +63,7 @@ class InvalidServiceTag(TempestException):
 
 
 class InvalidIdentityVersion(TempestException):
-    message = "Invalid version %(identity_version) of the identity service"
+    message = "Invalid version %(identity_version)s of the identity service"
 
 
 class TimeoutException(TempestException):
@@ -90,6 +89,10 @@ class EC2RegisterImageException(TempestException):
 
 class VolumeBuildErrorException(TempestException):
     message = "Volume %(volume_id)s failed to build and is in ERROR status"
+
+
+class VolumeRestoreErrorException(TempestException):
+    message = "Volume %(volume_id)s failed to restore and is in ERROR status"
 
 
 class SnapshotBuildErrorException(TempestException):
@@ -134,6 +137,13 @@ class ServerUnreachable(TempestException):
 
 class TearDownException(TempestException):
     message = "%(num)d cleanUp operation failed"
+
+
+# NOTE(andreaf) This exception is added here to facilitate the migration
+# of get_network_from_name and preprov_creds to tempest-lib, and it should
+# be migrated along with them
+class InvalidTestResource(TempestException):
+    message = "%(name) is not a valid %(type), or the name is ambiguous"
 
 
 class RFCViolation(RestClientException):

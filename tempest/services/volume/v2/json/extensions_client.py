@@ -13,8 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest.services.volume.json import extensions_client
+from tempest.services.volume.base import base_extensions_client
 
 
-class ExtensionsV2ClientJSON(extensions_client.BaseExtensionsClientJSON):
+class ExtensionsClient(base_extensions_client.BaseExtensionsClient):
     api_version = "v2"

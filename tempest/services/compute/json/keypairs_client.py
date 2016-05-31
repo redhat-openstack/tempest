@@ -13,42 +13,53 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import json
+from oslo_serialization import jsonutils as json
+from six.moves.urllib import parse as urllib
 
-from tempest.api_schema.response.compute.v2_1 import keypairs as schema
-from tempest.common import service_client
+from tempest.api_schema.response.compute.v2_1 import keypairs as schemav21
+from tempest.api_schema.response.compute.v2_2 import keypairs as schemav22
+from tempest.lib.common import rest_client
+from tempest.lib.services.compute import base_compute_client
 
 
-class KeyPairsClientJSON(service_client.ServiceClient):
+class KeyPairsClient(base_compute_client.BaseComputeClient):
 
-    def list_keypairs(self):
-        resp, body = self.get("os-keypairs")
+    schema_versions_info = [{'min': None, 'max': '2.1', 'schema': schemav21},
+                            {'min': '2.2', 'max': None, 'schema': schemav22}]
+
+    def list_keypairs(self, **params):
+        url = 'os-keypairs'
+        if params:
+            url += '?%s' % urllib.urlencode(params)
+        resp, body = self.get(url)
         body = json.loads(body)
-        # Each returned keypair is embedded within an unnecessary 'keypair'
-        # element which is a deviation from other resources like floating-ips,
-        # servers, etc. A bug?
-        # For now we shall adhere to the spec, but the spec for keypairs
-        # is yet to be found
+        schema = self.get_schema(self.schema_versions_info)
         self.validate_response(schema.list_keypairs, resp, body)
-        return service_client.ResponseBodyList(resp, body['keypairs'])
+        return rest_client.ResponseBody(resp, body)
 
-    def get_keypair(self, key_name):
-        resp, body = self.get("os-keypairs/%s" % str(key_name))
+    def show_keypair(self, keypair_name, **params):
+        url = "os-keypairs/%s" % keypair_name
+        if params:
+            url += '?%s' % urllib.urlencode(params)
+        resp, body = self.get(url)
         body = json.loads(body)
+        schema = self.get_schema(self.schema_versions_info)
         self.validate_response(schema.get_keypair, resp, body)
-        return service_client.ResponseBody(resp, body['keypair'])
+        return rest_client.ResponseBody(resp, body)
 
-    def create_keypair(self, name, pub_key=None):
-        post_body = {'keypair': {'name': name}}
-        if pub_key:
-            post_body['keypair']['public_key'] = pub_key
-        post_body = json.dumps(post_body)
+    def create_keypair(self, **kwargs):
+        post_body = json.dumps({'keypair': kwargs})
         resp, body = self.post("os-keypairs", body=post_body)
         body = json.loads(body)
+        schema = self.get_schema(self.schema_versions_info)
         self.validate_response(schema.create_keypair, resp, body)
-        return service_client.ResponseBody(resp, body['keypair'])
+        return rest_client.ResponseBody(resp, body)
 
-    def delete_keypair(self, key_name):
-        resp, body = self.delete("os-keypairs/%s" % str(key_name))
+    def delete_keypair(self, keypair_name, **params):
+        url = "os-keypairs/%s" % keypair_name
+        if params:
+            url += '?%s' % urllib.urlencode(params)
+        resp, body = self.delete(url)
+        schema = self.get_schema(self.schema_versions_info)
         self.validate_response(schema.delete_keypair, resp, body)
-        return service_client.ResponseBody(resp, body)
+        return rest_client.ResponseBody(resp, body)

@@ -115,22 +115,32 @@ import netaddr
 from oslo_log import log as logging
 from oslo_utils import timeutils
 import six
-from tempest_lib import auth
-from tempest_lib import exceptions as lib_exc
 import yaml
 
+from tempest.common import identity
+from tempest.common import waiters
 from tempest import config
-from tempest.services.compute.json import flavors_client
-from tempest.services.compute.json import floating_ips_client
-from tempest.services.compute.json import security_groups_client
-from tempest.services.compute.json import servers_client
+from tempest.lib import auth
+from tempest.lib import exceptions as lib_exc
+from tempest.lib.services.compute import flavors_client
+from tempest.lib.services.compute import floating_ips_client
+from tempest.lib.services.compute import security_group_rules_client
+from tempest.lib.services.compute import security_groups_client
+from tempest.lib.services.compute import servers_client
+from tempest.lib.services.network import ports_client
+from tempest.lib.services.network import subnets_client
 from tempest.services.identity.v2.json import identity_client
-from tempest.services.image.v2.json import image_client
+from tempest.services.identity.v2.json import roles_client
+from tempest.services.identity.v2.json import tenants_client
+from tempest.services.identity.v2.json import users_client
+from tempest.services.image.v2.json import images_client
 from tempest.services.network.json import network_client
+from tempest.services.network.json import routers_client
 from tempest.services.object_storage import container_client
 from tempest.services.object_storage import object_client
+from tempest.services.telemetry.json import alarming_client
 from tempest.services.telemetry.json import telemetry_client
-from tempest.services.volume.json import volumes_client
+from tempest.services.volume.v1.json import volumes_client
 
 CONF = config.CONF
 OPTS = {}
@@ -188,25 +198,45 @@ class OSClient(object):
         }
         _auth = auth.KeystoneV2AuthProvider(
             _creds, CONF.identity.uri, **auth_provider_params)
-        self.identity = identity_client.IdentityClientJSON(
+        self.identity = identity_client.IdentityClient(
             _auth,
             CONF.identity.catalog_type,
             CONF.identity.region,
             endpoint_type='adminURL',
             **default_params_with_timeout_values)
-        self.servers = servers_client.ServersClientJSON(_auth,
-                                                        **compute_params)
-        self.flavors = flavors_client.FlavorsClientJSON(_auth,
-                                                        **compute_params)
-        self.floating_ips = floating_ips_client.FloatingIPsClientJSON(
+        self.tenants = tenants_client.TenantsClient(
+            _auth,
+            CONF.identity.catalog_type,
+            CONF.identity.region,
+            endpoint_type='adminURL',
+            **default_params_with_timeout_values)
+        self.roles = roles_client.RolesClient(
+            _auth,
+            CONF.identity.catalog_type,
+            CONF.identity.region,
+            endpoint_type='adminURL',
+            **default_params_with_timeout_values)
+        self.users = users_client.UsersClient(
+            _auth,
+            CONF.identity.catalog_type,
+            CONF.identity.region,
+            endpoint_type='adminURL',
+            **default_params_with_timeout_values)
+        self.servers = servers_client.ServersClient(_auth,
+                                                    **compute_params)
+        self.flavors = flavors_client.FlavorsClient(_auth,
+                                                    **compute_params)
+        self.floating_ips = floating_ips_client.FloatingIPsClient(
             _auth, **compute_params)
-        self.secgroups = security_groups_client.SecurityGroupsClientJSON(
+        self.secgroups = security_groups_client.SecurityGroupsClient(
+            _auth, **compute_params)
+        self.secrules = security_group_rules_client.SecurityGroupRulesClient(
             _auth, **compute_params)
         self.objects = object_client.ObjectClient(_auth,
                                                   **object_storage_params)
         self.containers = container_client.ContainerClient(
             _auth, **object_storage_params)
-        self.images = image_client.ImageClientV2JSON(
+        self.images = images_client.ImagesClientV2(
             _auth,
             CONF.image.catalog_type,
             CONF.image.region or CONF.identity.region,
@@ -214,13 +244,19 @@ class OSClient(object):
             build_interval=CONF.image.build_interval,
             build_timeout=CONF.image.build_timeout,
             **default_params)
-        self.telemetry = telemetry_client.TelemetryClientJSON(
+        self.telemetry = telemetry_client.TelemetryClient(
             _auth,
             CONF.telemetry.catalog_type,
             CONF.identity.region,
             endpoint_type=CONF.telemetry.endpoint_type,
             **default_params_with_timeout_values)
-        self.volumes = volumes_client.VolumesClientJSON(
+        self.alarming = alarming_client.AlarmingClient(
+            _auth,
+            CONF.alarm.catalog_type,
+            CONF.identity.region,
+            endpoint_type=CONF.alarm.endpoint_type,
+            **default_params_with_timeout_values)
+        self.volumes = volumes_client.VolumesClient(
             _auth,
             CONF.volume.catalog_type,
             CONF.volume.region or CONF.identity.region,
@@ -228,7 +264,31 @@ class OSClient(object):
             build_interval=CONF.volume.build_interval,
             build_timeout=CONF.volume.build_timeout,
             **default_params)
-        self.networks = network_client.NetworkClientJSON(
+        self.networks = network_client.NetworkClient(
+            _auth,
+            CONF.network.catalog_type,
+            CONF.network.region or CONF.identity.region,
+            endpoint_type=CONF.network.endpoint_type,
+            build_interval=CONF.network.build_interval,
+            build_timeout=CONF.network.build_timeout,
+            **default_params)
+        self.ports = ports_client.PortsClient(
+            _auth,
+            CONF.network.catalog_type,
+            CONF.network.region or CONF.identity.region,
+            endpoint_type=CONF.network.endpoint_type,
+            build_interval=CONF.network.build_interval,
+            build_timeout=CONF.network.build_timeout,
+            **default_params)
+        self.routers = routers_client.RoutersClient(
+            _auth,
+            CONF.network.catalog_type,
+            CONF.network.region or CONF.identity.region,
+            endpoint_type=CONF.network.endpoint_type,
+            build_interval=CONF.network.build_interval,
+            build_timeout=CONF.network.build_timeout,
+            **default_params)
+        self.subnets = subnets_client.SubnetsClient(
             _auth,
             CONF.network.catalog_type,
             CONF.network.region or CONF.identity.region,
@@ -270,20 +330,21 @@ def create_tenants(tenants):
     Don't create the tenants if they already exist.
     """
     admin = keystone_admin()
-    body = admin.identity.list_tenants()
+    body = admin.tenants.list_tenants()['tenants']
     existing = [x['name'] for x in body]
     for tenant in tenants:
         if tenant not in existing:
-            admin.identity.create_tenant(tenant)
+            admin.tenants.create_tenant(tenant)['tenant']
         else:
-            LOG.warn("Tenant '%s' already exists in this environment" % tenant)
+            LOG.warning("Tenant '%s' already exists in this environment"
+                        % tenant)
 
 
 def destroy_tenants(tenants):
     admin = keystone_admin()
     for tenant in tenants:
-        tenant_id = admin.identity.get_tenant_by_name(tenant)['id']
-        admin.identity.delete_tenant(tenant_id)
+        tenant_id = identity.get_tenant_by_name(admin.tenant, tenant)['id']
+        admin.tenants.delete_tenant(tenant_id)
 
 ##############
 #
@@ -311,11 +372,11 @@ def _tenants_from_users(users):
 
 def _assign_swift_role(user, swift_role):
     admin = keystone_admin()
-    roles = admin.identity.list_roles()
+    roles = admin.roles.list_roles()
     role = next(r for r in roles if r['name'] == swift_role)
     LOG.debug(USERS[user])
     try:
-        admin.identity.assign_user_role(
+        admin.roles.assign_user_role(
             USERS[user]['tenant_id'],
             USERS[user]['id'],
             role['id'])
@@ -334,16 +395,17 @@ def create_users(users):
     admin = keystone_admin()
     for u in users:
         try:
-            tenant = admin.identity.get_tenant_by_name(u['tenant'])
+            tenant = identity.get_tenant_by_name(admin.tenants, u['tenant'])
         except lib_exc.NotFound:
             LOG.error("Tenant: %s - not found" % u['tenant'])
             continue
         try:
-            admin.identity.get_user_by_username(tenant['id'], u['name'])
-            LOG.warn("User '%s' already exists in this environment"
-                     % u['name'])
+            identity.get_user_by_username(admin.tenants,
+                                          tenant['id'], u['name'])
+            LOG.warning("User '%s' already exists in this environment"
+                        % u['name'])
         except lib_exc.NotFound:
-            admin.identity.create_user(
+            admin.users.create_user(
                 u['name'], u['pass'], tenant['id'],
                 "%s@%s" % (u['name'], tenant['id']),
                 enabled=True)
@@ -352,10 +414,11 @@ def create_users(users):
 def destroy_users(users):
     admin = keystone_admin()
     for user in users:
-        tenant_id = admin.identity.get_tenant_by_name(user['tenant'])['id']
-        user_id = admin.identity.get_user_by_username(tenant_id,
-                                                      user['name'])['id']
-        admin.identity.delete_user(user_id)
+        tenant_id = identity.get_tenant_by_name(admin.tenants,
+                                                user['tenant'])['id']
+        user_id = identity.get_user_by_username(admin.tenants,
+                                                tenant_id, user['name'])['id']
+        admin.users.delete_user(user_id)
 
 
 def collect_users(users):
@@ -363,10 +426,11 @@ def collect_users(users):
     LOG.info("Collecting users")
     admin = keystone_admin()
     for u in users:
-        tenant = admin.identity.get_tenant_by_name(u['tenant'])
+        tenant = identity.get_tenant_by_name(admin.tenants, u['tenant'])
         u['tenant_id'] = tenant['id']
         USERS[u['name']] = u
-        body = admin.identity.get_user_by_username(tenant['id'], u['name'])
+        body = identity.get_user_by_username(admin.tenants,
+                                             tenant['id'], u['name'])
         USERS[u['name']]['id'] = body['id']
 
 
@@ -419,7 +483,7 @@ class JavelinCheck(unittest.TestCase):
         LOG.info("checking users")
         for name, user in six.iteritems(self.users):
             client = keystone_admin()
-            found = client.identity.get_user(user['id'])
+            found = client.users.show_user(user['id'])['user']
             self.assertEqual(found['name'], user['name'])
             self.assertEqual(found['tenantId'], user['tenant_id'])
 
@@ -453,7 +517,7 @@ class JavelinCheck(unittest.TestCase):
                 found,
                 "Couldn't find expected server %s" % server['name'])
 
-            found = client.servers.get_server(found['id'])
+            found = client.servers.show_server(found['id'])['server']
             # validate neutron is enabled and ironic disabled:
             if (CONF.service_available.neutron and
                     not CONF.baremetal.driver_enabled):
@@ -461,24 +525,26 @@ class JavelinCheck(unittest.TestCase):
                 for network_name, body in found['addresses'].items():
                     for addr in body:
                         ip = addr['addr']
-                        # If floatingip_for_ssh is at True, it's assumed
-                        # you want to use the floating IP to reach the server,
-                        # fallback to fixed IP, then other type.
+                        # Use floating IP, fixed IP or other type to
+                        # reach the server.
                         # This is useful in multi-node environment.
-                        if CONF.compute.use_floatingip_for_ssh:
+                        if CONF.validation.connect_method == 'floating':
                             if addr.get('OS-EXT-IPS:type',
                                         'floating') == 'floating':
                                 self._ping_ip(ip, 60)
                                 _floating_is_alive = True
-                        elif addr.get('OS-EXT-IPS:type', 'fixed') == 'fixed':
-                            namespace = _get_router_namespace(client,
-                                                              network_name)
-                            self._ping_ip(ip, 60, namespace)
+                        elif CONF.validation.connect_method == 'fixed':
+                            if addr.get('OS-EXT-IPS:type',
+                                        'fixed') == 'fixed':
+                                namespace = _get_router_namespace(client,
+                                                                  network_name)
+                                self._ping_ip(ip, 60, namespace)
                         else:
                             self._ping_ip(ip, 60)
-                # if floatingip_for_ssh is at True, validate found a
-                # floating IP and ping worked.
-                if CONF.compute.use_floatingip_for_ssh:
+                # If CONF.validation.connect_method is floating, validate
+                # that the floating IP is attached to the server and the
+                # the server is pingable.
+                if CONF.validation.connect_method == 'floating':
                     self.assertTrue(_floating_is_alive,
                                     "Server %s has no floating IP." %
                                     server['name'])
@@ -500,7 +566,7 @@ class JavelinCheck(unittest.TestCase):
     def check_telemetry(self):
         """Check that ceilometer provides a sane sample.
 
-        Confirm that there are more than one sample and that they have the
+        Confirm that there is more than one sample and that they have the
         expected metadata.
 
         If in check mode confirm that the oldest sample available is from
@@ -617,7 +683,7 @@ def _resolve_image(image, imgtype):
 
 
 def _get_image_by_name(client, name):
-    body = client.images.image_list()
+    body = client.images.list_images()
     for image in body:
         if name == image['name']:
             return image
@@ -651,13 +717,13 @@ def create_images(images):
             name, fname = _resolve_image(image, 'aki')
             aki = client.images.create_image(
                 'javelin_' + name, 'aki', 'aki')
-            client.images.store_image(aki.get('id'), open(fname, 'r'))
+            client.images.store_image_file(aki.get('id'), open(fname, 'r'))
             extras['kernel_id'] = aki.get('id')
 
             name, fname = _resolve_image(image, 'ari')
             ari = client.images.create_image(
                 'javelin_' + name, 'ari', 'ari')
-            client.images.store_image(ari.get('id'), open(fname, 'r'))
+            client.images.store_image_file(ari.get('id'), open(fname, 'r'))
             extras['ramdisk_id'] = ari.get('id')
 
         _, fname = _resolve_image(image, 'file')
@@ -665,7 +731,7 @@ def create_images(images):
             image['name'], image['container_format'],
             image['disk_format'], **extras)
         image_id = body.get('id')
-        client.images.store_image(image_id, open(fname, 'r'))
+        client.images.store_image_file(image_id, open(fname, 'r'))
 
 
 def destroy_images(images):
@@ -677,7 +743,7 @@ def destroy_images(images):
 
         response = _get_image_by_name(client, image['name'])
         if not response:
-            LOG.info("Image '%s' does not exists" % image['name'])
+            LOG.info("Image '%s' does not exist" % image['name'])
             continue
         client.images.delete_image(response['id'])
 
@@ -691,10 +757,10 @@ def destroy_images(images):
 def _get_router_namespace(client, network):
     network_id = _get_resource_by_name(client.networks,
                                        'networks', network)['id']
-    n_body = client.networks.list_routers()
+    n_body = client.routers.list_routers()
     for router in n_body['routers']:
         router_id = router['id']
-        r_body = client.networks.list_router_interfaces(router_id)
+        r_body = client.ports.list_ports(device_id=router_id)
         for port in r_body['ports']:
             if port['network_id'] == network_id:
                 return "qrouter-%s" % router_id
@@ -708,7 +774,7 @@ def _get_resource_by_name(client, resource, name):
     # we cannot assume they all have the same signature so we need to discard
     # the unused response first value it two values are being returned.
     body = get_resources()
-    if type(body) == tuple:
+    if isinstance(body, tuple):
         body = body[1]
     if isinstance(body, dict):
         body = body[resource]
@@ -726,7 +792,7 @@ def create_networks(networks):
         # only create a network if the name isn't here
         body = client.networks.list_networks()
         if any(item['name'] == network['name'] for item in body['networks']):
-            LOG.warning("Dupplicated network name: %s" % network['name'])
+            LOG.warning("Duplicated network name: %s" % network['name'])
             continue
 
         client.networks.create_network(name=network['name'])
@@ -765,9 +831,9 @@ def destroy_subnets(subnets):
     LOG.info("Destroying subnets")
     for subnet in subnets:
         client = client_for_user(subnet['owner'])
-        subnet_id = _get_resource_by_name(client.networks,
+        subnet_id = _get_resource_by_name(client.subnets,
                                           'subnets', subnet['name'])['id']
-        client.networks.delete_subnet(subnet_id)
+        client.subnets.delete_subnet(subnet_id)
 
 
 def create_routers(routers):
@@ -776,12 +842,12 @@ def create_routers(routers):
         client = client_for_user(router['owner'])
 
         # only create a router if the name isn't here
-        body = client.networks.list_routers()
+        body = client.routers.list_routers()
         if any(item['name'] == router['name'] for item in body['routers']):
-            LOG.warning("Dupplicated router name: %s" % router['name'])
+            LOG.warning("Duplicated router name: %s" % router['name'])
             continue
 
-        client.networks.create_router(router['name'])
+        client.networks.create_router(name=router['name'])
 
 
 def destroy_routers(routers):
@@ -793,9 +859,9 @@ def destroy_routers(routers):
         for subnet in router['subnet']:
             subnet_id = _get_resource_by_name(client.networks,
                                               'subnets', subnet)['id']
-            client.networks.remove_router_interface_with_subnet_id(router_id,
-                                                                   subnet_id)
-        client.networks.delete_router(router_id)
+            client.routers.remove_router_interface(router_id,
+                                                   subnet_id=subnet_id)
+        client.routers.delete_router(router_id)
 
 
 def add_router_interface(routers):
@@ -808,13 +874,13 @@ def add_router_interface(routers):
             subnet_id = _get_resource_by_name(client.networks,
                                               'subnets', subnet)['id']
             # connect routers to their subnets
-            client.networks.add_router_interface_with_subnet_id(router_id,
-                                                                subnet_id)
-        # connect routers to exteral network if set to "gateway"
+            client.routers.add_router_interface(router_id,
+                                                subnet_id=subnet_id)
+        # connect routers to external network if set to "gateway"
         if router['gateway']:
             if CONF.network.public_network_id:
                 ext_net = CONF.network.public_network_id
-                client.networks._update_router(
+                client.routers._update_router(
                     router_id, set_enable_snat=True,
                     external_gateway_info={"network_id": ext_net})
             else:
@@ -836,7 +902,7 @@ def _get_server_by_name(client, name):
 
 
 def _get_flavor_by_name(client, name):
-    body = client.flavors.list_flavors()
+    body = client.flavors.list_flavors()['flavors']
     for flavor in body:
         if name == flavor['name']:
             return flavor
@@ -865,16 +931,17 @@ def create_servers(servers):
             kwargs['networks'] = [{'uuid': get_net_id(network)}
                                   for network in server['networks']]
         body = client.servers.create_server(
-            server['name'], image_id, flavor_id, **kwargs)
+            name=server['name'], imageRef=image_id, flavorRef=flavor_id,
+            **kwargs)['server']
         server_id = body['id']
         client.servers.wait_for_server_status(server_id, 'ACTIVE')
-        # create to security group(s) after server spawning
+        # create security group(s) after server spawning
         for secgroup in server['secgroups']:
-            client.servers.add_security_group(server_id, secgroup)
-        if CONF.compute.use_floatingip_for_ssh:
+            client.servers.add_security_group(server_id, name=secgroup)
+        if CONF.validation.connect_method == 'floating':
             floating_ip_pool = server.get('floating_ip_pool')
             floating_ip = client.floating_ips.create_floating_ip(
-                pool_name=floating_ip_pool)
+                pool_name=floating_ip_pool)['floating_ip']
             client.floating_ips.associate_floating_ip_to_server(
                 floating_ip['ip'], server_id)
 
@@ -893,8 +960,8 @@ def destroy_servers(servers):
 
         # TODO(EmilienM): disassociate floating IP from server and release it.
         client.servers.delete_server(response['id'])
-        client.servers.wait_for_server_termination(response['id'],
-                                                   ignore_error=True)
+        waiters.wait_for_server_termination(client.servers, response['id'],
+                                            ignore_error=True)
 
 
 def create_secgroups(secgroups):
@@ -905,20 +972,22 @@ def create_secgroups(secgroups):
         # only create a security group if the name isn't here
         # i.e. a security group may be used by another server
         # only create a router if the name isn't here
-        body = client.secgroups.list_security_groups()
+        body = client.secgroups.list_security_groups()['security_groups']
         if any(item['name'] == secgroup['name'] for item in body):
             LOG.warning("Security group '%s' already exists" %
                         secgroup['name'])
             continue
 
         body = client.secgroups.create_security_group(
-            secgroup['name'], secgroup['description'])
+            name=secgroup['name'],
+            description=secgroup['description'])['security_group']
         secgroup_id = body['id']
         # for each security group, create the rules
         for rule in secgroup['rules']:
             ip_proto, from_port, to_port, cidr = rule.split()
-            client.secgroups.create_security_group_rule(
-                secgroup_id, ip_proto, from_port, to_port, cidr=cidr)
+            client.secrules.create_security_group_rule(
+                parent_group_id=secgroup_id, ip_protocol=ip_proto,
+                from_port=from_port, to_port=to_port, cidr=cidr)
 
 
 def destroy_secgroups(secgroups):
@@ -939,7 +1008,7 @@ def destroy_secgroups(secgroups):
 #######################
 
 def _get_volume_by_name(client, name):
-    body = client.volumes.list_volumes()
+    body = client.volumes.list_volumes()['volumes']
     for volume in body:
         if name == volume['display_name']:
             return volume
@@ -961,8 +1030,8 @@ def create_volumes(volumes):
         size = volume['gb']
         v_name = volume['name']
         body = client.volumes.create_volume(size=size,
-                                            display_name=v_name)
-        client.volumes.wait_for_volume_status(body['id'], 'available')
+                                            display_name=v_name)['volume']
+        waiters.wait_for_volume_status(client.volumes, body['id'], 'available')
 
 
 def destroy_volumes(volumes):
@@ -979,7 +1048,9 @@ def attach_volumes(volumes):
         server_id = _get_server_by_name(client, volume['server'])['id']
         volume_id = _get_volume_by_name(client, volume['name'])['id']
         device = volume['device']
-        client.volumes.attach_volume(volume_id, server_id, device)
+        client.volumes.attach_volume(volume_id,
+                                     instance_uuid=server_id,
+                                     mountpoint=device)
 
 
 #######################
@@ -991,7 +1062,7 @@ def attach_volumes(volumes):
 def create_resources():
     LOG.info("Creating Resources")
     # first create keystone level resources, and we need to be admin
-    # for those.
+    # for this.
     create_tenants(RES['tenants'])
     create_users(RES['users'])
     collect_users(RES['users'])
@@ -1011,7 +1082,7 @@ def create_resources():
     create_volumes(RES['volumes'])
 
     # Only attempt attaching the volumes if servers are defined in the
-    # resourcefile
+    # resource file
     if 'servers' in RES:
         create_servers(RES['servers'])
         attach_volumes(RES['volumes'])
@@ -1031,7 +1102,7 @@ def destroy_resources():
     destroy_secgroups(RES['secgroups'])
     destroy_users(RES['users'])
     destroy_tenants(RES['tenants'])
-    LOG.warn("Destroy mode incomplete")
+    LOG.warning("Destroy mode incomplete")
 
 
 def get_options():
@@ -1087,6 +1158,8 @@ def setup_logging():
 
 
 def main():
+    print("Javelin is deprecated and will be removed from Tempest in the "
+          "future.")
     global RES
     get_options()
     setup_logging()

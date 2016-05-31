@@ -26,6 +26,7 @@ CONF = config.CONF
 class HorizonHTMLParser(HTMLParser.HTMLParser):
     csrf_token = None
     region = None
+    login = None
 
     def _find_name(self, attrs, name):
         for attrpair in attrs:
@@ -39,17 +40,26 @@ class HorizonHTMLParser(HTMLParser.HTMLParser):
                 return attrpair[1]
         return None
 
+    def _find_attr_value(self, attrs, attr_name):
+        for attrpair in attrs:
+            if attrpair[0] == attr_name:
+                return attrpair[1]
+        return None
+
     def handle_starttag(self, tag, attrs):
         if tag == 'input':
             if self._find_name(attrs, 'csrfmiddlewaretoken'):
                 self.csrf_token = self._find_value(attrs)
             if self._find_name(attrs, 'region'):
                 self.region = self._find_value(attrs)
+        if tag == 'form':
+            self.login = self._find_attr_value(attrs, 'action')
 
 
 class TestDashboardBasicOps(manager.ScenarioTest):
 
-    """
+    """The test suite for dashboard basic operations
+
     This is a basic scenario test:
     * checks that the login page is available
     * logs in as a regular user
@@ -79,13 +89,21 @@ class TestDashboardBasicOps(manager.ScenarioTest):
         parser = HorizonHTMLParser()
         parser.feed(response)
 
+        # construct login url for dashboard, discovery accommodates non-/ web
+        # root for dashboard
+        login_url = parse.urljoin(CONF.dashboard.dashboard_url, parser.login)
+
         # Prepare login form request
-        req = request.Request(CONF.dashboard.login_url)
+        req = request.Request(login_url)
         req.add_header('Content-type', 'application/x-www-form-urlencoded')
         req.add_header('Referer', CONF.dashboard.dashboard_url)
+
+        # Pass the default domain name regardless of the auth version in order
+        # to test the scenario of when horizon is running with keystone v3
         params = {'username': username,
                   'password': password,
                   'region': parser.region,
+                  'domain': CONF.auth.default_credentials_domain_name,
                   'csrfmiddlewaretoken': parser.csrf_token}
         self.opener.open(req, parse.urlencode(params))
 

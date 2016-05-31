@@ -20,6 +20,13 @@ from tempest import test
 
 class QuotasTestJSON(base.BaseV2ComputeTest):
 
+    @classmethod
+    def skip_checks(cls):
+        super(QuotasTestJSON, cls).skip_checks()
+        if not test.is_extension_enabled('os-quota-sets', 'compute'):
+            msg = "quotas extension not enabled."
+            raise cls.skipException(msg)
+
     def setUp(self):
         # NOTE(mriedem): Avoid conflicts with os-quota-class-sets tests.
         self.useFixture(fixtures.LockFixture('compute_quotas'))
@@ -47,14 +54,14 @@ class QuotasTestJSON(base.BaseV2ComputeTest):
     def test_get_quotas(self):
         # User can get the quota set for it's tenant
         expected_quota_set = self.default_quota_set | set(['id'])
-        quota_set = self.client.get_quota_set(self.tenant_id)
+        quota_set = self.client.show_quota_set(self.tenant_id)['quota_set']
         self.assertEqual(quota_set['id'], self.tenant_id)
         for quota in expected_quota_set:
             self.assertIn(quota, quota_set.keys())
 
         # get the quota set using user id
-        quota_set = self.client.get_quota_set(self.tenant_id,
-                                              self.user_id)
+        quota_set = self.client.show_quota_set(self.tenant_id,
+                                               self.user_id)['quota_set']
         self.assertEqual(quota_set['id'], self.tenant_id)
         for quota in expected_quota_set:
             self.assertIn(quota, quota_set.keys())
@@ -63,7 +70,8 @@ class QuotasTestJSON(base.BaseV2ComputeTest):
     def test_get_default_quotas(self):
         # User can get the default quota set for it's tenant
         expected_quota_set = self.default_quota_set | set(['id'])
-        quota_set = self.client.get_default_quota_set(self.tenant_id)
+        quota_set = (self.client.show_default_quota_set(self.tenant_id)
+                     ['quota_set'])
         self.assertEqual(quota_set['id'], self.tenant_id)
         for quota in expected_quota_set:
             self.assertIn(quota, quota_set.keys())
@@ -71,7 +79,8 @@ class QuotasTestJSON(base.BaseV2ComputeTest):
     @test.idempotent_id('cd65d997-f7e4-4966-a7e9-d5001b674fdc')
     def test_compare_tenant_quotas_with_default_quotas(self):
         # Tenants are created with the default quota values
-        defualt_quota_set = \
-            self.client.get_default_quota_set(self.tenant_id)
-        tenant_quota_set = self.client.get_quota_set(self.tenant_id)
-        self.assertEqual(defualt_quota_set, tenant_quota_set)
+        default_quota_set = \
+            self.client.show_default_quota_set(self.tenant_id)['quota_set']
+        tenant_quota_set = (self.client.show_quota_set(self.tenant_id)
+                            ['quota_set'])
+        self.assertEqual(default_quota_set, tenant_quota_set)

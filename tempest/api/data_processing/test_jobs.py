@@ -12,16 +12,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest_lib.common.utils import data_utils
-
 from tempest.api.data_processing import base as dp_base
+from tempest.common.utils import data_utils
 from tempest import test
 
 
 class JobTest(dp_base.BaseDataProcessingTest):
-    """Link to the API documentation is http://docs.openstack.org/developer/
-    sahara/restapi/rest_api_v1.1_EDP.html#jobs
-    """
+    # NOTE: Link to the API documentation: http://docs.openstack.org/developer/
+    # sahara/restapi/rest_api_v1.1_EDP.html#jobs
+
     @classmethod
     def resource_setup(cls):
         super(JobTest, cls).resource_setup()
@@ -72,7 +71,7 @@ class JobTest(dp_base.BaseDataProcessingTest):
         job_info = self._create_job()
 
         # check for job in list
-        jobs = self.client.list_jobs()
+        jobs = self.client.list_jobs()['jobs']
         jobs_info = [(job['id'], job['name']) for job in jobs]
         self.assertIn(job_info, jobs_info)
 
@@ -82,7 +81,7 @@ class JobTest(dp_base.BaseDataProcessingTest):
         job_id, job_name = self._create_job()
 
         # check job fetch by id
-        job = self.client.get_job(job_id)
+        job = self.client.get_job(job_id)['job']
         self.assertEqual(job_name, job['name'])
 
     @test.attr(type='smoke')

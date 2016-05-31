@@ -12,10 +12,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest_lib.common.utils import data_utils
-from tempest_lib import exceptions as lib_exc
-
 from tempest.api.image import base
+from tempest.common.utils import data_utils
+from tempest.lib import exceptions as lib_exc
 from tempest import test
 
 
@@ -52,5 +51,5 @@ class ImageMembersNegativeTest(base.BaseV1ImageMembersTest):
         # Image is hidden from another tenants.
         image_id = self._create_image()
         self.assertRaises(lib_exc.NotFound,
-                          self.alt_img_cli.get_image,
+                          self.alt_img_cli.show_image,
                           image_id)

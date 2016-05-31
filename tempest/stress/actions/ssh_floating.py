@@ -13,8 +13,8 @@
 import socket
 import subprocess
 
-from tempest_lib.common.utils import data_utils
-
+from tempest.common.utils import data_utils
+from tempest.common import waiters
 from tempest import config
 import tempest.stress.stressaction as stressaction
 import tempest.test
@@ -75,40 +75,44 @@ class FloatingStress(stressaction.StressAction):
         self.logger.info("creating %s" % name)
         vm_args = self.vm_extra_args.copy()
         vm_args['security_groups'] = [self.sec_grp]
-        server = servers_client.create_server(name, self.image,
-                                              self.flavor,
-                                              **vm_args)
+        server = servers_client.create_server(name=name, imageRef=self.image,
+                                              flavorRef=self.flavor,
+                                              **vm_args)['server']
         self.server_id = server['id']
         if self.wait_after_vm_create:
-            self.manager.servers_client.wait_for_server_status(self.server_id,
-                                                               'ACTIVE')
+            waiters.wait_for_server_status(self.manager.servers_client,
+                                           self.server_id, 'ACTIVE')
 
     def _destroy_vm(self):
         self.logger.info("deleting %s" % self.server_id)
         self.manager.servers_client.delete_server(self.server_id)
-        self.manager.servers_client.wait_for_server_termination(self.server_id)
+        waiters.wait_for_server_termination(self.manager.servers_client,
+                                            self.server_id)
         self.logger.info("deleted %s" % self.server_id)
 
     def _create_sec_group(self):
-        sec_grp_cli = self.manager.security_groups_client
-        s_name = data_utils.rand_name('sec_grp-')
-        s_description = data_utils.rand_name('desc-')
-        self.sec_grp = sec_grp_cli.create_security_group(s_name,
-                                                         s_description)
+        sec_grp_cli = self.manager.compute_security_groups_client
+        s_name = data_utils.rand_name('sec_grp')
+        s_description = data_utils.rand_name('desc')
+        self.sec_grp = sec_grp_cli.create_security_group(
+            name=s_name, description=s_description)['security_group']
         create_rule = sec_grp_cli.create_security_group_rule
-        create_rule(self.sec_grp['id'], 'tcp', 22, 22)
-        create_rule(self.sec_grp['id'], 'icmp', -1, -1)
+        create_rule(parent_group_id=self.sec_grp['id'], ip_protocol='tcp',
+                    from_port=22, to_port=22)
+        create_rule(parent_group_id=self.sec_grp['id'], ip_protocol='icmp',
+                    from_port=-1, to_port=-1)
 
     def _destroy_sec_grp(self):
-        sec_grp_cli = self.manager.security_groups_client
+        sec_grp_cli = self.manager.compute_security_groups_client
         sec_grp_cli.delete_security_group(self.sec_grp['id'])
 
     def _create_floating_ip(self):
-        floating_cli = self.manager.floating_ips_client
-        self.floating = floating_cli.create_floating_ip(self.floating_pool)
+        floating_cli = self.manager.compute_floating_ips_client
+        self.floating = (floating_cli.create_floating_ip(self.floating_pool)
+                         ['floating_ip'])
 
     def _destroy_floating_ip(self):
-        cli = self.manager.floating_ips_client
+        cli = self.manager.compute_floating_ips_client
         cli.delete_floating_ip(self.floating['id'])
         cli.wait_for_resource_deletion(self.floating['id'])
         self.logger.info("Deleted Floating IP %s", str(self.floating['ip']))
@@ -142,10 +146,11 @@ class FloatingStress(stressaction.StressAction):
             self._create_vm()
 
     def wait_disassociate(self):
-        cli = self.manager.floating_ips_client
+        cli = self.manager.compute_floating_ips_client
 
         def func():
-            floating = cli.get_floating_ip_details(self.floating['id'])
+            floating = (cli.show_floating_ip(self.floating['id'])
+                        ['floating_ip'])
             return floating['instance_id'] is None
 
         if not tempest.test.call_until_true(func, self.check_timeout,
@@ -153,7 +158,7 @@ class FloatingStress(stressaction.StressAction):
             raise RuntimeError("IP disassociate timeout!")
 
     def run_core(self):
-        cli = self.manager.floating_ips_client
+        cli = self.manager.compute_floating_ips_client
         cli.associate_floating_ip_to_server(self.floating['ip'],
                                             self.server_id)
         for method in self.verify:
@@ -173,8 +178,8 @@ class FloatingStress(stressaction.StressAction):
             self._create_vm()
         if self.reboot:
             self.manager.servers_client.reboot(self.server_id, 'HARD')
-            self.manager.servers_client.wait_for_server_status(self.server_id,
-                                                               'ACTIVE')
+            waiters.wait_for_server_status(self.manager.servers_client,
+                                           self.server_id, 'ACTIVE')
 
         self.run_core()
 

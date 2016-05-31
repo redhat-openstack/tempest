@@ -17,11 +17,8 @@ from tempest.api.compute import base
 from tempest import test
 
 
-class AZV2TestJSON(base.BaseComputeTest):
-    """
-    Tests Availability Zone API List
-    """
-    _api_version = 2
+class AZV2TestJSON(base.BaseV2ComputeTest):
+    """Tests Availability Zone API List"""
 
     @classmethod
     def setup_clients(cls):
@@ -32,4 +29,4 @@ class AZV2TestJSON(base.BaseComputeTest):
     def test_get_availability_zone_list_with_non_admin_user(self):
         # List of availability zone with non-administrator user
         availability_zone = self.client.list_availability_zones()
-        self.assertTrue(len(availability_zone) > 0)
+        self.assertTrue(len(availability_zone['availabilityZoneInfo']) > 0)

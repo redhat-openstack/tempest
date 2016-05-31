@@ -13,13 +13,8 @@
 import copy
 from oslo_log import log as logging
 
-from tempest_lib.common.utils import misc as misc_utils
-from tempest_lib import exceptions as lib_exc
-
-from tempest import config
 from tempest import exceptions
-
-CONF = config.CONF
+from tempest.lib.common.utils import misc as misc_utils
 
 LOG = logging.getLogger(__name__)
 
@@ -28,32 +23,21 @@ def get_network_from_name(name, compute_networks_client):
     """Get a full network dict from just a network name
 
     :param str name: the name of the network to use
-    :param NetworksClientJSON compute_networks_client: The network client
+    :param NetworksClient compute_networks_client: The network client
         object to use for making the network lists api request
     :return: The full dictionary for the network in question
     :rtype: dict
-    :raises InvalidConfiguration: If the name provided is invalid, the networks
+    :raises InvalidTestResource: If the name provided is invalid, the networks
         list returns a 404, there are no found networks, or the found network
         is invalid
     """
     caller = misc_utils.find_test_caller()
 
     if not name:
-        raise exceptions.InvalidConfiguration()
+        raise exceptions.InvalidTestResource(type='network', name=name)
 
-    try:
-        networks = compute_networks_client.list_networks(name=name)
-    except lib_exc.NotFound:
-        # In case of nova network, if the fixed_network_name is not
-        # owned by the tenant, and the network client is not an admin
-        # one, list_networks will not find it
-        msg = ('Unable to find network %s. '
-               'Starting instance without specifying a network.' %
-               name)
-        if caller:
-            msg = '(%s) %s' % (caller, msg)
-        LOG.info(msg)
-        raise exceptions.InvalidConfiguration()
+    networks = compute_networks_client.list_networks()['networks']
+    networks = [n for n in networks if n['label'] == name]
 
     # Check that a network exists, else raise an InvalidConfigurationException
     if len(networks) == 1:
@@ -64,14 +48,14 @@ def get_network_from_name(name, compute_networks_client):
                    name, networks))
         if caller:
             msg = '(%s) %s' % (caller, msg)
-        LOG.warn(msg)
-        raise exceptions.InvalidConfiguration()
+        LOG.warning(msg)
+        raise exceptions.InvalidTestResource(type='network', name=name)
     else:
         msg = "Network with name: %s not found" % name
         if caller:
             msg = '(%s) %s' % (caller, msg)
-        LOG.warn(msg)
-        raise exceptions.InvalidConfiguration()
+        LOG.warning(msg)
+        raise exceptions.InvalidTestResource(type='network', name=name)
     # To be consistent between neutron and nova network always use name even
     # if label is used in the api response. If neither is present than then
     # the returned network is invalid.
@@ -80,13 +64,14 @@ def get_network_from_name(name, compute_networks_client):
         msg = "Network found from list doesn't contain a valid name or label"
         if caller:
             msg = '(%s) %s' % (caller, msg)
-        LOG.warn(msg)
-        raise exceptions.InvalidConfiguration()
+        LOG.warning(msg)
+        raise exceptions.InvalidTestResource(type='network', name=name)
     network['name'] = name
     return network
 
 
-def get_tenant_network(creds_provider, compute_networks_client):
+def get_tenant_network(creds_provider, compute_networks_client,
+                       shared_network_name):
     """Get a network usable by the primary tenant
 
     :param creds_provider: instance of credential provider
@@ -95,23 +80,24 @@ def get_tenant_network(creds_provider, compute_networks_client):
            neutron and nova-network cases. If this is not an admin network
            client, set_network_kwargs might fail in case fixed_network_name
            is the network to be used, and it's not visible to the tenant
-    :return a dict with 'id' and 'name' of the network
+    :param shared_network_name: name of the shared network to be used if no
+           tenant network is available in the creds provider
+    :returns: a dict with 'id' and 'name' of the network
     """
     caller = misc_utils.find_test_caller()
-    fixed_network_name = CONF.compute.fixed_network_name
     net_creds = creds_provider.get_primary_creds()
     network = getattr(net_creds, 'network', None)
     if not network or not network.get('name'):
-        if fixed_network_name:
+        if shared_network_name:
             msg = ('No valid network provided or created, defaulting to '
                    'fixed_network_name')
             if caller:
                 msg = '(%s) %s' % (caller, msg)
             LOG.debug(msg)
             try:
-                network = get_network_from_name(fixed_network_name,
+                network = get_network_from_name(shared_network_name,
                                                 compute_networks_client)
-            except exceptions.InvalidConfiguration:
+            except exceptions.InvalidTestResource:
                 network = {}
     msg = ('Found network %s available for tenant' % network)
     if caller:
@@ -135,6 +121,6 @@ def set_networks_kwarg(network, kwargs=None):
         if 'id' in network.keys():
             params.update({"networks": [{'uuid': network['id']}]})
         else:
-            LOG.warn('The provided network dict: %s was invalid and did not '
-                     ' contain an id' % network)
+            LOG.warning('The provided network dict: %s was invalid and did '
+                        'not contain an id' % network)
     return params

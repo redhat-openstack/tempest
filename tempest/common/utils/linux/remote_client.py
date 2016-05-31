@@ -14,42 +14,38 @@ import netaddr
 import re
 import time
 
-import six
-from tempest_lib.common import ssh
+from oslo_log import log as logging
 
 from tempest import config
 from tempest import exceptions
+from tempest.lib.common import ssh
+import tempest.lib.exceptions
 
 CONF = config.CONF
+
+LOG = logging.getLogger(__name__)
 
 
 class RemoteClient(object):
 
-    # NOTE(afazekas): It should always get an address instead of server
-    def __init__(self, server, username, password=None, pkey=None):
-        ssh_timeout = CONF.compute.ssh_timeout
-        network = CONF.compute.network_for_ssh
-        ip_version = CONF.compute.ip_version_for_ssh
-        ssh_channel_timeout = CONF.compute.ssh_channel_timeout
-        if isinstance(server, six.string_types):
-            ip_address = server
-        else:
-            addresses = server['addresses'][network]
-            for address in addresses:
-                if address['version'] == ip_version:
-                    ip_address = address['addr']
-                    break
-            else:
-                raise exceptions.ServerUnreachable()
+    def __init__(self, ip_address, username, password=None, pkey=None):
+        ssh_timeout = CONF.validation.ssh_timeout
+        connect_timeout = CONF.validation.connect_timeout
+
         self.ssh_client = ssh.Client(ip_address, username, password,
                                      ssh_timeout, pkey=pkey,
-                                     channel_timeout=ssh_channel_timeout)
+                                     channel_timeout=connect_timeout)
 
     def exec_command(self, cmd):
+        # Shell options below add more clearness on failures,
+        # path is extended for some non-cirros guest oses (centos7)
+        cmd = CONF.validation.ssh_shell_prologue + " " + cmd
+        LOG.debug("Remote command: %s" % cmd)
         return self.ssh_client.exec_command(cmd)
 
     def validate_authentication(self):
         """Validate ssh connection and authentication
+
            This method raises an Exception when the validation fails.
         """
         self.ssh_client.test_connection_auth()
@@ -65,8 +61,7 @@ class RemoteClient(object):
             return output.split()[1]
 
     def get_number_of_vcpus(self):
-        command = 'cat /proc/cpuinfo | grep processor | wc -l'
-        output = self.exec_command(command)
+        output = self.exec_command('grep -c ^processor /proc/cpuinfo')
         return int(output)
 
     def get_partitions(self):
@@ -87,34 +82,49 @@ class RemoteClient(object):
         cmd = 'sudo sh -c "echo \\"%s\\" >/dev/console"' % message
         return self.exec_command(cmd)
 
-    def ping_host(self, host, count=CONF.compute.ping_count,
-                  size=CONF.compute.ping_size):
+    def ping_host(self, host, count=CONF.validation.ping_count,
+                  size=CONF.validation.ping_size, nic=None):
         addr = netaddr.IPAddress(host)
         cmd = 'ping6' if addr.version == 6 else 'ping'
+        if nic:
+            cmd = 'sudo {cmd} -I {nic}'.format(cmd=cmd, nic=nic)
         cmd += ' -c{0} -w{0} -s{1} {2}'.format(count, size, host)
         return self.exec_command(cmd)
 
-    def get_mac_address(self):
-        cmd = "/bin/ip addr | awk '/ether/ {print $2}'"
-        return self.exec_command(cmd)
+    def set_mac_address(self, nic, address):
+        self.set_nic_state(nic=nic, state="down")
+        cmd = "sudo ip link set dev {0} address {1}".format(nic, address)
+        self.exec_command(cmd)
+        self.set_nic_state(nic=nic, state="up")
 
-    def get_nic_name(self, address):
-        cmd = "/bin/ip -o addr | awk '/%s/ {print $2}'" % address
-        return self.exec_command(cmd)
+    def get_mac_address(self, nic=""):
+        show_nic = "show {nic} ".format(nic=nic) if nic else ""
+        cmd = "ip addr %s| awk '/ether/ {print $2}'" % show_nic
+        return self.exec_command(cmd).strip().lower()
+
+    def get_nic_name_by_mac(self, address):
+        cmd = "ip -o link | awk '/%s/ {print $2}'" % address
+        nic = self.exec_command(cmd)
+        return nic.strip().strip(":").lower()
+
+    def get_nic_name_by_ip(self, address):
+        cmd = "ip -o addr | awk '/%s/ {print $2}'" % address
+        nic = self.exec_command(cmd)
+        return nic.strip().strip(":").lower()
 
     def get_ip_list(self):
-        cmd = "/bin/ip address"
+        cmd = "ip address"
         return self.exec_command(cmd)
 
     def assign_static_ip(self, nic, addr):
-        cmd = "sudo /bin/ip addr add {ip}/{mask} dev {nic}".format(
+        cmd = "sudo ip addr add {ip}/{mask} dev {nic}".format(
             ip=addr, mask=CONF.network.tenant_network_mask_bits,
             nic=nic
         )
         return self.exec_command(cmd)
 
-    def turn_nic_on(self, nic):
-        cmd = "sudo /bin/ip link set {nic} up".format(nic=nic)
+    def set_nic_state(self, nic, state="up"):
+        cmd = "sudo ip link set {nic} {state}".format(nic=nic, state=state)
         return self.exec_command(cmd)
 
     def get_pids(self, pr_name):
@@ -137,8 +147,7 @@ class RemoteClient(object):
     def _renew_lease_udhcpc(self, fixed_ip=None):
         """Renews DHCP lease via udhcpc client. """
         file_path = '/var/run/udhcpc.'
-        nic_name = self.get_nic_name(fixed_ip)
-        nic_name = nic_name.strip().lower()
+        nic_name = self.get_nic_name_by_ip(fixed_ip)
         pid = self.exec_command('cat {path}{nic}.pid'.
                                 format(path=file_path, nic=nic_name))
         pid = pid.strip()
@@ -157,11 +166,28 @@ class RemoteClient(object):
         * dhclient
         """
         # TODO(yfried): add support for dhcpcd
-        suported_clients = ['udhcpc', 'dhclient']
+        supported_clients = ['udhcpc', 'dhclient']
         dhcp_client = CONF.scenario.dhcp_client
-        if dhcp_client not in suported_clients:
+        if dhcp_client not in supported_clients:
             raise exceptions.InvalidConfiguration('%s DHCP client unsupported'
                                                   % dhcp_client)
         if dhcp_client == 'udhcpc' and not fixed_ip:
             raise ValueError("need to set 'fixed_ip' for udhcpc client")
         return getattr(self, '_renew_lease_' + dhcp_client)(fixed_ip=fixed_ip)
+
+    def mount(self, dev_name, mount_path='/mnt'):
+        cmd_mount = 'sudo mount /dev/%s %s' % (dev_name, mount_path)
+        self.exec_command(cmd_mount)
+
+    def umount(self, mount_path='/mnt'):
+        self.exec_command('sudo umount %s' % mount_path)
+
+    def make_fs(self, dev_name, fs='ext4'):
+        cmd_mkfs = 'sudo /usr/sbin/mke2fs -t %s /dev/%s' % (fs, dev_name)
+        try:
+            self.exec_command(cmd_mkfs)
+        except tempest.lib.exceptions.SSHExecCommandFailed:
+            LOG.error("Couldn't mke2fs")
+            cmd_why = 'sudo ls -lR /dev'
+            LOG.info("Contents of /dev: %s" % self.exec_command(cmd_why))
+            raise

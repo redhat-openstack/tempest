@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 
-# Copyright 2014 Dell Inc.
+# Copyright 2015 Dell Inc.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
 #    not use this file except in compliance with the License. You may obtain
 #    a copy of the License at
 #
-#         http://www.apache.org/licenses/LICENSE-2.0
+#        http://www.apache.org/licenses/LICENSE-2.0
 #
 #    Unless required by applicable law or agreed to in writing, software
 #    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
@@ -16,7 +16,8 @@
 
 from oslo_log import log as logging
 
-from tempest import clients
+from tempest.common import credentials_factory as credentials
+from tempest.common import identity
 from tempest import config
 from tempest import test
 
@@ -69,29 +70,29 @@ def init_conf():
     CONF_PRIV_NETWORK_NAME = CONF.compute.fixed_network_name
     CONF_PUB_NETWORK = CONF.network.public_network_id
     CONF_PUB_ROUTER = CONF.network.public_router_id
-    CONF_TENANTS = [CONF.identity.admin_tenant_name,
+    CONF_TENANTS = [CONF.auth.admin_tenant_name,
                     CONF.identity.tenant_name,
                     CONF.identity.alt_tenant_name]
-    CONF_USERS = [CONF.identity.admin_username, CONF.identity.username,
+    CONF_USERS = [CONF.auth.admin_username, CONF.identity.username,
                   CONF.identity.alt_username]
 
     if IS_NEUTRON:
-        CONF_PRIV_NETWORK = _get_priv_net_id(CONF.compute.fixed_network_name,
-                                             CONF.identity.tenant_name)
+        CONF_PRIV_NETWORK = _get_network_id(CONF.compute.fixed_network_name,
+                                            CONF.auth.admin_tenant_name)
         CONF_NETWORKS = [CONF_PUB_NETWORK, CONF_PRIV_NETWORK]
 
 
-def _get_priv_net_id(prv_net_name, tenant_name):
-    am = clients.AdminManager()
-    net_cl = am.network_client
-    id_cl = am.identity_client
+def _get_network_id(net_name, tenant_name):
+    am = credentials.AdminManager()
+    net_cl = am.networks_client
+    tn_cl = am.tenants_client
 
     networks = net_cl.list_networks()
-    tenant = id_cl.get_tenant_by_name(tenant_name)
+    tenant = identity.get_tenant_by_name(tn_cl, tenant_name)
     t_id = tenant['id']
     n_id = None
     for net in networks['networks']:
-        if (net['tenant_id'] == t_id and net['name'] == prv_net_name):
+        if (net['tenant_id'] == t_id and net['name'] == net_name):
             n_id = net['id']
             break
     return n_id
@@ -102,6 +103,10 @@ class BaseService(object):
         self.client = None
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+        self.tenant_filter = {}
+        if hasattr(self, 'tenant_id'):
+            self.tenant_filter['tenant_id'] = self.tenant_id
 
     def _filter_by_tenant_id(self, item_list):
         if (item_list is None
@@ -143,7 +148,7 @@ class SnapshotService(BaseService):
 
     def list(self):
         client = self.client
-        snaps = client.list_snapshots()
+        snaps = client.list_snapshots()['snapshots']
         LOG.debug("List count, %s Snapshots" % len(snaps))
         return snaps
 
@@ -153,9 +158,8 @@ class SnapshotService(BaseService):
         for snap in snaps:
             try:
                 client.delete_snapshot(snap['id'])
-            except Exception as e:
-                LOG.exception("Delete Snapshot exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Snapshot exception.")
 
     def dry_run(self):
         snaps = self.list()
@@ -166,6 +170,7 @@ class ServerService(BaseService):
     def __init__(self, manager, **kwargs):
         super(ServerService, self).__init__(kwargs)
         self.client = manager.servers_client
+        self.server_groups_client = manager.server_groups_client
 
     def list(self):
         client = self.client
@@ -180,9 +185,8 @@ class ServerService(BaseService):
         for server in servers:
             try:
                 client.delete_server(server['id'])
-            except Exception as e:
-                LOG.exception("Delete Server exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Server exception.")
 
     def dry_run(self):
         servers = self.list()
@@ -192,8 +196,8 @@ class ServerService(BaseService):
 class ServerGroupService(ServerService):
 
     def list(self):
-        client = self.client
-        sgs = client.list_server_groups()
+        client = self.server_groups_client
+        sgs = client.list_server_groups()['server_groups']
         LOG.debug("List count, %s Server Groups" % len(sgs))
         return sgs
 
@@ -203,9 +207,8 @@ class ServerGroupService(ServerService):
         for sg in sgs:
             try:
                 client.delete_server_group(sg['id'])
-            except Exception as e:
-                LOG.exception("Delete Server Group exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Server Group exception.")
 
     def dry_run(self):
         sgs = self.list()
@@ -219,7 +222,7 @@ class StackService(BaseService):
 
     def list(self):
         client = self.client
-        stacks = client.list_stacks()
+        stacks = client.list_stacks()['stacks']
         LOG.debug("List count, %s Stacks" % len(stacks))
         return stacks
 
@@ -229,9 +232,8 @@ class StackService(BaseService):
         for stack in stacks:
             try:
                 client.delete_stack(stack['id'])
-            except Exception as e:
-                LOG.exception("Delete Stack exception: %s " % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Stack exception.")
 
     def dry_run(self):
         stacks = self.list()
@@ -245,7 +247,7 @@ class KeyPairService(BaseService):
 
     def list(self):
         client = self.client
-        keypairs = client.list_keypairs()
+        keypairs = client.list_keypairs()['keypairs']
         LOG.debug("List count, %s Keypairs" % len(keypairs))
         return keypairs
 
@@ -256,9 +258,8 @@ class KeyPairService(BaseService):
             try:
                 name = k['keypair']['name']
                 client.delete_keypair(name)
-            except Exception as e:
-                LOG.exception("Delete Keypairs exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Keypairs exception.")
 
     def dry_run(self):
         keypairs = self.list()
@@ -268,11 +269,11 @@ class KeyPairService(BaseService):
 class SecurityGroupService(BaseService):
     def __init__(self, manager, **kwargs):
         super(SecurityGroupService, self).__init__(kwargs)
-        self.client = manager.security_groups_client
+        self.client = manager.compute_security_groups_client
 
     def list(self):
         client = self.client
-        secgrps = client.list_security_groups()
+        secgrps = client.list_security_groups()['security_groups']
         secgrp_del = [grp for grp in secgrps if grp['name'] != 'default']
         LOG.debug("List count, %s Security Groups" % len(secgrp_del))
         return secgrp_del
@@ -283,8 +284,8 @@ class SecurityGroupService(BaseService):
         for g in secgrp_del:
             try:
                 client.delete_security_group(g['id'])
-            except Exception as e:
-                LOG.exception("Delete Security Groups exception: %s" % e)
+            except Exception:
+                LOG.exception("Delete Security Groups exception.")
 
     def dry_run(self):
         secgrp_del = self.list()
@@ -294,11 +295,11 @@ class SecurityGroupService(BaseService):
 class FloatingIpService(BaseService):
     def __init__(self, manager, **kwargs):
         super(FloatingIpService, self).__init__(kwargs)
-        self.client = manager.floating_ips_client
+        self.client = manager.compute_floating_ips_client
 
     def list(self):
         client = self.client
-        floating_ips = client.list_floating_ips()
+        floating_ips = client.list_floating_ips()['floating_ips']
         LOG.debug("List count, %s Floating IPs" % len(floating_ips))
         return floating_ips
 
@@ -308,9 +309,8 @@ class FloatingIpService(BaseService):
         for f in floating_ips:
             try:
                 client.delete_floating_ip(f['id'])
-            except Exception as e:
-                LOG.exception("Delete Floating IPs exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Floating IPs exception.")
 
     def dry_run(self):
         floating_ips = self.list()
@@ -324,7 +324,7 @@ class VolumeService(BaseService):
 
     def list(self):
         client = self.client
-        vols = client.list_volumes()
+        vols = client.list_volumes()['volumes']
         LOG.debug("List count, %s Volumes" % len(vols))
         return vols
 
@@ -334,9 +334,8 @@ class VolumeService(BaseService):
         for v in vols:
             try:
                 client.delete_volume(v['id'])
-            except Exception as e:
-                LOG.exception("Delete Volume exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Volume exception.")
 
     def dry_run(self):
         vols = self.list()
@@ -352,12 +351,11 @@ class VolumeQuotaService(BaseService):
         client = self.client
         try:
             client.delete_quota_set(self.tenant_id)
-        except Exception as e:
-            LOG.exception("Delete Volume Quotas exception: %s" % e)
-            pass
+        except Exception:
+            LOG.exception("Delete Volume Quotas exception.")
 
     def dry_run(self):
-        quotas = self.client.show_quota_usage(self.tenant_id)
+        quotas = self.client.show_quota_usage(self.tenant_id)['quota_set']
         self.data['volume_quotas'] = quotas
 
 
@@ -371,14 +369,13 @@ class NovaQuotaService(BaseService):
         client = self.client
         try:
             client.delete_quota_set(self.tenant_id)
-        except Exception as e:
-            LOG.exception("Delete Quotas exception: %s" % e)
-            pass
+        except Exception:
+            LOG.exception("Delete Quotas exception.")
 
     def dry_run(self):
         client = self.limits_client
-        quotas = client.get_absolute_limits()
-        self.data['compute_quotas'] = quotas
+        quotas = client.show_limits()['limits']
+        self.data['compute_quotas'] = quotas['absolute']
 
 
 # Begin network service classes
@@ -386,6 +383,14 @@ class NetworkService(BaseService):
     def __init__(self, manager, **kwargs):
         super(NetworkService, self).__init__(kwargs)
         self.client = manager.network_client
+        self.networks_client = manager.networks_client
+        self.subnets_client = manager.subnets_client
+        self.ports_client = manager.ports_client
+        self.floating_ips_client = manager.floating_ips_client
+        self.metering_labels_client = manager.metering_labels_client
+        self.metering_label_rules_client = manager.metering_label_rules_client
+        self.security_groups_client = manager.security_groups_client
+        self.routers_client = manager.routers_client
 
     def _filter_by_conf_networks(self, item_list):
         if not item_list or not all(('network_id' in i for i in item_list)):
@@ -395,9 +400,9 @@ class NetworkService(BaseService):
                 not in CONF_NETWORKS]
 
     def list(self):
-        client = self.client
-        networks = client.list_networks()
-        networks = self._filter_by_tenant_id(networks['networks'])
+        client = self.networks_client
+        networks = client.list_networks(**self.tenant_filter)
+        networks = networks['networks']
         # filter out networks declared in tempest.conf
         if self.is_preserve:
             networks = [network for network in networks
@@ -406,152 +411,25 @@ class NetworkService(BaseService):
         return networks
 
     def delete(self):
-        client = self.client
+        client = self.networks_client
         networks = self.list()
         for n in networks:
             try:
                 client.delete_network(n['id'])
-            except Exception as e:
-                LOG.exception("Delete Network exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Network exception.")
 
     def dry_run(self):
         networks = self.list()
         self.data['networks'] = networks
 
 
-class NetworkIpSecPolicyService(NetworkService):
-
-    def list(self):
-        client = self.client
-        ipsecpols = client.list_ipsecpolicies()
-        ipsecpols = ipsecpols['ipsecpolicies']
-        ipsecpols = self._filter_by_tenant_id(ipsecpols)
-        LOG.debug("List count, %s IP Security Policies" % len(ipsecpols))
-        return ipsecpols
-
-    def delete(self):
-        client = self.client
-        ipsecpols = self.list()
-        for ipsecpol in ipsecpols:
-            try:
-                client.delete_ipsecpolicy(ipsecpol['id'])
-            except Exception as e:
-                LOG.exception("Delete IP Securty Policy exception: %s" % e)
-                pass
-
-    def dry_run(self):
-        ipsecpols = self.list()
-        self.data['ip_security_policies'] = ipsecpols
-
-
-class NetworkFwPolicyService(NetworkService):
-
-    def list(self):
-        client = self.client
-        fwpols = client.list_firewall_policies()
-        fwpols = fwpols['firewall_policies']
-        fwpols = self._filter_by_tenant_id(fwpols)
-        LOG.debug("List count, %s Firewall Policies" % len(fwpols))
-        return fwpols
-
-    def delete(self):
-        client = self.client
-        fwpols = self.list()
-        for fwpol in fwpols:
-            try:
-                client.delete_firewall_policy(fwpol['id'])
-            except Exception as e:
-                LOG.exception("Delete Firewall Policy exception: %s" % e)
-                pass
-
-    def dry_run(self):
-        fwpols = self.list()
-        self.data['firewall_policies'] = fwpols
-
-
-class NetworkFwRulesService(NetworkService):
-
-    def list(self):
-        client = self.client
-        fwrules = client.list_firewall_rules()
-        fwrules = fwrules['firewall_rules']
-        fwrules = self._filter_by_tenant_id(fwrules)
-        LOG.debug("List count, %s Firewall Rules" % len(fwrules))
-        return fwrules
-
-    def delete(self):
-        client = self.client
-        fwrules = self.list()
-        for fwrule in fwrules:
-            try:
-                client.delete_firewall_rule(fwrule['id'])
-            except Exception as e:
-                LOG.exception("Delete Firewall Rule exception: %s" % e)
-                pass
-
-    def dry_run(self):
-        fwrules = self.list()
-        self.data['firewall_rules'] = fwrules
-
-
-class NetworkIkePolicyService(NetworkService):
-
-    def list(self):
-        client = self.client
-        ikepols = client.list_ikepolicies()
-        ikepols = ikepols['ikepolicies']
-        ikepols = self._filter_by_tenant_id(ikepols)
-        LOG.debug("List count, %s IKE Policies" % len(ikepols))
-        return ikepols
-
-    def delete(self):
-        client = self.client
-        ikepols = self.list()
-        for ikepol in ikepols:
-            try:
-                client.delete_firewall_rule(ikepol['id'])
-            except Exception as e:
-                LOG.exception("Delete IKE Policy exception: %s" % e)
-                pass
-
-    def dry_run(self):
-        ikepols = self.list()
-        self.data['ike_policies'] = ikepols
-
-
-class NetworkVpnServiceService(NetworkService):
-
-    def list(self):
-        client = self.client
-        vpnsrvs = client.list_vpnservices()
-        vpnsrvs = vpnsrvs['vpnservices']
-        vpnsrvs = self._filter_by_tenant_id(vpnsrvs)
-        LOG.debug("List count, %s VPN Services" % len(vpnsrvs))
-        return vpnsrvs
-
-    def delete(self):
-        client = self.client
-        vpnsrvs = self.list()
-        for vpnsrv in vpnsrvs:
-            try:
-                client.delete_vpnservice(vpnsrv['id'])
-            except Exception as e:
-                LOG.exception("Delete VPN Service exception: %s" % e)
-                pass
-
-    def dry_run(self):
-        vpnsrvs = self.list()
-        self.data['vpn_services'] = vpnsrvs
-
-
 class NetworkFloatingIpService(NetworkService):
 
     def list(self):
-        client = self.client
-        flips = client.list_floatingips()
+        client = self.floating_ips_client
+        flips = client.list_floatingips(**self.tenant_filter)
         flips = flips['floatingips']
-        flips = self._filter_by_tenant_id(flips)
         LOG.debug("List count, %s Network Floating IPs" % len(flips))
         return flips
 
@@ -561,9 +439,8 @@ class NetworkFloatingIpService(NetworkService):
         for flip in flips:
             try:
                 client.delete_floatingip(flip['id'])
-            except Exception as e:
-                LOG.exception("Delete Network Floating IP exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Network Floating IP exception.")
 
     def dry_run(self):
         flips = self.list()
@@ -573,10 +450,9 @@ class NetworkFloatingIpService(NetworkService):
 class NetworkRouterService(NetworkService):
 
     def list(self):
-        client = self.client
-        routers = client.list_routers()
+        client = self.routers_client
+        routers = client.list_routers(**self.tenant_filter)
         routers = routers['routers']
-        routers = self._filter_by_tenant_id(routers)
         if self.is_preserve:
             routers = [router for router in routers
                        if router['id'] != CONF_PUB_ROUTER]
@@ -585,20 +461,20 @@ class NetworkRouterService(NetworkService):
         return routers
 
     def delete(self):
-        client = self.client
+        client = self.routers_client
+        ports_client = self.ports_client
         routers = self.list()
         for router in routers:
             try:
                 rid = router['id']
-                ports = client.list_router_interfaces(rid)
-                ports = ports['ports']
+                ports = [port for port
+                         in ports_client.list_ports(device_id=rid)['ports']
+                         if port["device_owner"] == "network:router_interface"]
                 for port in ports:
-                    subid = port['fixed_ips'][0]['subnet_id']
-                    client.remove_router_interface_with_subnet_id(rid, subid)
+                    client.remove_router_interface(rid, port_id=port['id'])
                 client.delete_router(rid)
-            except Exception as e:
-                LOG.exception("Delete Router exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Router exception.")
 
     def dry_run(self):
         routers = self.list()
@@ -621,9 +497,8 @@ class NetworkHealthMonitorService(NetworkService):
         for hm in hms:
             try:
                 client.delete_health_monitor(hm['id'])
-            except Exception as e:
-                LOG.exception("Delete Health Monitor exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Health Monitor exception.")
 
     def dry_run(self):
         hms = self.list()
@@ -646,9 +521,8 @@ class NetworkMemberService(NetworkService):
         for member in members:
             try:
                 client.delete_member(member['id'])
-            except Exception as e:
-                LOG.exception("Delete Member exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Member exception.")
 
     def dry_run(self):
         members = self.list()
@@ -671,9 +545,8 @@ class NetworkVipService(NetworkService):
         for vip in vips:
             try:
                 client.delete_vip(vip['id'])
-            except Exception as e:
-                LOG.exception("Delete VIP exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete VIP exception.")
 
     def dry_run(self):
         vips = self.list()
@@ -696,9 +569,8 @@ class NetworkPoolService(NetworkService):
         for pool in pools:
             try:
                 client.delete_pool(pool['id'])
-            except Exception as e:
-                LOG.exception("Delete Pool exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Pool exception.")
 
     def dry_run(self):
         pools = self.list()
@@ -708,7 +580,7 @@ class NetworkPoolService(NetworkService):
 class NetworkMeteringLabelRuleService(NetworkService):
 
     def list(self):
-        client = self.client
+        client = self.metering_label_rules_client
         rules = client.list_metering_label_rules()
         rules = rules['metering_label_rules']
         rules = self._filter_by_tenant_id(rules)
@@ -716,14 +588,13 @@ class NetworkMeteringLabelRuleService(NetworkService):
         return rules
 
     def delete(self):
-        client = self.client
+        client = self.metering_label_rules_client
         rules = self.list()
         for rule in rules:
             try:
                 client.delete_metering_label_rule(rule['id'])
-            except Exception as e:
-                LOG.exception("Delete Metering Label Rule exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Metering Label Rule exception.")
 
     def dry_run(self):
         rules = self.list()
@@ -733,7 +604,7 @@ class NetworkMeteringLabelRuleService(NetworkService):
 class NetworkMeteringLabelService(NetworkService):
 
     def list(self):
-        client = self.client
+        client = self.metering_labels_client
         labels = client.list_metering_labels()
         labels = labels['metering_labels']
         labels = self._filter_by_tenant_id(labels)
@@ -741,14 +612,13 @@ class NetworkMeteringLabelService(NetworkService):
         return labels
 
     def delete(self):
-        client = self.client
+        client = self.metering_labels_client
         labels = self.list()
         for label in labels:
             try:
                 client.delete_metering_label(label['id'])
-            except Exception as e:
-                LOG.exception("Delete Metering Label exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Metering Label exception.")
 
     def dry_run(self):
         labels = self.list()
@@ -758,51 +628,79 @@ class NetworkMeteringLabelService(NetworkService):
 class NetworkPortService(NetworkService):
 
     def list(self):
-        client = self.client
-        ports = client.list_ports()
-        ports = ports['ports']
-        ports = self._filter_by_tenant_id(ports)
+        client = self.ports_client
+        ports = [port for port in
+                 client.list_ports(**self.tenant_filter)['ports']
+                 if port["device_owner"] == "" or
+                 port["device_owner"].startswith("compute:")]
+
         if self.is_preserve:
             ports = self._filter_by_conf_networks(ports)
+
         LOG.debug("List count, %s Ports" % len(ports))
         return ports
 
     def delete(self):
-        client = self.client
+        client = self.ports_client
         ports = self.list()
         for port in ports:
             try:
                 client.delete_port(port['id'])
-            except Exception as e:
-                LOG.exception("Delete Port exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Port exception.")
 
     def dry_run(self):
         ports = self.list()
         self.data['ports'] = ports
 
 
+class NetworkSecGroupService(NetworkService):
+    def list(self):
+        client = self.security_groups_client
+        filter = self.tenant_filter
+        # cannot delete default sec group so never show it.
+        secgroups = [secgroup for secgroup in
+                     client.list_security_groups(**filter)['security_groups']
+                     if secgroup['name'] != 'default']
+
+        if self.is_preserve:
+            secgroups = self._filter_by_conf_networks(secgroups)
+        LOG.debug("List count, %s securtiy_groups" % len(secgroups))
+        return secgroups
+
+    def delete(self):
+        client = self.client
+        secgroups = self.list()
+        for secgroup in secgroups:
+            try:
+                client.delete_secgroup(secgroup['id'])
+            except Exception:
+                LOG.exception("Delete security_group exception.")
+
+    def dry_run(self):
+        secgroups = self.list()
+        self.data['secgroups'] = secgroups
+
+
 class NetworkSubnetService(NetworkService):
 
     def list(self):
-        client = self.client
-        subnets = client.list_subnets()
+        client = self.subnets_client
+        subnets = client.list_subnets(**self.tenant_filter)
         subnets = subnets['subnets']
-        subnets = self._filter_by_tenant_id(subnets)
         if self.is_preserve:
             subnets = self._filter_by_conf_networks(subnets)
         LOG.debug("List count, %s Subnets" % len(subnets))
         return subnets
 
     def delete(self):
-        client = self.client
+        client = self.subnets_client
         subnets = self.list()
         for subnet in subnets:
             try:
                 client.delete_subnet(subnet['id'])
-            except Exception as e:
-                LOG.exception("Delete Subnet exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Subnet exception.")
 
     def dry_run(self):
         subnets = self.list()
@@ -827,9 +725,8 @@ class TelemetryAlarmService(BaseService):
         for alarm in alarms:
             try:
                 client.delete_alarm(alarm['id'])
-            except Exception as e:
-                LOG.exception("Delete Alarms exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Alarms exception.")
 
     def dry_run(self):
         alarms = self.list()
@@ -844,7 +741,7 @@ class FlavorService(BaseService):
 
     def list(self):
         client = self.client
-        flavors = client.list_flavors({"is_public": None})
+        flavors = client.list_flavors({"is_public": None})['flavors']
         if not self.is_save_state:
             # recreate list removing saved flavors
             flavors = [flavor for flavor in flavors if flavor['id']
@@ -862,9 +759,8 @@ class FlavorService(BaseService):
         for flavor in flavors:
             try:
                 client.delete_flavor(flavor['id'])
-            except Exception as e:
-                LOG.exception("Delete Flavor exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Flavor exception.")
 
     def dry_run(self):
         flavors = self.list()
@@ -880,11 +776,11 @@ class FlavorService(BaseService):
 class ImageService(BaseService):
     def __init__(self, manager, **kwargs):
         super(ImageService, self).__init__(kwargs)
-        self.client = manager.images_client
+        self.client = manager.compute_images_client
 
     def list(self):
         client = self.client
-        images = client.list_images({"all_tenants": True})
+        images = client.list_images({"all_tenants": True})['images']
         if not self.is_save_state:
             images = [image for image in images if image['id']
                       not in self.saved_state_json['images'].keys()]
@@ -900,17 +796,16 @@ class ImageService(BaseService):
         for image in images:
             try:
                 client.delete_image(image['id'])
-            except Exception as e:
-                LOG.exception("Delete Image exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Image exception.")
 
     def dry_run(self):
         images = self.list()
         self.data['images'] = images
 
     def save_state(self):
-        images = self.list()
         self.data['images'] = {}
+        images = self.list()
         for image in images:
             self.data['images'][image['id']] = image['name']
 
@@ -921,11 +816,14 @@ class IdentityService(BaseService):
         self.client = manager.identity_client
 
 
-class UserService(IdentityService):
+class UserService(BaseService):
+
+    def __init__(self, manager, **kwargs):
+        super(UserService, self).__init__(kwargs)
+        self.client = manager.users_client
 
     def list(self):
-        client = self.client
-        users = client.get_users()
+        users = self.client.list_users()['users']
 
         if not self.is_save_state:
             users = [user for user in users if user['id']
@@ -937,20 +835,18 @@ class UserService(IdentityService):
 
         elif not self.is_save_state:  # Never delete admin user
             users = [user for user in users if user['name'] !=
-                     CONF.identity.admin_username]
+                     CONF.auth.admin_username]
 
         LOG.debug("List count, %s Users after reconcile" % len(users))
         return users
 
     def delete(self):
-        client = self.client
         users = self.list()
         for user in users:
             try:
-                client.delete_user(user['id'])
-            except Exception as e:
-                LOG.exception("Delete User exception: %s" % e)
-                pass
+                self.client.delete_user(user['id'])
+            except Exception:
+                LOG.exception("Delete User exception.")
 
     def dry_run(self):
         users = self.list()
@@ -963,12 +859,15 @@ class UserService(IdentityService):
             self.data['users'][user['id']] = user['name']
 
 
-class RoleService(IdentityService):
+class RoleService(BaseService):
+
+    def __init__(self, manager, **kwargs):
+        super(RoleService, self).__init__(kwargs)
+        self.client = manager.roles_client
 
     def list(self):
-        client = self.client
         try:
-            roles = client.list_roles()
+            roles = self.client.list_roles()['roles']
             # reconcile roles with saved state and never list admin role
             if not self.is_save_state:
                 roles = [role for role in roles if
@@ -977,19 +876,17 @@ class RoleService(IdentityService):
                           and role['name'] != CONF.identity.admin_role)]
                 LOG.debug("List count, %s Roles after reconcile" % len(roles))
             return roles
-        except Exception as ex:
-            LOG.exception("Cannot retrieve Roles, exception: %s" % ex)
+        except Exception:
+            LOG.exception("Cannot retrieve Roles.")
             return []
 
     def delete(self):
-        client = self.client
         roles = self.list()
         for role in roles:
             try:
-                client.delete_role(role['id'])
-            except Exception as e:
-                LOG.exception("Delete Role exception: %s" % e)
-                pass
+                self.client.delete_role(role['id'])
+            except Exception:
+                LOG.exception("Delete Role exception.")
 
     def dry_run(self):
         roles = self.list()
@@ -1002,15 +899,18 @@ class RoleService(IdentityService):
             self.data['roles'][role['id']] = role['name']
 
 
-class TenantService(IdentityService):
+class TenantService(BaseService):
+
+    def __init__(self, manager, **kwargs):
+        super(TenantService, self).__init__(kwargs)
+        self.client = manager.tenants_client
 
     def list(self):
-        client = self.client
-        tenants = client.list_tenants()
+        tenants = self.client.list_tenants()['tenants']
         if not self.is_save_state:
             tenants = [tenant for tenant in tenants if (tenant['id']
                        not in self.saved_state_json['tenants'].keys()
-                       and tenant['name'] != CONF.identity.admin_tenant_name)]
+                       and tenant['name'] != CONF.auth.admin_tenant_name)]
 
         if self.is_preserve:
             tenants = [tenant for tenant in tenants if tenant['name']
@@ -1020,14 +920,12 @@ class TenantService(IdentityService):
         return tenants
 
     def delete(self):
-        client = self.client
         tenants = self.list()
         for tenant in tenants:
             try:
-                client.delete_tenant(tenant['id'])
-            except Exception as e:
-                LOG.exception("Delete Tenant exception: %s" % e)
-                pass
+                self.client.delete_tenant(tenant['id'])
+            except Exception:
+                LOG.exception("Delete Tenant exception.")
 
     def dry_run(self):
         tenants = self.list()
@@ -1044,11 +942,11 @@ class DomainService(BaseService):
 
     def __init__(self, manager, **kwargs):
         super(DomainService, self).__init__(kwargs)
-        self.client = manager.identity_v3_client
+        self.client = manager.domains_client
 
     def list(self):
         client = self.client
-        domains = client.list_domains()
+        domains = client.list_domains()['domains']
         if not self.is_save_state:
             domains = [domain for domain in domains if domain['id']
                        not in self.saved_state_json['domains'].keys()]
@@ -1063,9 +961,8 @@ class DomainService(BaseService):
             try:
                 client.update_domain(domain['id'], enabled=False)
                 client.delete_domain(domain['id'])
-            except Exception as e:
-                LOG.exception("Delete Domain exception: %s" % e)
-                pass
+            except Exception:
+                LOG.exception("Delete Domain exception.")
 
     def dry_run(self):
         domains = self.list()
@@ -1080,7 +977,6 @@ class DomainService(BaseService):
 
 def get_tenant_cleanup_services():
     tenant_services = []
-
     if IS_CEILOMETER:
         tenant_services.append(TelemetryAlarmService)
     if IS_NOVA:
@@ -1094,26 +990,15 @@ def get_tenant_cleanup_services():
     if IS_HEAT:
         tenant_services.append(StackService)
     if IS_NEUTRON:
-        if test.is_extension_enabled('vpnaas', 'network'):
-            tenant_services.append(NetworkIpSecPolicyService)
-            tenant_services.append(NetworkIkePolicyService)
-            tenant_services.append(NetworkVpnServiceService)
-        if test.is_extension_enabled('fwaas', 'network'):
-            tenant_services.append(NetworkFwPolicyService)
-            tenant_services.append(NetworkFwRulesService)
-        if test.is_extension_enabled('lbaas', 'network'):
-            tenant_services.append(NetworkHealthMonitorService)
-            tenant_services.append(NetworkMemberService)
-            tenant_services.append(NetworkVipService)
-            tenant_services.append(NetworkPoolService)
+        tenant_services.append(NetworkFloatingIpService)
         if test.is_extension_enabled('metering', 'network'):
             tenant_services.append(NetworkMeteringLabelRuleService)
             tenant_services.append(NetworkMeteringLabelService)
         tenant_services.append(NetworkRouterService)
-        tenant_services.append(NetworkFloatingIpService)
         tenant_services.append(NetworkPortService)
         tenant_services.append(NetworkSubnetService)
         tenant_services.append(NetworkService)
+        tenant_services.append(NetworkSecGroupService)
     if IS_CINDER:
         tenant_services.append(SnapshotService)
         tenant_services.append(VolumeService)

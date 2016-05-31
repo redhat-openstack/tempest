@@ -16,6 +16,7 @@
 from testtools import matchers
 
 from tempest.api.volume import base
+from tempest.common import waiters
 from tempest import config
 from tempest import test
 
@@ -47,25 +48,27 @@ class VolumesV2TransfersTest(base.BaseVolumeTest):
         self.addCleanup(self._delete_volume, volume['id'])
 
         # Create a volume transfer
-        transfer = self.client.create_volume_transfer(volume['id'])
+        transfer = self.client.create_volume_transfer(
+            volume_id=volume['id'])['transfer']
         transfer_id = transfer['id']
         auth_key = transfer['auth_key']
-        self.client.wait_for_volume_status(volume['id'],
-                                           'awaiting-transfer')
+        waiters.wait_for_volume_status(self.client,
+                                       volume['id'], 'awaiting-transfer')
 
         # Get a volume transfer
-        body = self.client.show_volume_transfer(transfer_id)
+        body = self.client.show_volume_transfer(transfer_id)['transfer']
         self.assertEqual(volume['id'], body['volume_id'])
 
         # List volume transfers, the result should be greater than
         # or equal to 1
-        body = self.client.list_volume_transfers()
+        body = self.client.list_volume_transfers()['transfers']
         self.assertThat(len(body), matchers.GreaterThan(0))
 
         # Accept a volume transfer by alt_tenant
-        body = self.alt_client.accept_volume_transfer(transfer_id,
-                                                      auth_key)
-        self.alt_client.wait_for_volume_status(volume['id'], 'available')
+        body = self.alt_client.accept_volume_transfer(
+            transfer_id, auth_key=auth_key)['transfer']
+        waiters.wait_for_volume_status(self.alt_client,
+                                       volume['id'], 'available')
 
     @test.idempotent_id('ab526943-b725-4c07-b875-8e8ef87a2c30')
     def test_create_list_delete_volume_transfer(self):
@@ -74,13 +77,14 @@ class VolumesV2TransfersTest(base.BaseVolumeTest):
         self.addCleanup(self._delete_volume, volume['id'])
 
         # Create a volume transfer
-        body = self.client.create_volume_transfer(volume['id'])
+        body = self.client.create_volume_transfer(
+            volume_id=volume['id'])['transfer']
         transfer_id = body['id']
-        self.client.wait_for_volume_status(volume['id'],
-                                           'awaiting-transfer')
+        waiters.wait_for_volume_status(self.client,
+                                       volume['id'], 'awaiting-transfer')
 
         # List all volume transfers (looking for the one we created)
-        body = self.client.list_volume_transfers()
+        body = self.client.list_volume_transfers()['transfers']
         for transfer in body:
             if volume['id'] == transfer['volume_id']:
                 break
@@ -89,7 +93,7 @@ class VolumesV2TransfersTest(base.BaseVolumeTest):
 
         # Delete a volume transfer
         self.client.delete_volume_transfer(transfer_id)
-        self.client.wait_for_volume_status(volume['id'], 'available')
+        waiters.wait_for_volume_status(self.client, volume['id'], 'available')
 
 
 class VolumesV1TransfersTest(VolumesV2TransfersTest):

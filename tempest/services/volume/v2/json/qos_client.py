@@ -12,8 +12,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest.services.volume.json import qos_client
+from tempest.services.volume.base import base_qos_client
 
 
-class QosSpecsV2ClientJSON(qos_client.BaseQosSpecsClientJSON):
+class QosSpecsClient(base_qos_client.BaseQosSpecsClient):
     api_version = "v2"

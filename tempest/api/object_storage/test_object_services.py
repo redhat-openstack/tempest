@@ -21,10 +21,10 @@ import zlib
 
 import six
 from six import moves
-from tempest_lib.common.utils import data_utils
 
 from tempest.api.object_storage import base
 from tempest.common import custom_matchers
+from tempest.common.utils import data_utils
 from tempest import config
 from tempest import test
 
@@ -545,7 +545,7 @@ class ObjectTest(base.BaseObjectTest):
         self.assertTrue(resp['etag'].strip('\"').isalnum())
         self.assertTrue(re.match("^\d+\.?\d*\Z", resp['x-timestamp']))
         self.assertNotEqual(len(resp['content-type']), 0)
-        self.assertTrue(re.match("^tx[0-9a-f]*-[0-9a-f]*$",
+        self.assertTrue(re.match("^tx[0-9a-f]{21}-[0-9a-f]{10}.*",
                                  resp['x-trans-id']))
         self.assertNotEqual(len(resp['date']), 0)
         self.assertEqual(resp['accept-ranges'], 'bytes')
@@ -637,7 +637,7 @@ class ObjectTest(base.BaseObjectTest):
         self.assertTrue(resp['etag'].strip('\"').isalnum())
         self.assertTrue(re.match("^\d+\.?\d*\Z", resp['x-timestamp']))
         self.assertNotEqual(len(resp['content-type']), 0)
-        self.assertTrue(re.match("^tx[0-9a-f]*-[0-9a-f]*$",
+        self.assertTrue(re.match("^tx[0-9a-f]{21}-[0-9a-f]{10}.*",
                                  resp['x-trans-id']))
         self.assertNotEqual(len(resp['date']), 0)
         self.assertEqual(resp['accept-ranges'], 'bytes')
@@ -811,7 +811,7 @@ class ObjectTest(base.BaseObjectTest):
 
     @test.idempotent_id('aa467252-44f3-472a-b5ae-5b57c3c9c147')
     def test_copy_object_across_containers(self):
-        # create a container to use as  asource container
+        # create a container to use as a source container
         src_container_name = data_utils.rand_name(name='TestSourceContainer')
         self.container_client.create_container(src_container_name)
         self.containers.append(src_container_name)
@@ -827,8 +827,8 @@ class ObjectTest(base.BaseObjectTest):
         resp, _ = self.object_client.create_object(src_container_name,
                                                    object_name, data)
         # set object metadata
-        meta_key = data_utils.rand_name(name='test-')
-        meta_value = data_utils.rand_name(name='MetaValue-')
+        meta_key = data_utils.rand_name(name='test')
+        meta_value = data_utils.rand_name(name='MetaValue')
         orig_metadata = {meta_key: meta_value}
         resp, _ = self.object_client.update_object_metadata(src_container_name,
                                                             object_name,

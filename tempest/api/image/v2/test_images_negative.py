@@ -16,16 +16,14 @@
 
 import uuid
 
-from tempest_lib import exceptions as lib_exc
-
 from tempest.api.image import base
+from tempest.lib import exceptions as lib_exc
 from tempest import test
 
 
 class ImagesNegativeTest(base.BaseV2ImageTest):
 
-    """
-    here we have -ve tests for get_image and delete_image api
+    """here we have -ve tests for show_image and delete_image api
 
     Tests
         ** get non-existent image
@@ -41,7 +39,7 @@ class ImagesNegativeTest(base.BaseV2ImageTest):
     def test_get_non_existent_image(self):
         # get the non-existent image
         non_existent_id = str(uuid.uuid4())
-        self.assertRaises(lib_exc.NotFound, self.client.get_image,
+        self.assertRaises(lib_exc.NotFound, self.client.show_image,
                           non_existent_id)
 
     @test.attr(type=['negative'])
@@ -49,7 +47,7 @@ class ImagesNegativeTest(base.BaseV2ImageTest):
     def test_get_image_null_id(self):
         # get image with image_id = NULL
         image_id = ""
-        self.assertRaises(lib_exc.NotFound, self.client.get_image, image_id)
+        self.assertRaises(lib_exc.NotFound, self.client.show_image, image_id)
 
     @test.attr(type=['negative'])
     @test.idempotent_id('e57fc127-7ba0-4693-92d7-1d8a05ebcba9')
@@ -64,7 +62,7 @@ class ImagesNegativeTest(base.BaseV2ImageTest):
         self.client.wait_for_resource_deletion(image_id)
 
         # get the deleted image
-        self.assertRaises(lib_exc.NotFound, self.client.get_image, image_id)
+        self.assertRaises(lib_exc.NotFound, self.client.show_image, image_id)
 
         # delete the deleted image
         self.assertRaises(lib_exc.NotFound, self.client.delete_image,
@@ -91,10 +89,12 @@ class ImagesNegativeTest(base.BaseV2ImageTest):
     def test_register_with_invalid_container_format(self):
         # Negative tests for invalid data supplied to POST /images
         self.assertRaises(lib_exc.BadRequest, self.client.create_image,
-                          'test', 'wrong', 'vhd')
+                          name='test', container_format='wrong',
+                          disk_format='vhd')
 
     @test.attr(type=['negative'])
     @test.idempotent_id('70c6040c-5a97-4111-9e13-e73665264ce1')
     def test_register_with_invalid_disk_format(self):
         self.assertRaises(lib_exc.BadRequest, self.client.create_image,
-                          'test', 'bare', 'wrong')
+                          name='test', container_format='bare',
+                          disk_format='wrong')

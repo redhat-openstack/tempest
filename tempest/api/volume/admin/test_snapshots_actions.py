@@ -13,13 +13,21 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest_lib.common.utils import data_utils
-
 from tempest.api.volume import base
+from tempest.common.utils import data_utils
+from tempest.common import waiters
+from tempest import config
 from tempest import test
+
+CONF = config.CONF
 
 
 class SnapshotsActionsV2Test(base.BaseVolumeAdminTest):
+    @classmethod
+    def skip_checks(cls):
+        super(SnapshotsActionsV2Test, cls).skip_checks()
+        if not CONF.volume_feature_enabled.snapshot:
+            raise cls.skipException("Cinder snapshot feature disabled")
 
     @classmethod
     def setup_clients(cls):
@@ -34,18 +42,17 @@ class SnapshotsActionsV2Test(base.BaseVolumeAdminTest):
         vol_name = data_utils.rand_name(cls.__name__ + '-Volume')
         cls.name_field = cls.special_fields['name_field']
         params = {cls.name_field: vol_name}
-        cls.volume = \
-            cls.volumes_client.create_volume(**params)
-        cls.volumes_client.wait_for_volume_status(cls.volume['id'],
-                                                  'available')
+        cls.volume = cls.volumes_client.create_volume(**params)['volume']
+        waiters.wait_for_volume_status(cls.volumes_client,
+                                       cls.volume['id'], 'available')
 
         # Create a test shared snapshot for tests
         snap_name = data_utils.rand_name(cls.__name__ + '-Snapshot')
         params = {cls.name_field: snap_name}
-        cls.snapshot = \
-            cls.client.create_snapshot(cls.volume['id'], **params)
-        cls.client.wait_for_snapshot_status(cls.snapshot['id'],
-                                            'available')
+        cls.snapshot = cls.client.create_snapshot(
+            volume_id=cls.volume['id'], **params)['snapshot']
+        waiters.wait_for_snapshot_status(cls.client,
+                                         cls.snapshot['id'], 'available')
 
     @classmethod
     def resource_cleanup(cls):
@@ -70,7 +77,7 @@ class SnapshotsActionsV2Test(base.BaseVolumeAdminTest):
     def _create_reset_and_force_delete_temp_snapshot(self, status=None):
         # Create snapshot, reset snapshot status,
         # and force delete temp snapshot
-        temp_snapshot = self.create_snapshot(self.volume['id'])
+        temp_snapshot = self.create_snapshot(volume_id=self.volume['id'])
         if status:
             self.admin_snapshots_client.\
                 reset_snapshot_status(temp_snapshot['id'], status)
@@ -87,8 +94,8 @@ class SnapshotsActionsV2Test(base.BaseVolumeAdminTest):
         status = 'creating'
         self.admin_snapshots_client.\
             reset_snapshot_status(self.snapshot['id'], status)
-        snapshot_get \
-            = self.admin_snapshots_client.show_snapshot(self.snapshot['id'])
+        snapshot_get = self.admin_snapshots_client.show_snapshot(
+            self.snapshot['id'])['snapshot']
         self.assertEqual(status, snapshot_get['status'])
 
     @test.idempotent_id('41288afd-d463-485e-8f6e-4eea159413eb')
@@ -103,9 +110,9 @@ class SnapshotsActionsV2Test(base.BaseVolumeAdminTest):
         status = 'error'
         progress_alias = self._get_progress_alias()
         self.client.update_snapshot_status(self.snapshot['id'],
-                                           status, progress)
-        snapshot_get \
-            = self.admin_snapshots_client.show_snapshot(self.snapshot['id'])
+                                           status=status, progress=progress)
+        snapshot_get = self.admin_snapshots_client.show_snapshot(
+            self.snapshot['id'])['snapshot']
         self.assertEqual(status, snapshot_get['status'])
         self.assertEqual(progress, snapshot_get[progress_alias])
 

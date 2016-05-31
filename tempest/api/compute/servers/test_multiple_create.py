@@ -13,9 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest_lib.common.utils import data_utils
-
 from tempest.api.compute import base
+from tempest.common.utils import data_utils
 from tempest import test
 
 
@@ -26,11 +25,12 @@ class MultipleCreateTestJSON(base.BaseV2ComputeTest):
         return data_utils.rand_name(self._name)
 
     def _create_multiple_servers(self, name=None, wait_until=None, **kwargs):
-        """
-        This is the right way to create_multiple servers and manage to get the
-        created servers into the servers list to be cleaned up after all.
-        """
-        kwargs['name'] = kwargs.get('name', self._generate_name())
+        # NOTE: This is the right way to create_multiple servers and manage to
+        # get the created servers into the servers list to be cleaned up after
+        # all.
+        kwargs['name'] = name if name else self._generate_name()
+        if wait_until:
+            kwargs['wait_until'] = wait_until
         body = self.create_test_server(**kwargs)
 
         return body

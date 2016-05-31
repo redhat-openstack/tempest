@@ -13,11 +13,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from tempest_lib.common.utils import data_utils
-from tempest_lib import exceptions as lib_exc
-
 from tempest.api.object_storage import base
+from tempest.common.utils import data_utils
 from tempest import config
+from tempest.lib import exceptions as lib_exc
 from tempest import test
 
 CONF = config.CONF
@@ -26,7 +25,7 @@ QUOTA_COUNT = 3
 
 
 class ContainerQuotasTest(base.BaseObjectTest):
-    """Attemps to test the perfect behavior of quotas in a container."""
+    """Attempts to test the perfect behavior of quotas in a container."""
 
     def setUp(self):
         """Creates and sets a container with quotas.
