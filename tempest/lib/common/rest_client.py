@@ -26,7 +26,7 @@ from oslo_serialization import jsonutils as json
 import six
 
 from tempest.lib.common import http
-from tempest.lib.common.utils import misc as misc_utils
+from tempest.lib.common.utils import test_utils
 from tempest.lib import exceptions
 
 # redrive rate limited calls at most twice
@@ -221,6 +221,10 @@ class RestClient(object):
         :raises exceptions.InvalidHttpSuccessCode: if the read code isn't an
                                                    expected http success code
         """
+        if not isinstance(read_code, int):
+            raise TypeError("'read_code' must be an int instead of (%s)"
+                            % type(read_code))
+
         assert_msg = ("This function only allowed to use for HTTP status"
                       "codes which explicitly defined in the RFC 7231 & 4918."
                       "{0} is not a defined Success Code!"
@@ -243,7 +247,8 @@ class RestClient(object):
                 details = pattern.format(read_code, expected_code)
                 raise exceptions.InvalidHttpSuccessCode(details)
 
-    def post(self, url, body, headers=None, extra_headers=False):
+    def post(self, url, body, headers=None, extra_headers=False,
+             chunked=False):
         """Send a HTTP POST request using keystone auth
 
         :param str url: the relative url to send the post request to
@@ -253,11 +258,12 @@ class RestClient(object):
                                    returned by the get_headers() method are to
                                    be used but additional headers are needed in
                                    the request pass them in as a dict.
+        :param bool chunked: sends the body with chunked encoding
         :return: a tuple with the first entry containing the response headers
                  and the second the response body
         :rtype: tuple
         """
-        return self.request('POST', url, extra_headers, headers, body)
+        return self.request('POST', url, extra_headers, headers, body, chunked)
 
     def get(self, url, headers=None, extra_headers=False):
         """Send a HTTP GET request using keystone service catalog and auth
@@ -306,7 +312,7 @@ class RestClient(object):
         """
         return self.request('PATCH', url, extra_headers, headers, body)
 
-    def put(self, url, body, headers=None, extra_headers=False):
+    def put(self, url, body, headers=None, extra_headers=False, chunked=False):
         """Send a HTTP PUT request using keystone service catalog and auth
 
         :param str url: the relative url to send the post request to
@@ -316,11 +322,12 @@ class RestClient(object):
                                    returned by the get_headers() method are to
                                    be used but additional headers are needed in
                                    the request pass them in as a dict.
+        :param bool chunked: sends the body with chunked encoding
         :return: a tuple with the first entry containing the response headers
                  and the second the response body
         :rtype: tuple
         """
-        return self.request('PUT', url, extra_headers, headers, body)
+        return self.request('PUT', url, extra_headers, headers, body, chunked)
 
     def head(self, url, headers=None, extra_headers=False):
         """Send a HTTP HEAD request using keystone service catalog and auth
@@ -390,7 +397,7 @@ class RestClient(object):
                            req_body=None):
         if req_headers is None:
             req_headers = {}
-        caller_name = misc_utils.find_test_caller()
+        caller_name = test_utils.find_test_caller()
         if self.trace_requests and re.search(self.trace_requests, caller_name):
             self.LOG.debug('Starting Request (%s): %s %s' %
                            (caller_name, method, req_url))
@@ -429,7 +436,7 @@ class RestClient(object):
         # we're going to just provide work around on who is actually
         # providing timings by gracefully adding no content if they don't.
         # Once we're down to 1 caller, clean this up.
-        caller_name = misc_utils.find_test_caller()
+        caller_name = test_utils.find_test_caller()
         if secs:
             secs = " %.3fs" % secs
         self.LOG.info(
@@ -520,7 +527,7 @@ class RestClient(object):
         if method != 'HEAD' and not resp_body and resp.status >= 400:
             self.LOG.warning("status >= 400 response with empty body")
 
-    def _request(self, method, url, headers=None, body=None):
+    def _request(self, method, url, headers=None, body=None, chunked=False):
         """A simple HTTP request interface."""
         # Authenticate the request with the auth provider
         req_url, req_headers, req_body = self.auth_provider.auth_request(
@@ -530,7 +537,9 @@ class RestClient(object):
         start = time.time()
         self._log_request_start(method, req_url)
         resp, resp_body = self.raw_request(
-            req_url, method, headers=req_headers, body=req_body)
+            req_url, method, headers=req_headers, body=req_body,
+            chunked=chunked
+        )
         end = time.time()
         self._log_request(method, req_url, resp, secs=(end - start),
                           req_headers=req_headers, req_body=req_body,
@@ -541,7 +550,7 @@ class RestClient(object):
 
         return resp, resp_body
 
-    def raw_request(self, url, method, headers=None, body=None):
+    def raw_request(self, url, method, headers=None, body=None, chunked=False):
         """Send a raw HTTP request without the keystone catalog or auth
 
         This method sends a HTTP request in the same manner as the request()
@@ -554,17 +563,18 @@ class RestClient(object):
         :param str headers: Headers to use for the request if none are specifed
                             the headers
         :param str body: Body to send with the request
+        :param bool chunked: sends the body with chunked encoding
         :rtype: tuple
         :return: a tuple with the first entry containing the response headers
                  and the second the response body
         """
         if headers is None:
             headers = self.get_headers()
-        return self.http_obj.request(url, method,
-                                     headers=headers, body=body)
+        return self.http_obj.request(url, method, headers=headers,
+                                     body=body, chunked=chunked)
 
     def request(self, method, url, extra_headers=False, headers=None,
-                body=None):
+                body=None, chunked=False):
         """Send a HTTP request with keystone auth and using the catalog
 
         This method will send an HTTP request using keystone auth in the
@@ -590,6 +600,7 @@ class RestClient(object):
                              get_headers() method are used. If the request
                              explicitly requires no headers use an empty dict.
         :param str body: Body to send with the request
+        :param bool chunked: sends the body with chunked encoding
         :rtype: tuple
         :return: a tuple with the first entry containing the response headers
                  and the second the response body
@@ -629,8 +640,8 @@ class RestClient(object):
             except (ValueError, TypeError):
                 headers = self.get_headers()
 
-        resp, resp_body = self._request(method, url,
-                                        headers=headers, body=body)
+        resp, resp_body = self._request(method, url, headers=headers,
+                                        body=body, chunked=chunked)
 
         while (resp.status == 413 and
                'retry-after' in resp and
@@ -842,7 +853,7 @@ class RestClient(object):
                            'the required time (%(timeout)s s).' %
                            {'resource_type': self.resource_type, 'id': id,
                             'timeout': self.build_timeout})
-                caller = misc_utils.find_test_caller()
+                caller = test_utils.find_test_caller()
                 if caller:
                     message = '(%s) %s' % (caller, message)
                 raise exceptions.TimeoutException(message)

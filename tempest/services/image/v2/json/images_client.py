@@ -13,34 +13,19 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import functools
+
 from oslo_serialization import jsonutils as json
 from six.moves.urllib import parse as urllib
 
-from tempest.common import glance_http
 from tempest.lib.common import rest_client
 from tempest.lib import exceptions as lib_exc
 
+CHUNKSIZE = 1024 * 64  # 64kB
+
 
 class ImagesClient(rest_client.RestClient):
-
-    def __init__(self, auth_provider, catalog_type, region, **kwargs):
-        super(ImagesClient, self).__init__(
-            auth_provider, catalog_type, region, **kwargs)
-        self._http = None
-        self.dscv = kwargs.get("disable_ssl_certificate_validation")
-        self.ca_certs = kwargs.get("ca_certs")
-
-    def _get_http(self):
-        return glance_http.HTTPClient(auth_provider=self.auth_provider,
-                                      filters=self.filters,
-                                      insecure=self.dscv,
-                                      ca_certs=self.ca_certs)
-
-    @property
-    def http(self):
-        if self._http is None:
-            self._http = self._get_http()
-        return self._http
+    api_version = "v2"
 
     def update_image(self, image_id, patch):
         """Update an image.
@@ -51,7 +36,7 @@ class ImagesClient(rest_client.RestClient):
         data = json.dumps(patch)
         headers = {"Content-Type": "application/openstack-images-v2.0"
                                    "-json-patch"}
-        resp, body = self.patch('v2/images/%s' % image_id, data, headers)
+        resp, body = self.patch('images/%s' % image_id, data, headers)
         self.expected_success(200, resp.status)
         body = json.loads(body)
         return rest_client.ResponseBody(resp, body)
@@ -63,31 +48,31 @@ class ImagesClient(rest_client.RestClient):
                               api-ref-image-v2.html#createImage-v2
         """
         data = json.dumps(kwargs)
-        resp, body = self.post('v2/images', data)
+        resp, body = self.post('images', data)
         self.expected_success(201, resp.status)
         body = json.loads(body)
         return rest_client.ResponseBody(resp, body)
 
     def deactivate_image(self, image_id):
-        url = 'v2/images/%s/actions/deactivate' % image_id
+        url = 'images/%s/actions/deactivate' % image_id
         resp, body = self.post(url, None)
         self.expected_success(204, resp.status)
         return rest_client.ResponseBody(resp, body)
 
     def reactivate_image(self, image_id):
-        url = 'v2/images/%s/actions/reactivate' % image_id
+        url = 'images/%s/actions/reactivate' % image_id
         resp, body = self.post(url, None)
         self.expected_success(204, resp.status)
         return rest_client.ResponseBody(resp, body)
 
     def delete_image(self, image_id):
-        url = 'v2/images/%s' % image_id
+        url = 'images/%s' % image_id
         resp, _ = self.delete(url)
         self.expected_success(204, resp.status)
         return rest_client.ResponseBody(resp)
 
     def list_images(self, params=None):
-        url = 'v2/images'
+        url = 'images'
 
         if params:
             url += '?%s' % urllib.urlencode(params)
@@ -98,7 +83,7 @@ class ImagesClient(rest_client.RestClient):
         return rest_client.ResponseBody(resp, body)
 
     def show_image(self, image_id):
-        url = 'v2/images/%s' % image_id
+        url = 'images/%s' % image_id
         resp, body = self.get(url)
         self.expected_success(200, resp.status)
         body = json.loads(body)
@@ -117,33 +102,38 @@ class ImagesClient(rest_client.RestClient):
         return 'image'
 
     def store_image_file(self, image_id, data):
-        url = 'v2/images/%s/file' % image_id
+        url = 'images/%s/file' % image_id
+
+        # We are going to do chunked transfert, so split the input data
+        # info fixed-sized chunks.
         headers = {'Content-Type': 'application/octet-stream'}
-        resp, body = self.http.raw_request('PUT', url, headers=headers,
-                                           body=data)
+        data = iter(functools.partial(data.read, CHUNKSIZE), b'')
+
+        resp, body = self.request('PUT', url, headers=headers,
+                                  body=data, chunked=True)
         self.expected_success(204, resp.status)
         return rest_client.ResponseBody(resp, body)
 
     def show_image_file(self, image_id):
-        url = 'v2/images/%s/file' % image_id
+        url = 'images/%s/file' % image_id
         resp, body = self.get(url)
         self.expected_success(200, resp.status)
         return rest_client.ResponseBodyData(resp, body)
 
     def add_image_tag(self, image_id, tag):
-        url = 'v2/images/%s/tags/%s' % (image_id, tag)
+        url = 'images/%s/tags/%s' % (image_id, tag)
         resp, body = self.put(url, body=None)
         self.expected_success(204, resp.status)
         return rest_client.ResponseBody(resp, body)
 
     def delete_image_tag(self, image_id, tag):
-        url = 'v2/images/%s/tags/%s' % (image_id, tag)
+        url = 'images/%s/tags/%s' % (image_id, tag)
         resp, _ = self.delete(url)
         self.expected_success(204, resp.status)
         return rest_client.ResponseBody(resp)
 
     def list_image_members(self, image_id):
-        url = 'v2/images/%s/members' % image_id
+        url = 'images/%s/members' % image_id
         resp, body = self.get(url)
         self.expected_success(200, resp.status)
         body = json.loads(body)
@@ -155,7 +145,7 @@ class ImagesClient(rest_client.RestClient):
         Available params: see http://developer.openstack.org/
                               api-ref-image-v2.html#createImageMember-v2
         """
-        url = 'v2/images/%s/members' % image_id
+        url = 'images/%s/members' % image_id
         data = json.dumps(kwargs)
         resp, body = self.post(url, data)
         self.expected_success(200, resp.status)
@@ -168,7 +158,7 @@ class ImagesClient(rest_client.RestClient):
         Available params: see http://developer.openstack.org/
                               api-ref-image-v2.html#updateImageMember-v2
         """
-        url = 'v2/images/%s/members/%s' % (image_id, member_id)
+        url = 'images/%s/members/%s' % (image_id, member_id)
         data = json.dumps(kwargs)
         resp, body = self.put(url, data)
         self.expected_success(200, resp.status)
@@ -176,26 +166,26 @@ class ImagesClient(rest_client.RestClient):
         return rest_client.ResponseBody(resp, body)
 
     def show_image_member(self, image_id, member_id):
-        url = 'v2/images/%s/members/%s' % (image_id, member_id)
+        url = 'images/%s/members/%s' % (image_id, member_id)
         resp, body = self.get(url)
         self.expected_success(200, resp.status)
         return rest_client.ResponseBody(resp, json.loads(body))
 
     def delete_image_member(self, image_id, member_id):
-        url = 'v2/images/%s/members/%s' % (image_id, member_id)
+        url = 'images/%s/members/%s' % (image_id, member_id)
         resp, _ = self.delete(url)
         self.expected_success(204, resp.status)
         return rest_client.ResponseBody(resp)
 
     def show_schema(self, schema):
-        url = 'v2/schemas/%s' % schema
+        url = 'schemas/%s' % schema
         resp, body = self.get(url)
         self.expected_success(200, resp.status)
         body = json.loads(body)
         return rest_client.ResponseBody(resp, body)
 
     def list_resource_types(self):
-        url = '/v2/metadefs/resource_types'
+        url = 'metadefs/resource_types'
         resp, body = self.get(url)
         self.expected_success(200, resp.status)
         body = json.loads(body)
@@ -208,13 +198,13 @@ class ImagesClient(rest_client.RestClient):
                               api-ref-image-v2.html#createNamespace-v2
         """
         data = json.dumps(kwargs)
-        resp, body = self.post('/v2/metadefs/namespaces', data)
+        resp, body = self.post('metadefs/namespaces', data)
         self.expected_success(201, resp.status)
         body = json.loads(body)
         return rest_client.ResponseBody(resp, body)
 
     def show_namespace(self, namespace):
-        url = '/v2/metadefs/namespaces/%s' % namespace
+        url = 'metadefs/namespaces/%s' % namespace
         resp, body = self.get(url)
         self.expected_success(200, resp.status)
         body = json.loads(body)
@@ -231,14 +221,14 @@ class ImagesClient(rest_client.RestClient):
         params = {'namespace': namespace}
         params.update(kwargs)
         data = json.dumps(params)
-        url = '/v2/metadefs/namespaces/%s' % namespace
+        url = 'metadefs/namespaces/%s' % namespace
         resp, body = self.put(url, body=data)
         self.expected_success(200, resp.status)
         body = json.loads(body)
         return rest_client.ResponseBody(resp, body)
 
     def delete_namespace(self, namespace):
-        url = '/v2/metadefs/namespaces/%s' % namespace
+        url = 'metadefs/namespaces/%s' % namespace
         resp, _ = self.delete(url)
         self.expected_success(204, resp.status)
         return rest_client.ResponseBody(resp)

@@ -21,6 +21,7 @@ Tempest Specific Commandments
 - [T111] Check that service client names of DELETE should be consistent
 - [T112] Check that tempest.lib should not import local tempest code
 - [T113] Check that tests use data_utils.rand_uuid() instead of uuid.uuid4()
+- [T114] Check that tempest.lib does not use tempest config
 - [N322] Method's default argument shouldn't be mutable
 
 Test Data/Configuration
@@ -132,16 +133,18 @@ overwritten by subclasses (enforced via hacking rule T105).
 
 Set-up is split in a series of steps (setup stages), which can be overwritten
 by test classes. Set-up stages are:
- - `skip_checks`
- - `setup_credentials`
- - `setup_clients`
- - `resource_setup`
+
+- `skip_checks`
+- `setup_credentials`
+- `setup_clients`
+- `resource_setup`
 
 Tear-down is also split in a series of steps (teardown stages), which are
 stacked for execution only if the corresponding setup stage had been
 reached during the setup phase. Tear-down stages are:
- - `clear_credentials` (defined in the base test class)
- - `resource_cleanup`
+
+- `clear_credentials` (defined in the base test class)
+- `resource_cleanup`
 
 Skipping Tests
 --------------

@@ -39,19 +39,19 @@ to avoid circular dependencies."""
 
 
 # Subset of the parameters of credential providers that depend on configuration
-def _get_common_provider_params():
+def get_common_provider_params():
     return {
         'credentials_domain': CONF.auth.default_credentials_domain_name,
         'admin_role': CONF.identity.admin_role
     }
 
 
-def _get_dynamic_provider_params():
-    return _get_common_provider_params()
+def get_dynamic_provider_params():
+    return get_common_provider_params()
 
 
-def _get_preprov_provider_params():
-    _common_params = _get_common_provider_params()
+def get_preprov_provider_params():
+    _common_params = get_common_provider_params()
     reseller_admin_role = CONF.object_storage.reseller_admin_role
     return dict(_common_params, **dict([
         ('accounts_lock_dir', lockutils.get_lock_path(CONF)),
@@ -73,20 +73,20 @@ def get_credentials_provider(name, network_resources=None,
     # the test should be skipped else it would fail.
     identity_version = identity_version or CONF.identity.auth_version
     if CONF.auth.use_dynamic_credentials or force_tenant_isolation:
-        admin_creds = get_configured_credentials(
-            'identity_admin', fill_in=True, identity_version=identity_version)
+        admin_creds = get_configured_admin_credentials(
+            fill_in=True, identity_version=identity_version)
         return dynamic_creds.DynamicCredentialProvider(
             name=name,
             network_resources=network_resources,
             identity_version=identity_version,
             admin_creds=admin_creds,
-            **_get_dynamic_provider_params())
+            **get_dynamic_provider_params())
     else:
         if CONF.auth.test_accounts_file:
             # Most params are not relevant for pre-created accounts
             return preprov_creds.PreProvisionedCredentialProvider(
                 name=name, identity_version=identity_version,
-                **_get_preprov_provider_params())
+                **get_preprov_provider_params())
         else:
             raise exceptions.InvalidConfiguration(
                 'A valid credential provider is needed')
@@ -106,13 +106,13 @@ def is_admin_available(identity_version):
     elif CONF.auth.test_accounts_file:
         check_accounts = preprov_creds.PreProvisionedCredentialProvider(
             identity_version=identity_version, name='check_admin',
-            **_get_preprov_provider_params())
+            **get_preprov_provider_params())
         if not check_accounts.admin_available():
             is_admin = False
     else:
         try:
-            get_configured_credentials('identity_admin', fill_in=False,
-                                       identity_version=identity_version)
+            get_configured_admin_credentials(fill_in=False,
+                                             identity_version=identity_version)
         except exceptions.InvalidConfiguration:
             is_admin = False
     return is_admin
@@ -131,7 +131,7 @@ def is_alt_available(identity_version):
     if CONF.auth.test_accounts_file:
         check_accounts = preprov_creds.PreProvisionedCredentialProvider(
             identity_version=identity_version, name='check_alt',
-            **_get_preprov_provider_params())
+            **get_preprov_provider_params())
     else:
         raise exceptions.InvalidConfiguration(
             'A valid credential provider is needed')
@@ -163,44 +163,32 @@ DEFAULT_PARAMS = {
 
 # Read credentials from configuration, builds a Credentials object
 # based on the specified or configured version
-def get_configured_credentials(credential_type, fill_in=True,
-                               identity_version=None):
+def get_configured_admin_credentials(fill_in=True, identity_version=None):
     identity_version = identity_version or CONF.identity.auth_version
 
     if identity_version not in ('v2', 'v3'):
         raise exceptions.InvalidConfiguration(
             'Unsupported auth version: %s' % identity_version)
 
-    if credential_type not in CREDENTIAL_TYPES:
-        raise exceptions.InvalidCredentials()
-    conf_attributes = ['username', 'password', 'project_name']
+    conf_attributes = ['username', 'password',
+                       'project_name']
 
     if identity_version == 'v3':
         conf_attributes.append('domain_name')
     # Read the parts of credentials from config
     params = DEFAULT_PARAMS.copy()
-    section, prefix = CREDENTIAL_TYPES[credential_type]
     for attr in conf_attributes:
-        _section = getattr(CONF, section)
-        if prefix is None:
-            params[attr] = getattr(_section, attr)
-        else:
-            params[attr] = getattr(_section, prefix + "_" + attr)
-    # NOTE(andreaf) v2 API still uses tenants, so we must translate project
-    # to tenant before building the Credentials object
-    if identity_version == 'v2':
-        params['tenant_name'] = params.get('project_name')
-        params.pop('project_name', None)
+        params[attr] = getattr(CONF.auth, 'admin_' + attr)
     # Build and validate credentials. We are reading configured credentials,
     # so validate them even if fill_in is False
     credentials = get_credentials(fill_in=fill_in,
                                   identity_version=identity_version, **params)
     if not fill_in:
         if not credentials.is_valid():
-            msg = ("The %s credentials are incorrectly set in the config file."
-                   " Double check that all required values are assigned" %
-                   credential_type)
-            raise exceptions.InvalidConfiguration(msg)
+            msg = ("The admin credentials are incorrectly set in the config "
+                   "file for identity version %s. Double check that all "
+                   "required values are assigned.")
+            raise exceptions.InvalidConfiguration(msg % identity_version)
     return credentials
 
 
@@ -228,19 +216,10 @@ def get_credentials(fill_in=True, identity_version=None, **kwargs):
 # === Credential / client managers
 
 
-class ConfiguredUserManager(clients.Manager):
-    """Manager that uses user credentials for its managed client objects"""
-
-    def __init__(self, service=None):
-        super(ConfiguredUserManager, self).__init__(
-            credentials=get_configured_credentials('user'),
-            service=service)
-
-
 class AdminManager(clients.Manager):
     """Manager that uses admin credentials for its managed client objects"""
 
     def __init__(self, service=None):
         super(AdminManager, self).__init__(
-            credentials=get_configured_credentials('identity_admin'),
+            credentials=get_configured_admin_credentials(),
             service=service)

@@ -128,13 +128,13 @@ from tempest.lib.services.compute import security_groups_client
 from tempest.lib.services.compute import servers_client
 from tempest.lib.services.network import networks_client
 from tempest.lib.services.network import ports_client
+from tempest.lib.services.network import routers_client
 from tempest.lib.services.network import subnets_client
 from tempest.services.identity.v2.json import identity_client
 from tempest.services.identity.v2.json import roles_client
 from tempest.services.identity.v2.json import tenants_client
 from tempest.services.identity.v2.json import users_client
 from tempest.services.image.v2.json import images_client
-from tempest.services.network.json import routers_client
 from tempest.services.object_storage import container_client
 from tempest.services.object_storage import object_client
 from tempest.services.volume.v1.json import volumes_client
@@ -823,7 +823,7 @@ def add_router_interface(routers):
         if router['gateway']:
             if CONF.network.public_network_id:
                 ext_net = CONF.network.public_network_id
-                client.routers._update_router(
+                client.routers.update_router(
                     router_id, set_enable_snat=True,
                     external_gateway_info={"network_id": ext_net})
             else:

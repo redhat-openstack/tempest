@@ -122,7 +122,9 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
         project = self.creds_client.create_project(
             name=project_name, description=project_desc)
 
-        username = data_utils.rand_name(root) + suffix
+        # NOTE(andreaf) User and project can be distinguished from the context,
+        # having the same ID in both makes it easier to match them and debug.
+        username = project_name
         user_password = data_utils.rand_password()
         email = data_utils.rand_name(root) + suffix + "@example.com"
         user = self.creds_client.create_user(
@@ -134,6 +136,9 @@ class DynamicCredentialProvider(cred_provider.CredentialProvider):
             self.creds_client.assign_user_role(user, project,
                                                self.admin_role)
             role_assigned = True
+            if self.identity_version == 'v3':
+                self.creds_client.assign_user_role_on_domain(
+                    user, CONF.identity.admin_role)
         # Add roles specified in config file
         for conf_role in CONF.auth.tempest_roles:
             self.creds_client.assign_user_role(user, project, conf_role)

@@ -27,7 +27,7 @@ from tempest.common.utils.linux import remote_client
 from tempest.common import waiters
 from tempest import config
 from tempest import exceptions
-from tempest.lib.common.utils import misc as misc_utils
+from tempest.lib.common.utils import test_utils
 from tempest.lib import exceptions as lib_exc
 from tempest.scenario import network_resources
 import tempest.test
@@ -50,8 +50,15 @@ class ScenarioTest(tempest.test.BaseTestCase):
         cls.compute_floating_ips_client = (
             cls.manager.compute_floating_ips_client)
         if CONF.service_available.glance:
-            # Glance image client v1
-            cls.image_client = cls.manager.image_client
+            # Check if glance v1 is available to determine which client to use.
+            if CONF.image_feature_enabled.api_v1:
+                cls.image_client = cls.manager.image_client
+            elif CONF.image_feature_enabled.api_v2:
+                cls.image_client = cls.manager.image_client_v2
+            else:
+                raise exceptions.InvalidConfiguration(
+                    'Either api_v1 or api_v2 must be True in '
+                    '[image-feature-enabled].')
         # Compute image client
         cls.compute_images_client = cls.manager.compute_images_client
         cls.keypairs_client = cls.manager.keypairs_client
@@ -94,21 +101,6 @@ class ScenarioTest(tempest.test.BaseTestCase):
         # NOTE(yfried): this list is cleaned at the end of test_methods and
         # not at the end of the class
         self.addCleanup(self._wait_for_cleanups)
-
-    def delete_wrapper(self, delete_thing, *args, **kwargs):
-        """Ignores NotFound exceptions for delete operations.
-
-        @param delete_thing: delete method of a resource. method will be
-            executed as delete_thing(*args, **kwargs)
-
-        """
-        try:
-            # Tempest clients return dicts, so there is no common delete
-            # method available. Using a callable instead
-            delete_thing(*args, **kwargs)
-        except lib_exc.NotFound:
-            # If the resource is already missing, mission accomplished.
-            pass
 
     def addCleanup_with_wait(self, waiter_callable, thing_id, thing_id_param,
                              cleanup_callable, cleanup_args=None,
@@ -254,7 +246,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         self.addCleanup_with_wait(
             waiter_callable=waiters.wait_for_server_termination,
             thing_id=body['id'], thing_id_param='server_id',
-            cleanup_callable=self.delete_wrapper,
+            cleanup_callable=test_utils.call_and_ignore_notfound_exc,
             cleanup_args=[clients.servers_client.delete_server, body['id']],
             waiter_client=clients.servers_client)
         server = clients.servers_client.show_server(body['id'])['server']
@@ -274,7 +266,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
 
         self.addCleanup(self.volumes_client.wait_for_resource_deletion,
                         volume['id'])
-        self.addCleanup(self.delete_wrapper,
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                         self.volumes_client.delete_volume, volume['id'])
 
         # NOTE(e0ne): Cinder API v2 uses name instead of display_name
@@ -334,7 +326,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         self.assertEqual(secgroup['name'], sg_name)
         self.assertEqual(secgroup['description'], sg_desc)
         self.addCleanup(
-            self.delete_wrapper,
+            test_utils.call_and_ignore_notfound_exc,
             self.compute_security_groups_client.delete_security_group,
             secgroup['id'])
 
@@ -373,7 +365,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
             message = ('Initializing SSH connection to %(ip)s failed. '
                        'Error: %(error)s' % {'ip': ip_address,
                                              'error': e})
-            caller = misc_utils.find_test_caller()
+            caller = test_utils.find_test_caller()
             if caller:
                 message = '(%s) %s' % (caller, message)
             LOG.exception(message)
@@ -391,14 +383,23 @@ class ScenarioTest(tempest.test.BaseTestCase):
             'name': name,
             'container_format': fmt,
             'disk_format': disk_format or fmt,
-            'is_public': 'False',
         }
-        params['properties'] = properties
-        image = self.image_client.create_image(**params)['image']
+        if CONF.image_feature_enabled.api_v1:
+            params['is_public'] = 'False'
+            params['properties'] = properties
+        else:
+            params['visibility'] = 'private'
+            # Additional properties are flattened out in the v2 API.
+            params.update(properties)
+        body = self.image_client.create_image(**params)
+        image = body['image'] if 'image' in body else body
         self.addCleanup(self.image_client.delete_image, image['id'])
         self.assertEqual("queued", image['status'])
         with open(path, 'rb') as image_file:
-            self.image_client.update_image(image['id'], data=image_file)
+            if CONF.image_feature_enabled.api_v1:
+                self.image_client.update_image(image['id'], data=image_file)
+            else:
+                self.image_client.store_image_file(image['id'], image_file)
         return image['id']
 
     def glance_image_create(self):
@@ -409,7 +410,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         img_container_format = CONF.scenario.img_container_format
         img_disk_format = CONF.scenario.img_disk_format
         img_properties = CONF.scenario.img_properties
-        LOG.debug("paths: img: %s, container_fomat: %s, disk_format: %s, "
+        LOG.debug("paths: img: %s, container_format: %s, disk_format: %s, "
                   "properties: %s, ami: %s, ari: %s, aki: %s" %
                   (img_path, img_container_format, img_disk_format,
                    img_properties, ami_img_path, ari_img_path, aki_img_path))
@@ -463,11 +464,18 @@ class ScenarioTest(tempest.test.BaseTestCase):
         self.addCleanup_with_wait(
             waiter_callable=_image_client.wait_for_resource_deletion,
             thing_id=image_id, thing_id_param='id',
-            cleanup_callable=self.delete_wrapper,
+            cleanup_callable=test_utils.call_and_ignore_notfound_exc,
             cleanup_args=[_image_client.delete_image, image_id])
-        snapshot_image = _image_client.check_image(image_id)
+        if CONF.image_feature_enabled.api_v1:
+            # In glance v1 the additional properties are stored in the headers.
+            snapshot_image = _image_client.check_image(image_id)
+            image_props = snapshot_image.get('properties', {})
+        else:
+            # In glance v2 the additional properties are flattened.
+            snapshot_image = _image_client.show_image(image_id)
+            image_props = snapshot_image
 
-        bdm = snapshot_image.get('properties', {}).get('block_device_mapping')
+        bdm = image_props.get('block_device_mapping')
         if bdm:
             bdm = json.loads(bdm)
             if bdm and 'snapshot_id' in bdm[0]:
@@ -475,12 +483,11 @@ class ScenarioTest(tempest.test.BaseTestCase):
                 self.addCleanup(
                     self.snapshots_client.wait_for_resource_deletion,
                     snapshot_id)
-                self.addCleanup(
-                    self.delete_wrapper, self.snapshots_client.delete_snapshot,
-                    snapshot_id)
+                self.addCleanup(test_utils.call_and_ignore_notfound_exc,
+                                self.snapshots_client.delete_snapshot,
+                                snapshot_id)
                 waiters.wait_for_snapshot_status(self.snapshots_client,
                                                  snapshot_id, 'available')
-
         image_name = snapshot_image['name']
         self.assertEqual(name, image_name)
         LOG.debug("Created snapshot image %s for server %s",
@@ -537,7 +544,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
 
             return (proc.returncode == 0) == should_succeed
 
-        caller = misc_utils.find_test_caller()
+        caller = test_utils.find_test_caller()
         LOG.debug('%(caller)s begins to ping %(ip)s in %(timeout)s sec and the'
                   ' expected result is %(should_succeed)s' % {
                       'caller': caller, 'ip': ip_address, 'timeout': timeout,
@@ -606,7 +613,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
             pool_name = CONF.network.floating_network_name
         floating_ip = (self.compute_floating_ips_client.
                        create_floating_ip(pool=pool_name)['floating_ip'])
-        self.addCleanup(self.delete_wrapper,
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                         self.compute_floating_ips_client.delete_floating_ip,
                         floating_ip['id'])
         self.compute_floating_ips_client.associate_floating_ip_to_server(
@@ -701,7 +708,8 @@ class NetworkScenarioTest(ScenarioTest):
             networks_client=networks_client, routers_client=routers_client,
             **result['network'])
         self.assertEqual(network.name, name)
-        self.addCleanup(self.delete_wrapper, network.delete)
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
+                        network.delete)
         return network
 
     def _list_networks(self, *args, **kwargs):
@@ -794,7 +802,7 @@ class NetworkScenarioTest(ScenarioTest):
             subnets_client=subnets_client,
             routers_client=routers_client, **result['subnet'])
         self.assertEqual(subnet.cidr, str_cidr)
-        self.addCleanup(self.delete_wrapper, subnet.delete)
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc, subnet.delete)
         return subnet
 
     def _create_port(self, network_id, client=None, namestart='port-quotatest',
@@ -809,7 +817,7 @@ class NetworkScenarioTest(ScenarioTest):
         self.assertIsNotNone(result, 'Unable to allocate port')
         port = network_resources.DeletablePort(ports_client=client,
                                                **result['port'])
-        self.addCleanup(self.delete_wrapper, port.delete)
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc, port.delete)
         return port
 
     def _get_server_port_id_and_ip4(self, server, ip_addr=None):
@@ -817,11 +825,17 @@ class NetworkScenarioTest(ScenarioTest):
         # A port can have more then one IP address in some cases.
         # If the network is dual-stack (IPv4 + IPv6), this port is associated
         # with 2 subnets
+        p_status = ['ACTIVE']
+        # NOTE(vsaienko) With Ironic, instances live on separate hardware
+        # servers. Neutron does not bind ports for Ironic instances, as a
+        # result the port remains in the DOWN state.
+        if CONF.service_available.ironic:
+            p_status.append('DOWN')
         port_map = [(p["id"], fxip["ip_address"])
                     for p in ports
                     for fxip in p["fixed_ips"]
                     if netaddr.valid_ipv4(fxip["ip_address"])
-                    and p['status'] == 'ACTIVE']
+                    and p['status'] in p_status]
         inactive = [p for p in ports if p['status'] != 'ACTIVE']
         if inactive:
             LOG.warning("Instance has ports that are not ACTIVE: %s", inactive)
@@ -860,7 +874,8 @@ class NetworkScenarioTest(ScenarioTest):
         floating_ip = network_resources.DeletableFloatingIp(
             client=client,
             **result['floatingip'])
-        self.addCleanup(self.delete_wrapper, floating_ip.delete)
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
+                        floating_ip.delete)
         return floating_ip
 
     def _associate_floating_ip(self, floating_ip, server):
@@ -998,7 +1013,8 @@ class NetworkScenarioTest(ScenarioTest):
         self.assertEqual(secgroup.name, sg_name)
         self.assertEqual(tenant_id, secgroup.tenant_id)
         self.assertEqual(secgroup.description, sg_desc)
-        self.addCleanup(self.delete_wrapper, secgroup.delete)
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
+                        secgroup.delete)
         return secgroup
 
     def _default_security_group(self, client=None, tenant_id=None):
@@ -1069,10 +1085,11 @@ class NetworkScenarioTest(ScenarioTest):
                                         security_groups_client=None):
         """Create loginable security group rule
 
-        These rules are intended to permit inbound ssh and icmp
-        traffic from all sources, so no group_id is provided.
-        Setting a group_id would only permit traffic from ports
-        belonging to the same security group.
+        This function will create:
+        1. egress and ingress tcp port 22 allow rule in order to allow ssh
+        access for ipv4.
+        2. egress and ingress ipv6 icmp allow rule, in order to allow icmpv6.
+        3. egress and ingress ipv4 icmp allow rule, in order to allow icmpv4.
         """
 
         if security_group_rules_client is None:
@@ -1157,7 +1174,7 @@ class NetworkScenarioTest(ScenarioTest):
         router = network_resources.DeletableRouter(routers_client=client,
                                                    **result['router'])
         self.assertEqual(router.name, name)
-        self.addCleanup(self.delete_wrapper, router.delete)
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc, router.delete)
         return router
 
     def _update_router_admin_state(self, router, admin_state_up):
@@ -1286,11 +1303,8 @@ class BaremetalScenarioTest(ScenarioTest):
         """Waits for a node to be associated with instance_id."""
 
         def _get_node():
-            node = None
-            try:
-                node = self.get_node(instance_id=instance_id)
-            except lib_exc.NotFound:
-                pass
+            node = test_utils.call_and_ignore_notfound_exc(
+                self.get_node, instance_id=instance_id)
             return node is not None
 
         if not tempest.test.call_until_true(
@@ -1437,7 +1451,7 @@ class ObjectStorageScenarioTest(ScenarioTest):
         # look for the container to assure it is created
         self.list_and_check_container_objects(name)
         LOG.debug('Container %s created' % (name))
-        self.addCleanup(self.delete_wrapper,
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                         self.container_client.delete_container,
                         name)
         return name
@@ -1450,7 +1464,7 @@ class ObjectStorageScenarioTest(ScenarioTest):
         obj_name = obj_name or data_utils.rand_name('swift-scenario-object')
         obj_data = data_utils.arbitrary_string()
         self.object_client.create_object(container_name, obj_name, obj_data)
-        self.addCleanup(self.delete_wrapper,
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                         self.object_client.delete_object,
                         container_name,
                         obj_name)
