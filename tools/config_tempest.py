@@ -740,21 +740,12 @@ def _upload_image(client, name, path, disk_format):
     """Upload image file from `path` into Glance with `name."""
     LOG.info("Uploading image '%s' from '%s'", name, os.path.abspath(path))
 
-    properties = {}
-    if disk_format == 'vmdk':
-        # We are gonna be uploading mostly Cirros, which is Ubuntu based.
-        # The vmware_ostype probably doesn't affect anything too much anyway.
-        properties = dict(vmware_disktype='sparse',
-                          vmware_adaptertype="paraVirtual",
-                          vmware_ostype='ubuntu64Guest')
-
     with open(path) as data:
         image = client.create_image(name=name,
                                     disk_format=disk_format,
                                     container_format='bare',
-                                    visibility="public",
-                                    properties=properties)
-        client.store_image(image['id'], data)
+                                    visibility="public")
+        client.store_image_file(image['id'], data)
         return image
 
 
