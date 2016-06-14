@@ -61,7 +61,7 @@ from tempest.services.identity.v2.json import tenants_client
 from tempest.services.identity.v2.json import users_client
 from tempest.services.identity.v3.json  \
     import identity_client as identity_v3_client
-from tempest.services.image.v2.json import images_client
+from tempest.lib.services.image.v2 import images_client
 
 LOG = logging.getLogger(__name__)
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
