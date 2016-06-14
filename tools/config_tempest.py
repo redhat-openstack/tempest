@@ -326,7 +326,7 @@ class ClientManager(object):
 
         def create_nova_network_client():
             if self.networks is None:
-                self.networks = nova_net_client.NetworksClientJSON(
+                self.networks = nova_net_client.NetworksClient(
                     _auth, **compute_params)
             return self.networks
 
