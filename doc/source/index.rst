@@ -51,6 +51,8 @@ Command Documentation
    account_generator
    cleanup
    javelin
+   workspace
+   run
 
 ==================
 Indices and tables

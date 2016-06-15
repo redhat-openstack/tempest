@@ -38,17 +38,17 @@ Account generator creates users and tenants so it needs the admin credentials
 of your cloud to operate properly. The corresponding info can be given either
 through CLI options or environment variables.
 
-You're probably familiar with these, but just to remind::
+You're probably familiar with these, but just to remind:
 
-    +----------+---------------------------+----------------------+
-    | Param    | CLI                       | Environment Variable |
-    +----------+---------------------------+----------------------+
-    | Username | --os-username             | OS_USERNAME          |
-    | Password | --os-password             | OS_PASSWORD          |
-    | Project  | --os-project-name         | OS_PROJECT_NAME      |
-    | Tenant   | --os-tenant-name (depr.)  | OS_TENANT_NAME       |
-    | Domain   | --os-domain-name          | OS_DOMAIN_NAME       |
-    +----------+---------------------------+----------------------+
+======== ======================== ====================
+Param    CLI                      Environment Variable
+======== ======================== ====================
+Username --os-username            OS_USERNAME
+Password --os-password            OS_PASSWORD
+Project  --os-project-name        OS_PROJECT_NAME
+Tenant   --os-tenant-name (depr.) OS_TENANT_NAME
+Domain   --os-domain-name         OS_DOMAIN_NAME
+======== ======================== ====================
 
 Optional Arguments
 ------------------
@@ -234,7 +234,7 @@ def _parser_add_args(parser):
     parser.add_argument('-r', '--concurrency',
                         default=1,
                         type=int,
-                        required=True,
+                        required=False,
                         dest='concurrency',
                         help='Concurrency count')
     parser.add_argument('--with-admin',
@@ -277,12 +277,11 @@ class TempestAccountGenerator(command.Command):
 
     def take_action(self, parsed_args):
         try:
-            return main(parsed_args)
+            main(parsed_args)
         except Exception:
             LOG.exception("Failure generating test accounts.")
             traceback.print_exc()
             raise
-        return 0
 
     def get_description(self):
         return DESCRIPTION
