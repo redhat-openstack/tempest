@@ -31,28 +31,6 @@ CHUNKSIZE = 1024 * 64  # 64kB
 class ImagesClient(rest_client.RestClient):
     api_version = "v1"
 
-    def _image_meta_from_headers(self, headers):
-        meta = {'properties': {}}
-        for key, value in six.iteritems(headers):
-            if key.startswith('x-image-meta-property-'):
-                _key = key[22:]
-                meta['properties'][_key] = value
-            elif key.startswith('x-image-meta-'):
-                _key = key[13:]
-                meta[_key] = value
-
-        for key in ['is_public', 'protected', 'deleted']:
-            if key in meta:
-                meta[key] = meta[key].strip().lower() in ('t', 'true', 'yes',
-                                                          '1')
-        for key in ['size', 'min_ram', 'min_disk']:
-            if key in meta:
-                try:
-                    meta[key] = int(meta[key])
-                except ValueError:
-                    pass
-        return meta
-
     def _image_meta_to_headers(self, fields):
         headers = {}
         fields_copy = copy.deepcopy(fields)
@@ -98,9 +76,13 @@ class ImagesClient(rest_client.RestClient):
             self._http = self._get_http()
         return self._http
 
-    def create_image(self, **kwargs):
+    def create_image(self, data=None, **kwargs):
+        """Create an image.
+
+        Available params: http://developer.openstack.org/
+                          api-ref-image-v1.html#createImage-v1
+        """
         headers = {}
-        data = kwargs.pop('data', None)
         headers.update(self._image_meta_to_headers(kwargs))
 
         if data is not None:
@@ -111,9 +93,13 @@ class ImagesClient(rest_client.RestClient):
         body = json.loads(body)
         return rest_client.ResponseBody(resp, body)
 
-    def update_image(self, image_id, **kwargs):
+    def update_image(self, image_id, data=None, **kwargs):
+        """Update an image.
+
+        Available params: http://developer.openstack.org/
+                          api-ref-image-v1.html#updateImage-v1
+        """
         headers = {}
-        data = kwargs.pop('data', None)
         headers.update(self._image_meta_to_headers(kwargs))
 
         if data is not None:
@@ -164,9 +150,8 @@ class ImagesClient(rest_client.RestClient):
     def check_image(self, image_id):
         """Check image metadata."""
         url = 'images/%s' % image_id
-        resp, __ = self.head(url)
+        resp, body = self.head(url)
         self.expected_success(200, resp.status)
-        body = self._image_meta_from_headers(resp)
         return rest_client.ResponseBody(resp, body)
 
     def show_image(self, image_id):
@@ -178,7 +163,8 @@ class ImagesClient(rest_client.RestClient):
 
     def is_resource_deleted(self, id):
         try:
-            if self.check_image(id)['status'] == 'deleted':
+            resp = self.check_image(id)
+            if resp.response["x-image-meta-status"] == 'deleted':
                 return True
         except lib_exc.NotFound:
             return True

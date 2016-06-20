@@ -104,6 +104,8 @@ from tempest.lib.services.network.security_groups_client import \
     SecurityGroupsClient
 from tempest.lib.services.network.subnetpools_client import SubnetpoolsClient
 from tempest.lib.services.network.subnets_client import SubnetsClient
+from tempest.lib.services.network.versions_client import \
+    NetworkVersionsClient
 from tempest import manager
 from tempest.services.baremetal.v1.json.baremetal_client import \
     BaremetalClient
@@ -183,6 +185,7 @@ from tempest.services.volume.v2.json.snapshots_client import \
     SnapshotsClient as SnapshotsV2Client
 from tempest.services.volume.v2.json.volumes_client import \
     VolumesClient as VolumesV2Client
+from tempest.services.volume.v3.json.messages_client import MessagesClient
 
 CONF = config.CONF
 LOG = logging.getLogger(__name__)
@@ -280,6 +283,8 @@ class Manager(manager.Manager):
         self.security_group_rules_client = SecurityGroupRulesClient(
             self.auth_provider, **params)
         self.security_groups_client = SecurityGroupsClient(
+            self.auth_provider, **params)
+        self.network_versions_client = NetworkVersionsClient(
             self.auth_provider, **params)
 
     def _set_image_clients(self):
@@ -508,6 +513,8 @@ class Manager(manager.Manager):
         self.volumes_v2_client = VolumesV2Client(
             self.auth_provider, default_volume_size=CONF.volume.volume_size,
             **params)
+        self.volume_messages_client = MessagesClient(self.auth_provider,
+                                                     **params)
         self.volume_types_client = VolumeTypesClient(self.auth_provider,
                                                      **params)
         self.volume_types_v2_client = VolumeTypesV2Client(
