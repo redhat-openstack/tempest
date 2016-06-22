@@ -513,7 +513,7 @@ def give_role_to_user(tenants_client, roles_client, users_client, username,
         return
     role_id = role_ids[0]
     try:
-        roles_client.assign_user_role(tenant_id, user_id, role_id)
+        roles_client.create_user_role_on_project(tenant_id, user_id, role_id)
         LOG.debug("User '%s' was given the '%s' role in project '%s'",
                   username, role_name, tenant_name)
     except exceptions.Conflict:
@@ -533,7 +533,7 @@ def create_user_with_tenant(tenants_client, users_client, username,
     email = "%s@test.com" % username
     # create tenant
     try:
-        tenants_client.create_tenant(tenant_name,
+        tenants_client.create_tenant(name=tenant_name,
                                      description=tenant_description)
     except exceptions.Conflict:
         LOG.info("(no change) Tenant '%s' already exists", tenant_name)
