@@ -319,7 +319,7 @@ def create_tenants(tenants):
     existing = [x['name'] for x in body]
     for tenant in tenants:
         if tenant not in existing:
-            admin.tenants.create_tenant(tenant)['tenant']
+            admin.tenants.create_tenant(name=tenant)['tenant']
         else:
             LOG.warning("Tenant '%s' already exists in this environment"
                         % tenant)
@@ -361,7 +361,7 @@ def _assign_swift_role(user, swift_role):
     role = next(r for r in roles if r['name'] == swift_role)
     LOG.debug(USERS[user])
     try:
-        admin.roles.assign_user_role(
+        admin.roles.create_user_role_on_project(
             USERS[user]['tenant_id'],
             USERS[user]['id'],
             role['id'])
