@@ -709,7 +709,8 @@ def create_tempest_networks(clients, conf, has_neutron, public_network_id):
                           "Please note that any test that relies on external "
                           "connectivity would most likely fail.")
 
-        conf.set('network', 'public_network_id', public_network_id)
+        if public_network_id is not None:
+            conf.set('network', 'public_network_id', public_network_id)
 
     else:
         client = clients.get_nova_net_client()
