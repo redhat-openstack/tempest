@@ -127,7 +127,7 @@ class NetworksTest(base.BaseNetworkTest):
     def _get_allocation_pools_from_gateway(cls, ip_version):
         """Return allocation range for subnet of given gateway"""
         gateway = cls._get_gateway_from_tempest_conf(ip_version)
-        return [{'start': str(gateway + 2), 'end': str(gateway + 3)}]
+        return [{'start': str(gateway + 2), 'end': str(gateway + 6)}]
 
     def subnet_dict(self, include_keys):
         # Return a subnet dict which has include_keys and their corresponding
@@ -559,15 +559,15 @@ class NetworksIpV6Test(NetworksTest):
         # Verifies Subnet GW is set in IPv6
         self.assertEqual(subnet1['gateway_ip'], ipv6_gateway)
         # Verifies Subnet GW is None in IPv4
-        self.assertEqual(subnet2['gateway_ip'], None)
+        self.assertIsNone(subnet2['gateway_ip'])
         # Verifies all 2 subnets in the same network
         body = self.subnets_client.list_subnets()
         subnets = [sub['id'] for sub in body['subnets']
                    if sub['network_id'] == network['id']]
         test_subnet_ids = [sub['id'] for sub in (subnet1, subnet2)]
-        self.assertItemsEqual(subnets,
-                              test_subnet_ids,
-                              'Subnet are not in the same network')
+        six.assertCountEqual(self, subnets,
+                             test_subnet_ids,
+                             'Subnet are not in the same network')
 
 
 class NetworksIpV6TestAttrs(NetworksIpV6Test):

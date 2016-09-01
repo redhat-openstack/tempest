@@ -14,6 +14,7 @@
 
 from six import moves
 
+from tempest.common import image as common_image
 from tempest.common.utils import data_utils
 from tempest import config
 from tempest.lib.common.utils import test_utils
@@ -55,20 +56,30 @@ class BaseImageTest(tempest.test.BaseTestCase):
         super(BaseImageTest, cls).resource_cleanup()
 
     @classmethod
-    def create_image(cls, **kwargs):
+    def create_image(cls, data=None, **kwargs):
         """Wrapper that returns a test image."""
 
         if 'name' not in kwargs:
             name = data_utils.rand_name(cls.__name__ + "-instance")
             kwargs['name'] = name
 
-        image = cls.client.create_image(**kwargs)
+        params = cls._get_create_params(**kwargs)
+        if data:
+            # NOTE: On glance v1 API, the data should be passed on
+            # a header. Then here handles the data separately.
+            params['data'] = data
+
+        image = cls.client.create_image(**params)
         # Image objects returned by the v1 client have the image
         # data inside a dict that is keyed against 'image'.
         if 'image' in image:
             image = image['image']
         cls.created_images.append(image['id'])
         return image
+
+    @classmethod
+    def _get_create_params(cls, **kwargs):
+        return kwargs
 
 
 class BaseV1ImageTest(BaseImageTest):
@@ -84,6 +95,10 @@ class BaseV1ImageTest(BaseImageTest):
     def setup_clients(cls):
         super(BaseV1ImageTest, cls).setup_clients()
         cls.client = cls.os.image_client
+
+    @classmethod
+    def _get_create_params(cls, **kwargs):
+        return {'headers': common_image.image_meta_to_headers(**kwargs)}
 
 
 class BaseV1ImageMembersTest(BaseV1ImageTest):
@@ -129,6 +144,18 @@ class BaseV2ImageTest(BaseImageTest):
         cls.resource_types_client = cls.os.resource_types_client
         cls.schemas_client = cls.os.schemas_client
 
+    def create_namespace(cls, namespace_name=None, visibility='public',
+                         description='Tempest', protected=False,
+                         **kwargs):
+        if not namespace_name:
+            namespace_name = data_utils.rand_name('test-ns')
+        kwargs.setdefault('display_name', namespace_name)
+        namespace = cls.namespaces_client.create_namespace(
+            namespace=namespace_name, visibility=visibility,
+            description=description, protected=protected, **kwargs)
+        cls.addCleanup(cls.namespaces_client.delete_namespace, namespace_name)
+        return namespace
+
 
 class BaseV2MemberImageTest(BaseV2ImageTest):
 
@@ -152,7 +179,7 @@ class BaseV2MemberImageTest(BaseV2ImageTest):
         return image_ids
 
     def _create_image(self):
-        name = data_utils.rand_name('image')
+        name = data_utils.rand_name(self.__class__.__name__ + '-image')
         image = self.client.create_image(name=name,
                                          container_format='bare',
                                          disk_format='raw')

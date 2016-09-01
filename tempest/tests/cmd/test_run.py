@@ -46,18 +46,24 @@ class TestTempestRun(base.TestCase):
         args = mock.Mock(spec=argparse.Namespace)
         setattr(args, 'smoke', False)
         setattr(args, 'regex', '')
+        setattr(args, 'whitelist_file', None)
+        setattr(args, 'blacklist_file', None)
         self.assertEqual('', self.run_cmd._build_regex(args))
 
     def test__build_regex_smoke(self):
         args = mock.Mock(spec=argparse.Namespace)
         setattr(args, "smoke", True)
         setattr(args, 'regex', '')
+        setattr(args, 'whitelist_file', None)
+        setattr(args, 'blacklist_file', None)
         self.assertEqual('smoke', self.run_cmd._build_regex(args))
 
     def test__build_regex_regex(self):
         args = mock.Mock(spec=argparse.Namespace)
         setattr(args, 'smoke', False)
         setattr(args, "regex", 'i_am_a_fun_little_regex')
+        setattr(args, 'whitelist_file', None)
+        setattr(args, 'blacklist_file', None)
         self.assertEqual('i_am_a_fun_little_regex',
                          self.run_cmd._build_regex(args))
 
@@ -100,6 +106,14 @@ class TestRunReturnCode(base.TestCase):
         # version or an sdist to work. so make the test directory a git repo
         # too.
         subprocess.call(['git', 'init'], stderr=DEVNULL)
+        self.assertRunExit(['tempest', 'run', '--regex', 'passing'], 0)
+
+    def test_tempest_run_passes_with_testrepository(self):
+        # Git init is required for the pbr testr command. pbr requires a git
+        # version or an sdist to work. so make the test directory a git repo
+        # too.
+        subprocess.call(['git', 'init'], stderr=DEVNULL)
+        subprocess.call(['testr', 'init'])
         self.assertRunExit(['tempest', 'run', '--regex', 'passing'], 0)
 
     def test_tempest_run_fails(self):

@@ -35,7 +35,7 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
     def test_volume_crud_with_volume_type_and_extra_specs(self):
         # Create/update/get/delete volume with volume_type and extra spec.
         volume_types = list()
-        vol_name = data_utils.rand_name("volume")
+        vol_name = data_utils.rand_name(self.__class__.__name__ + '-volume')
         self.name_field = self.special_fields['name_field']
         proto = CONF.volume.storage_protocol
         vendor = CONF.volume.vendor_name
@@ -43,13 +43,12 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
                        "vendor_name": vendor}
         # Create two volume_types
         for i in range(2):
-            vol_type_name = data_utils.rand_name("volume-type")
-            vol_type = self.admin_volume_types_client.create_volume_type(
+            vol_type_name = data_utils.rand_name(
+                self.__class__.__name__ + '-volume-type')
+            vol_type = self.create_volume_type(
                 name=vol_type_name,
-                extra_specs=extra_specs)['volume_type']
+                extra_specs=extra_specs)
             volume_types.append(vol_type)
-            self.addCleanup(self.admin_volume_types_client.delete_volume_type,
-                            vol_type['id'])
         params = {self.name_field: vol_name,
                   'volume_type': volume_types[0]['id']}
 
@@ -89,21 +88,22 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
     def test_volume_type_create_get_delete(self):
         # Create/get volume type.
         body = {}
-        name = data_utils.rand_name("volume-type")
+        name = data_utils.rand_name(self.__class__.__name__ + '-volume-type')
+        description = data_utils.rand_name("volume-type-description")
         proto = CONF.volume.storage_protocol
         vendor = CONF.volume.vendor_name
         extra_specs = {"storage_protocol": proto,
                        "vendor_name": vendor}
-        body = self.admin_volume_types_client.create_volume_type(
-            name=name,
-            extra_specs=extra_specs)['volume_type']
+        body = self.create_volume_type(description=description, name=name,
+                                       extra_specs=extra_specs)
         self.assertIn('id', body)
-        self.addCleanup(self.admin_volume_types_client.delete_volume_type,
-                        body['id'])
         self.assertIn('name', body)
-        self.assertEqual(body['name'], name,
+        self.assertEqual(name, body['name'],
                          "The created volume_type name is not equal "
                          "to the requested name")
+        self.assertEqual(description, body['description'],
+                         "The created volume_type_description name is "
+                         "not equal to the requested name")
         self.assertTrue(body['id'] is not None,
                         "Field volume_type id is empty or not found.")
         fetched_volume_type = self.admin_volume_types_client.show_volume_type(
@@ -123,12 +123,8 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
         # Create/get/delete encryption type.
         provider = "LuksEncryptor"
         control_location = "front-end"
-        name = data_utils.rand_name("volume-type")
-        body = self.admin_volume_types_client.create_volume_type(
-            name=name)['volume_type']
-        self.addCleanup(self.admin_volume_types_client.delete_volume_type,
-                        body['id'])
-
+        name = data_utils.rand_name(self.__class__.__name__ + '-volume-type')
+        body = self.create_volume_type(name=name)
         # Create encryption type
         encryption_type = \
             self.admin_volume_types_client.create_encryption_type(
@@ -165,6 +161,28 @@ class VolumeTypesV2Test(base.BaseVolumeAdminTest):
             self.admin_volume_types_client.show_encryption_type(
                 encryption_type['volume_type_id']))
         self.assertEmpty(deleted_encryption_type)
+
+    @test.idempotent_id('cf9f07c6-db9e-4462-a243-5933ad65e9c8')
+    def test_volume_type_update(self):
+        # Create volume type
+        volume_type = self.create_volume_type()
+
+        # New volume type details
+        name = data_utils.rand_name("volume-type")
+        description = data_utils.rand_name("volume-type-description")
+        is_public = not volume_type['is_public']
+
+        # Update volume type details
+        kwargs = {'name': name,
+                  'description': description,
+                  'is_public': is_public}
+        updated_vol_type = self.admin_volume_types_client.update_volume_type(
+            volume_type['id'], **kwargs)['volume_type']
+
+        # Verify volume type details were updated
+        self.assertEqual(name, updated_vol_type['name'])
+        self.assertEqual(description, updated_vol_type['description'])
+        self.assertEqual(is_public, updated_vol_type['is_public'])
 
 
 class VolumeTypesV1Test(VolumeTypesV2Test):

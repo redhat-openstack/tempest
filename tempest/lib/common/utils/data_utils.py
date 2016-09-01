@@ -47,8 +47,8 @@ def rand_name(name='', prefix=None):
     :param str name: The name that you want to include
     :param str prefix: The prefix that you want to include
     :return: a random name. The format is
-             '<prefix>-<random number>-<name>-<random number>'.
-             (e.g. 'prefixfoo-1308607012-namebar-154876201')
+             '<prefix>-<name>-<random number>'.
+             (e.g. 'prefixfoo-namebar-154876201')
     :rtype: string
     """
     randbits = str(random.randint(1, 0x7fffffff))
@@ -75,7 +75,7 @@ def rand_password(length=15):
     ascii_char = string.ascii_letters
     digits = string.digits
     digit = random.choice(string.digits)
-    puncs = '~!@#$%^&*_=+'
+    puncs = '~!@#%^&*_=+'
     punc = random.choice(puncs)
     seed = ascii_char + digits + puncs
     pre = upper + digit + punc
@@ -154,7 +154,7 @@ def arbitrary_string(size=4, base_text=None):
     This generates a string with an arbitrary number of characters, generated
     by looping the base_text string. If the size is smaller than the size of
     base_text, returning string is shrinked to the size.
-    :param int size: a returning charactors size
+    :param int size: a returning characters size
     :param str base_text: a string you want to repeat
     :return: size string
     :rtype: string

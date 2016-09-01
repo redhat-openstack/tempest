@@ -23,15 +23,8 @@ class VolumeTypesExtraSpecsV2Test(base.BaseVolumeAdminTest):
     @classmethod
     def resource_setup(cls):
         super(VolumeTypesExtraSpecsV2Test, cls).resource_setup()
-        vol_type_name = data_utils.rand_name('Volume-type')
-        cls.volume_type = \
-            cls.admin_volume_types_client.create_volume_type(
-                name=vol_type_name)['volume_type']
-
-    @classmethod
-    def resource_cleanup(cls):
-        cls.admin_volume_types_client.delete_volume_type(cls.volume_type['id'])
-        super(VolumeTypesExtraSpecsV2Test, cls).resource_cleanup()
+        vol_type_name = data_utils.rand_name(cls.__name__ + '-Volume-type')
+        cls.volume_type = cls.create_volume_type(name=vol_type_name)
 
     @test.idempotent_id('b42923e9-0452-4945-be5b-d362ae533e60')
     def test_volume_type_extra_specs_list(self):
@@ -54,20 +47,19 @@ class VolumeTypesExtraSpecsV2Test(base.BaseVolumeAdminTest):
             self.volume_type['id'], extra_specs)['extra_specs']
         self.assertEqual(extra_specs, body,
                          "Volume type extra spec incorrectly created")
-
-        extra_spec = {"spec2": "val2"}
+        spec_key = "spec2"
+        extra_spec = {spec_key: "val2"}
         body = self.admin_volume_types_client.update_volume_type_extra_specs(
-            self.volume_type['id'],
-            extra_spec.keys()[0],
-            extra_spec)
-        self.assertIn('spec2', body)
-        self.assertEqual(extra_spec['spec2'], body['spec2'],
+            self.volume_type['id'], spec_key, extra_spec)
+        self.assertIn(spec_key, body)
+        self.assertEqual(extra_spec[spec_key], body[spec_key],
                          "Volume type extra spec incorrectly updated")
 
     @test.idempotent_id('d4772798-601f-408a-b2a5-29e8a59d1220')
     def test_volume_type_extra_spec_create_get_delete(self):
         # Create/Get/Delete volume type extra spec.
-        extra_specs = {"spec3": "val1"}
+        spec_key = "spec3"
+        extra_specs = {spec_key: "val1"}
         body = self.admin_volume_types_client.create_volume_type_extra_specs(
             self.volume_type['id'],
             extra_specs)['extra_specs']
@@ -76,13 +68,11 @@ class VolumeTypesExtraSpecsV2Test(base.BaseVolumeAdminTest):
 
         self.admin_volume_types_client.show_volume_type_extra_specs(
             self.volume_type['id'],
-            extra_specs.keys()[0])
+            spec_key)
         self.assertEqual(extra_specs, body,
                          "Volume type extra spec incorrectly fetched")
-
         self.admin_volume_types_client.delete_volume_type_extra_specs(
-            self.volume_type['id'],
-            extra_specs.keys()[0])
+            self.volume_type['id'], spec_key)
 
 
 class VolumeTypesExtraSpecsV1Test(VolumeTypesExtraSpecsV2Test):
