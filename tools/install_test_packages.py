@@ -69,7 +69,7 @@ def get_required_testpkgs():
     os_pkgs = list(set([component.replace('openstack-', '') for rpm in os_rpms
                         for component in os_components if component in rpm]))
 
-    required_test_packages = [os_test_packages[name] for name in os_pkgs]
+    required_test_packages = [OS_TEST_PACKAGES[name] for name in os_pkgs]
     return required_test_packages
 
 
