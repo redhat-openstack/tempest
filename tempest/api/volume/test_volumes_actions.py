@@ -52,7 +52,6 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
                                        cls.volume['id'], 'available')
 
     @test.idempotent_id('fff42874-7db5-4487-a8e1-ddda5fb5288d')
-    @test.stresstest(class_setup_per='process')
     @test.attr(type='smoke')
     @test.services('compute')
     def test_attach_detach_volume_to_instance(self):
@@ -87,7 +86,6 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
             self.assertEqual(bool_bootable, bool_flag)
 
     @test.idempotent_id('9516a2c8-9135-488c-8dd6-5677a7e5f371')
-    @test.stresstest(class_setup_per='process')
     @test.services('compute')
     def test_get_volume_attachment(self):
         # Create a server

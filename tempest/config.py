@@ -924,44 +924,6 @@ DataProcessingFeaturesGroup = [
                 help="List of enabled data processing plugins")
 ]
 
-stress_group = cfg.OptGroup(name='stress', title='Stress Test Options')
-
-StressGroup = [
-    cfg.StrOpt('nova_logdir',
-               help='Directory containing log files on the compute nodes'),
-    cfg.IntOpt('max_instances',
-               default=16,
-               help='Maximum number of instances to create during test.'),
-    cfg.StrOpt('controller',
-               help='Controller host.'),
-    # new stress options
-    cfg.StrOpt('target_controller',
-               help='Controller host.'),
-    cfg.StrOpt('target_ssh_user',
-               help='ssh user.'),
-    cfg.StrOpt('target_private_key_path',
-               help='Path to private key.'),
-    cfg.StrOpt('target_logfiles',
-               help='regexp for list of log files.'),
-    cfg.IntOpt('log_check_interval',
-               default=60,
-               help='time (in seconds) between log file error checks.'),
-    cfg.IntOpt('default_thread_number_per_action',
-               default=4,
-               help='The number of threads created while stress test.'),
-    cfg.BoolOpt('leave_dirty_stack',
-                default=False,
-                help='Prevent the cleaning (tearDownClass()) between'
-                     ' each stress test run if an exception occurs'
-                     ' during this run.'),
-    cfg.BoolOpt('full_clean_stack',
-                default=False,
-                help='Allows a full cleaning process after a stress test.'
-                     ' Caution : this cleanup will remove every objects of'
-                     ' every project.')
-]
-
-
 scenario_group = cfg.OptGroup(name='scenario', title='Scenario Test Options')
 
 ScenarioGroup = [
@@ -1171,7 +1133,6 @@ _opts = [
     (orchestration_group, OrchestrationGroup),
     (data_processing_group, DataProcessingGroup),
     (data_processing_feature_group, DataProcessingFeaturesGroup),
-    (stress_group, StressGroup),
     (scenario_group, ScenarioGroup),
     (service_available_group, ServiceAvailableGroup),
     (debug_group, DebugGroup),
@@ -1239,7 +1200,6 @@ class TempestConfigPrivate(object):
         self.data_processing = _CONF['data-processing']
         self.data_processing_feature_enabled = _CONF[
             'data-processing-feature-enabled']
-        self.stress = _CONF.stress
         self.scenario = _CONF.scenario
         self.service_available = _CONF.service_available
         self.debug = _CONF.debug
