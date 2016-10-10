@@ -54,14 +54,14 @@ from tempest.lib import exceptions
 from tempest.lib.services.compute import flavors_client
 from tempest.lib.services.compute import networks_client as nova_net_client
 from tempest.lib.services.compute import servers_client
+from tempest.lib.services.identity.v2 import identity_client
 from tempest.lib.services.identity.v2 import roles_client
 from tempest.lib.services.identity.v2 import tenants_client
 from tempest.lib.services.identity.v2 import users_client
+from tempest.lib.services.identity.v3  \
+    import identity_client as identity_v3_client
 from tempest.lib.services.image.v2 import images_client
 from tempest.lib.services.network import networks_client
-from tempest.services.identity.v2.json import identity_client
-from tempest.services.identity.v3.json  \
-    import identity_client as identity_v3_client
 
 LOG = logging.getLogger(__name__)
 LOG_FORMAT = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
