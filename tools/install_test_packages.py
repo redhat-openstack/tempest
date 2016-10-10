@@ -24,34 +24,32 @@ import yum
 
 
 OS_TEST_PACKAGES = {
-                    "aodh": "python-aodh-tests",
-                    "ceilometer": "python-ceilometer-tests",
-                    "cinder": "python-cinder-tests",
-                    "designate": "python-designate-tests-tempest",
-                    "glance": "python-glance-tests",
-                    "gnocchi": "python-gnocchi-tests",
-                    "heat": "python-heat-tests",
-                    "horizon": "python-horizon-tests-tempest",
-                    "ironic": "python-ironic-tests",
-                    "keystone": "python-keystone-tests",
-                    "mistral": "python-mistral-tests",
-                    "neutron": "python-neutron-tests",
-                    "neutron-fwaas": "python-neutron-fwaas-tests",
-                    "neutron-lbaas": "python-neutron-lbaas-tests",
-                    "neutron-vpnaas": "python-neutron-vpnaas-tests",
-                    "nova": "python-nova-tests",
-                    "sahara": "python-sahara-tests-tempest",
-                    "swift": "python-swift-tests",
-                    "trove": "python-trove-tests",
-                    "zaqar": "python-zaqar-tests",
-                    "watcher": "python-watcher-tests-tempest"
-                    }
+    "aodh": "python-aodh-tests",
+    "ceilometer": "python-ceilometer-tests",
+    "cinder": "python-cinder-tests",
+    "designate": "python-designate-tests-tempest",
+    "glance": "python-glance-tests",
+    "gnocchi": "python-gnocchi-tests",
+    "heat": "python-heat-tests",
+    "horizon": "python-horizon-tests-tempest",
+    "ironic": "python-ironic-tests",
+    "keystone": "python-keystone-tests",
+    "mistral": "python-mistral-tests",
+    "neutron": "python-neutron-tests",
+    "neutron-fwaas": "python-neutron-fwaas-tests",
+    "neutron-lbaas": "python-neutron-lbaas-tests",
+    "neutron-vpnaas": "python-neutron-vpnaas-tests",
+    "nova": "python-nova-tests",
+    "sahara": "python-sahara-tests-tempest",
+    "swift": "python-swift-tests",
+    "trove": "python-trove-tests",
+    "zaqar": "python-zaqar-tests",
+    "watcher": "python-watcher-tests-tempest"
+    }
 
 
 def get_installed_rpms():
-    """
-    Provides a list of installed OpenStack rpms
-    """
+    """Provides a list of installed OpenStack rpms"""
     ts = rpm.TransactionSet()
     mi = ts.dbMatch()
     os_rpms = [h['name'] for h in mi if h['name'].startswith('openstack')]
@@ -59,9 +57,7 @@ def get_installed_rpms():
 
 
 def get_required_testpkgs():
-    """
-    Get a list required test packages based on installed openstack rpms
-    """
+    """Get a list required test packages based on installed openstack rpms"""
     os_rpms = get_installed_rpms()
 
     os_components = ["openstack-" + pkg for pkg in OS_TEST_PACKAGES]
@@ -74,9 +70,7 @@ def get_required_testpkgs():
 
 
 def install_packages(pkgs):
-    """
-    Installs a list of package through yum
-    """
+    """Installs a list of package through yum"""
     yb = yum.YumBase()
     for package in pkgs:
         yb.install(name=package)
