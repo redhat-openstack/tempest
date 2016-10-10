@@ -213,14 +213,15 @@ class ScenarioTest(tempest.test.BaseTestCase):
 
     def create_volume(self, size=None, name=None, snapshot_id=None,
                       imageRef=None, volume_type=None):
+        if size is None:
+            size = CONF.volume.volume_size
         if name is None:
             name = data_utils.rand_name(self.__class__.__name__)
         kwargs = {'display_name': name,
                   'snapshot_id': snapshot_id,
                   'imageRef': imageRef,
-                  'volume_type': volume_type}
-        if size is not None:
-            kwargs.update({'size': size})
+                  'volume_type': volume_type,
+                  'size': size}
         volume = self.volumes_client.create_volume(**kwargs)['volume']
 
         self.addCleanup(self.volumes_client.wait_for_resource_deletion,
@@ -513,7 +514,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
                       'should_succeed':
                       'reachable' if should_succeed else 'unreachable'
                   })
-        result = tempest.test.call_until_true(ping, timeout, 1)
+        result = test_utils.call_until_true(ping, timeout, 1)
         LOG.debug('%(caller)s finishes ping %(ip)s in %(timeout)s sec and the '
                   'ping result is %(result)s' % {
                       'caller': caller, 'ip': ip_address, 'timeout': timeout,
@@ -657,7 +658,8 @@ class NetworkScenarioTest(ScenarioTest):
 
     def _create_network(self, networks_client=None,
                         routers_client=None, tenant_id=None,
-                        namestart='network-smoke-'):
+                        namestart='network-smoke-',
+                        port_security_enabled=True):
         if not networks_client:
             networks_client = self.networks_client
         if not routers_client:
@@ -665,7 +667,12 @@ class NetworkScenarioTest(ScenarioTest):
         if not tenant_id:
             tenant_id = networks_client.tenant_id
         name = data_utils.rand_name(namestart)
-        result = networks_client.create_network(name=name, tenant_id=tenant_id)
+        network_kwargs = dict(name=name, tenant_id=tenant_id)
+        # Neutron disables port security by default so we have to check the
+        # config before trying to create the network with port_security_enabled
+        if CONF.network_feature_enabled.port_security:
+            network_kwargs['port_security_enabled'] = port_security_enabled
+        result = networks_client.create_network(**network_kwargs)
         network = result['network']
 
         self.assertEqual(network['name'], name)
@@ -857,9 +864,9 @@ class NetworkScenarioTest(ScenarioTest):
                       show_floatingip(floatingip_id)['floatingip'])
             return status == result['status']
 
-        tempest.test.call_until_true(refresh,
-                                     CONF.network.build_timeout,
-                                     CONF.network.build_interval)
+        test_utils.call_until_true(refresh,
+                                   CONF.network.build_timeout,
+                                   CONF.network.build_interval)
         floating_ip = self.floating_ips_client.show_floatingip(
             floatingip_id)['floatingip']
         self.assertEqual(status, floating_ip['status'],
@@ -914,9 +921,9 @@ class NetworkScenarioTest(ScenarioTest):
                 return not should_succeed
             return should_succeed
 
-        return tempest.test.call_until_true(ping_remote,
-                                            CONF.validation.ping_timeout,
-                                            1)
+        return test_utils.call_until_true(ping_remote,
+                                          CONF.validation.ping_timeout,
+                                          1)
 
     def _create_security_group(self, security_group_rules_client=None,
                                tenant_id=None,
@@ -976,7 +983,7 @@ class NetworkScenarioTest(ScenarioTest):
     def _default_security_group(self, client=None, tenant_id=None):
         """Get default secgroup for given tenant_id.
 
-        :returns: DeletableSecurityGroup -- default secgroup for given tenant
+        :returns: default secgroup for given tenant
         """
         if client is None:
             client = self.security_groups_client
@@ -1140,7 +1147,8 @@ class NetworkScenarioTest(ScenarioTest):
 
     def create_networks(self, networks_client=None,
                         routers_client=None, subnets_client=None,
-                        tenant_id=None, dns_nameservers=None):
+                        tenant_id=None, dns_nameservers=None,
+                        port_security_enabled=True):
         """Create a network with a subnet connected to a router.
 
         The baremetal driver is a special case since all nodes are
@@ -1166,7 +1174,8 @@ class NetworkScenarioTest(ScenarioTest):
         else:
             network = self._create_network(
                 networks_client=networks_client,
-                tenant_id=tenant_id)
+                tenant_id=tenant_id,
+                port_security_enabled=port_security_enabled)
             router = self._get_router(client=routers_client,
                                       tenant_id=tenant_id)
             subnet_kwargs = dict(network=network,
@@ -1249,7 +1258,7 @@ class BaremetalScenarioTest(ScenarioTest):
                 return True
             return False
 
-        if not tempest.test.call_until_true(
+        if not test_utils.call_until_true(
             check_state, timeout, interval):
             msg = ("Timed out waiting for node %s to reach %s state(s) %s" %
                    (node_id, state_attr, target_states))
@@ -1273,7 +1282,7 @@ class BaremetalScenarioTest(ScenarioTest):
                 self.get_node, instance_id=instance_id)
             return node is not None
 
-        if not tempest.test.call_until_true(
+        if not test_utils.call_until_true(
             _get_node, CONF.baremetal.association_timeout, 1):
             msg = ('Timed out waiting to get Ironic node by instance id %s'
                    % instance_id)
@@ -1345,8 +1354,12 @@ class EncryptionScenarioTest(ScenarioTest):
         super(EncryptionScenarioTest, cls).setup_clients()
         if CONF.volume_feature_enabled.api_v1:
             cls.admin_volume_types_client = cls.os_adm.volume_types_client
+            cls.admin_encryption_types_client =\
+                cls.os_adm.encryption_types_client
         else:
             cls.admin_volume_types_client = cls.os_adm.volume_types_v2_client
+            cls.admin_encryption_types_client =\
+                cls.os_adm.encryption_types_v2_client
 
     def create_volume_type(self, client=None, name=None):
         if not client:
@@ -1365,7 +1378,7 @@ class EncryptionScenarioTest(ScenarioTest):
                                key_size=None, cipher=None,
                                control_location=None):
         if not client:
-            client = self.admin_volume_types_client
+            client = self.admin_encryption_types_client
         if not type_id:
             volume_type = self.create_volume_type()
             type_id = volume_type['id']

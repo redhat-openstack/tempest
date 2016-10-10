@@ -16,7 +16,7 @@
 
 import random
 
-from six import moves
+import six
 
 from oslo_log import log as logging
 from tempest.api.image import base
@@ -44,35 +44,34 @@ class BasicOperationsImagesTest(base.BaseV2ImageTest):
         image_name = data_utils.rand_name('image')
         container_format = CONF.image.container_formats[0]
         disk_format = CONF.image.disk_formats[0]
-        body = self.create_image(name=image_name,
-                                 container_format=container_format,
-                                 disk_format=disk_format,
-                                 visibility='private',
-                                 ramdisk_id=uuid)
-        self.assertIn('id', body)
-        image_id = body.get('id')
-        self.assertIn('name', body)
-        self.assertEqual(image_name, body['name'])
-        self.assertIn('visibility', body)
-        self.assertEqual('private', body['visibility'])
-        self.assertIn('status', body)
-        self.assertEqual('queued', body['status'])
+        image = self.create_image(name=image_name,
+                                  container_format=container_format,
+                                  disk_format=disk_format,
+                                  visibility='private',
+                                  ramdisk_id=uuid)
+        self.assertIn('id', image)
+        self.assertIn('name', image)
+        self.assertEqual(image_name, image['name'])
+        self.assertIn('visibility', image)
+        self.assertEqual('private', image['visibility'])
+        self.assertIn('status', image)
+        self.assertEqual('queued', image['status'])
 
         # Now try uploading an image file
         file_content = data_utils.random_bytes()
-        image_file = moves.cStringIO(file_content)
-        self.client.store_image_file(image_id, image_file)
+        image_file = six.BytesIO(file_content)
+        self.client.store_image_file(image['id'], image_file)
 
         # Now try to get image details
-        body = self.client.show_image(image_id)
-        self.assertEqual(image_id, body['id'])
+        body = self.client.show_image(image['id'])
+        self.assertEqual(image['id'], body['id'])
         self.assertEqual(image_name, body['name'])
         self.assertEqual(uuid, body['ramdisk_id'])
         self.assertIn('size', body)
         self.assertEqual(1024, body.get('size'))
 
         # Now try get image file
-        body = self.client.show_image_file(image_id)
+        body = self.client.show_image_file(image['id'])
         self.assertEqual(file_content, body.data)
 
     @test.attr(type='smoke')
@@ -84,20 +83,18 @@ class BasicOperationsImagesTest(base.BaseV2ImageTest):
         image_name = data_utils.rand_name('image')
         container_format = CONF.image.container_formats[0]
         disk_format = CONF.image.disk_formats[0]
-        body = self.client.create_image(name=image_name,
-                                        container_format=container_format,
-                                        disk_format=disk_format,
-                                        visibility='private')
-        image_id = body['id']
-
+        image = self.client.create_image(name=image_name,
+                                         container_format=container_format,
+                                         disk_format=disk_format,
+                                         visibility='private')
         # Delete Image
-        self.client.delete_image(image_id)
-        self.client.wait_for_resource_deletion(image_id)
+        self.client.delete_image(image['id'])
+        self.client.wait_for_resource_deletion(image['id'])
 
         # Verifying deletion
         images = self.client.list_images()['images']
         images_id = [item['id'] for item in images]
-        self.assertNotIn(image_id, images_id)
+        self.assertNotIn(image['id'], images_id)
 
     @test.attr(type='smoke')
     @test.idempotent_id('f66891a7-a35c-41a8-b590-a065c2a1caa6')
@@ -108,27 +105,26 @@ class BasicOperationsImagesTest(base.BaseV2ImageTest):
         image_name = data_utils.rand_name('image')
         container_format = CONF.image.container_formats[0]
         disk_format = CONF.image.disk_formats[0]
-        body = self.client.create_image(name=image_name,
-                                        container_format=container_format,
-                                        disk_format=disk_format,
-                                        visibility='private')
-        self.addCleanup(self.client.delete_image, body['id'])
-        self.assertEqual('queued', body['status'])
-        image_id = body['id']
+        image = self.client.create_image(name=image_name,
+                                         container_format=container_format,
+                                         disk_format=disk_format,
+                                         visibility='private')
+        self.addCleanup(self.client.delete_image, image['id'])
+        self.assertEqual('queued', image['status'])
 
         # Now try uploading an image file
-        image_file = moves.cStringIO(data_utils.random_bytes())
-        self.client.store_image_file(image_id, image_file)
+        image_file = six.BytesIO(data_utils.random_bytes())
+        self.client.store_image_file(image['id'], image_file)
 
         # Update Image
         new_image_name = data_utils.rand_name('new-image')
-        body = self.client.update_image(image_id, [
+        body = self.client.update_image(image['id'], [
             dict(replace='/name', value=new_image_name)])
 
         # Verifying updating
 
-        body = self.client.show_image(image_id)
-        self.assertEqual(image_id, body['id'])
+        body = self.client.show_image(image['id'])
+        self.assertEqual(image['id'], body['id'])
         self.assertEqual(new_image_name, body['name'])
 
 
@@ -160,16 +156,15 @@ class ListImagesTest(base.BaseV2ImageTest):
         1024 and 4096
         """
         size = random.randint(1024, 4096)
-        image_file = moves.cStringIO(data_utils.random_bytes(size))
+        image_file = six.BytesIO(data_utils.random_bytes(size))
         name = data_utils.rand_name('image')
-        body = cls.create_image(name=name,
-                                container_format=container_format,
-                                disk_format=disk_format,
-                                visibility='private')
-        image_id = body['id']
-        cls.client.store_image_file(image_id, data=image_file)
+        image = cls.create_image(name=name,
+                                 container_format=container_format,
+                                 disk_format=disk_format,
+                                 visibility='private')
+        cls.client.store_image_file(image['id'], data=image_file)
 
-        return image_id
+        return image['id']
 
     def _list_by_param_value_and_assert(self, params):
         """Perform list action with given params and validates result."""
@@ -249,6 +244,16 @@ class ListImagesTest(base.BaseV2ImageTest):
 
         self.assertEqual(len(images_list), params['limit'],
                          "Failed to get images by limit")
+
+    @test.idempotent_id('e9a44b91-31c8-4b40-a332-e0a39ffb4dbb')
+    def test_list_image_param_owner(self):
+        # Test to get images by owner
+        image_id = self.created_images[0]
+        # Get image metadata
+        image = self.client.show_image(image_id)
+
+        params = {"owner": image['owner']}
+        self._list_by_param_value_and_assert(params)
 
     @test.idempotent_id('622b925c-479f-4736-860d-adeaf13bc371')
     def test_get_image_schema(self):

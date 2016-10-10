@@ -16,8 +16,8 @@ import subprocess
 from tempest.common.utils import data_utils
 from tempest.common import waiters
 from tempest import config
+from tempest.lib.common.utils import test_utils
 import tempest.stress.stressaction as stressaction
-import tempest.test
 
 CONF = config.CONF
 
@@ -52,8 +52,8 @@ class FloatingStress(stressaction.StressAction):
     def check_port_ssh(self):
         def func():
             return self.tcp_connect_scan(self.floating['ip'], 22)
-        if not tempest.test.call_until_true(func, self.check_timeout,
-                                            self.check_interval):
+        if not test_utils.call_until_true(func, self.check_timeout,
+                                          self.check_interval):
             raise RuntimeError("Cannot connect to the ssh port.")
 
     def check_icmp_echo(self):
@@ -62,15 +62,16 @@ class FloatingStress(stressaction.StressAction):
 
         def func():
             return self.ping_ip_address(self.floating['ip'])
-        if not tempest.test.call_until_true(func, self.check_timeout,
-                                            self.check_interval):
+        if not test_utils.call_until_true(func, self.check_timeout,
+                                          self.check_interval):
             raise RuntimeError("%s(%s): Cannot ping the machine.",
                                self.server_id, self.floating['ip'])
         self.logger.info("%s(%s): pong :)",
                          self.server_id, self.floating['ip'])
 
     def _create_vm(self):
-        self.name = name = data_utils.rand_name("instance")
+        self.name = name = data_utils.rand_name(
+            self.__class__.__name__ + "-instance")
         servers_client = self.manager.servers_client
         self.logger.info("creating %s" % name)
         vm_args = self.vm_extra_args.copy()
@@ -92,7 +93,7 @@ class FloatingStress(stressaction.StressAction):
 
     def _create_sec_group(self):
         sec_grp_cli = self.manager.compute_security_groups_client
-        s_name = data_utils.rand_name('sec_grp')
+        s_name = data_utils.rand_name(self.__class__.__name__ + '-sec_grp')
         s_description = data_utils.rand_name('desc')
         self.sec_grp = sec_grp_cli.create_security_group(
             name=s_name, description=s_description)['security_group']
@@ -153,8 +154,8 @@ class FloatingStress(stressaction.StressAction):
                         ['floating_ip'])
             return floating['instance_id'] is None
 
-        if not tempest.test.call_until_true(func, self.check_timeout,
-                                            self.check_interval):
+        if not test_utils.call_until_true(func, self.check_timeout,
+                                          self.check_interval):
             raise RuntimeError("IP disassociate timeout!")
 
     def run_core(self):

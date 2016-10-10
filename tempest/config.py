@@ -304,6 +304,12 @@ compute_features_group = cfg.OptGroup(name='compute-feature-enabled',
                                       title="Enabled Compute Service Features")
 
 ComputeFeaturesGroup = [
+    # NOTE(mriedem): This is a feature toggle for bug 1175464 which is fixed in
+    # mitaka and newton. This option can be removed after liberty-eol.
+    cfg.BoolOpt('allow_port_security_disabled',
+                default=False,
+                help='Does the test environment support creating ports in a '
+                     'network where port security is disabled?'),
     cfg.BoolOpt('disk_config',
                 default=True,
                 help="If false, skip disk config tests"),
@@ -333,6 +339,10 @@ ComputeFeaturesGroup = [
     cfg.BoolOpt('suspend',
                 default=True,
                 help="Does the test environment support suspend/resume?"),
+    cfg.BoolOpt('cold_migration',
+                default=True,
+                help="Does the test environment support cold migration "
+                     "available?"),
     cfg.BoolOpt('live_migration',
                 default=True,
                 help="Does the test environment support live migration "
@@ -370,7 +380,8 @@ ComputeFeaturesGroup = [
                 default=True,
                 help='Enables returning of the instance password by the '
                      'relevant server API calls such as create, rebuild '
-                     'or rescue.'),
+                     'or rescue. This configuration value should be same as '
+                     'nova.conf: DEFAULT.enable_instance_password'),
     cfg.BoolOpt('interface_attach',
                 default=True,
                 help='Does the test environment support dynamic network '
@@ -403,7 +414,10 @@ ComputeFeaturesGroup = [
                      "list indicates all filters are disabled. The full "
                      "available list of filters is in nova.conf: "
                      "DEFAULT.scheduler_available_filters"),
-
+    cfg.BoolOpt('swap_volume',
+                default=False,
+                help='Does the test environment support in-place swapping of '
+                     'volumes attached to a server instance?'),
 ]
 
 
@@ -539,6 +553,15 @@ NetworkGroup = [
                 default=["1.0.0.0/16", "2.0.0.0/16"],
                 help="List of ip pools"
                      " for subnetpools creation"),
+    # TODO(ylobankov): Delete this option once the Liberty release is EOL.
+    cfg.BoolOpt('dvr_extra_resources',
+                default=True,
+                help="Whether or not to create internal network, subnet, "
+                     "port and add network interface to distributed router "
+                     "in L3 agent scheduler test. Extra resources need to be "
+                     "provisioned in order to bind router to L3 agent in the "
+                     "Liberty release or older, and are not required since "
+                     "the Mitaka release.")
 ]
 
 network_feature_group = cfg.OptGroup(name='network-feature-enabled',
@@ -564,6 +587,9 @@ NetworkFeaturesGroup = [
                 default=True,
                 help="Does the test environment support changing"
                      " port admin state"),
+    cfg.BoolOpt('port_security',
+                default=False,
+                help="Does the test environment support port security?"),
 ]
 
 validation_group = cfg.OptGroup(name='validation',

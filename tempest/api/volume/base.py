@@ -110,6 +110,9 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
     @classmethod
     def create_volume(cls, **kwargs):
         """Wrapper utility that returns a test volume."""
+        if 'size' not in kwargs:
+            kwargs['size'] = CONF.volume.volume_size
+
         name = data_utils.rand_name(cls.__name__ + '-Volume')
 
         name_field = cls.special_fields['name_field']
@@ -169,14 +172,19 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
             except Exception:
                 pass
 
-    @classmethod
-    def create_server(cls, name, **kwargs):
-        tenant_network = cls.get_tenant_network()
+    def create_server(self, name, **kwargs):
+        tenant_network = self.get_tenant_network()
         body, _ = compute.create_test_server(
-            cls.os,
+            self.os,
             tenant_network=tenant_network,
             name=name,
             **kwargs)
+
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
+                        waiters.wait_for_server_termination,
+                        self.servers_client, body['id'])
+        self.addCleanup(test_utils.call_and_ignore_notfound_exc,
+                        self.servers_client.delete_server, body['id'])
         return body
 
 
@@ -198,6 +206,8 @@ class BaseVolumeAdminTest(BaseVolumeTest):
             cls.admin_hosts_client = cls.os_adm.volume_hosts_client
             cls.admin_snapshots_client = cls.os_adm.snapshots_client
             cls.admin_backups_client = cls.os_adm.backups_client
+            cls.admin_encryption_types_client = \
+                cls.os_adm.encryption_types_client
             cls.admin_quotas_client = cls.os_adm.volume_quotas_client
         elif cls._api_version == 2:
             cls.admin_volume_qos_client = cls.os_adm.volume_qos_v2_client
@@ -208,6 +218,8 @@ class BaseVolumeAdminTest(BaseVolumeTest):
             cls.admin_hosts_client = cls.os_adm.volume_hosts_v2_client
             cls.admin_snapshots_client = cls.os_adm.snapshots_v2_client
             cls.admin_backups_client = cls.os_adm.backups_v2_client
+            cls.admin_encryption_types_client = \
+                cls.os_adm.encryption_types_v2_client
             cls.admin_quotas_client = cls.os_adm.volume_quotas_v2_client
 
     @classmethod
@@ -259,9 +271,6 @@ class BaseVolumeAdminTest(BaseVolumeTest):
                 cls.admin_volume_types_client.delete_volume_type, vol_type)
 
         for vol_type in cls.volume_types:
-            # Resource dictionary uses for is_resource_deleted method,
-            # to distinguish between volume-type to encryption-type.
-            resource = {'id': vol_type, 'type': 'volume-type'}
             test_utils.call_and_ignore_notfound_exc(
                 cls.admin_volume_types_client.wait_for_resource_deletion,
-                resource)
+                vol_type)

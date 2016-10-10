@@ -27,16 +27,16 @@ class VolumeAttachDeleteTest(stressaction.StressAction):
 
     def run(self):
         # Step 1: create volume
-        name = data_utils.rand_name("volume")
+        name = data_utils.rand_name(self.__class__.__name__ + "-volume")
         self.logger.info("creating volume: %s" % name)
         volume = self.manager.volumes_client.create_volume(
-            display_name=name)['volume']
+            display_name=name, size=CONF.volume.volume_size)['volume']
         self.manager.volumes_client.wait_for_volume_status(volume['id'],
                                                            'available')
         self.logger.info("created volume: %s" % volume['id'])
 
         # Step 2: create vm instance
-        vm_name = data_utils.rand_name("instance")
+        vm_name = data_utils.rand_name(self.__class__.__name__ + "-instance")
         self.logger.info("creating vm: %s" % vm_name)
         server = self.manager.servers_client.create_server(
             name=vm_name, imageRef=self.image, flavorRef=self.flavor)['server']

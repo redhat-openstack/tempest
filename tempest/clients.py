@@ -14,7 +14,9 @@
 #    under the License.
 
 import copy
+
 from oslo_log import log as logging
+
 from tempest.common import negative_rest_client
 from tempest import config
 from tempest import exceptions
@@ -115,7 +117,7 @@ class Manager(clients.ServiceClients):
                     configuration[service_for_config] = (
                         config.service_client_config(service_for_config))
             except lib_exc.UnknownServiceClient:
-                LOG.warn(
+                LOG.warning(
                     'Could not load configuration for service %s' % service)
 
         return configuration
@@ -246,6 +248,10 @@ class Manager(clients.ServiceClients):
             self.auth_provider, **params_v3)
         self.roles_v3_client = identity.v3.RolesClient(self.auth_provider,
                                                        **params_v3)
+        self.inherited_roles_client = identity.v3.InheritedRolesClient(
+            self.auth_provider, **params_v3)
+        self.role_assignments_client = identity.v3.RoleAssignmentsClient(
+            self.auth_provider, **params_v3)
         self.identity_services_v3_client = identity.v3.ServicesClient(
             self.auth_provider, **params_v3)
         self.policies_client = identity.v3.PoliciesClient(self.auth_provider,
@@ -293,16 +299,18 @@ class Manager(clients.ServiceClients):
                                                       **params)
         self.backups_v2_client = volume.v2.BackupsClient(self.auth_provider,
                                                          **params)
+        self.encryption_types_client = volume.v1.EncryptionTypesClient(
+            self.auth_provider, **params)
+        self.encryption_types_v2_client = volume.v2.EncryptionTypesClient(
+            self.auth_provider, **params)
         self.snapshots_client = volume.v1.SnapshotsClient(self.auth_provider,
                                                           **params)
         self.snapshots_v2_client = volume.v2.SnapshotsClient(
             self.auth_provider, **params)
-        self.volumes_client = volume.v1.VolumesClient(
-            self.auth_provider, default_volume_size=CONF.volume.volume_size,
-            **params)
-        self.volumes_v2_client = volume.v2.VolumesClient(
-            self.auth_provider, default_volume_size=CONF.volume.volume_size,
-            **params)
+        self.volumes_client = volume.v1.VolumesClient(self.auth_provider,
+                                                      **params)
+        self.volumes_v2_client = volume.v2.VolumesClient(self.auth_provider,
+                                                         **params)
         self.volume_messages_client = volume.v3.MessagesClient(
             self.auth_provider, **params)
         self.volume_types_client = volume.v1.TypesClient(self.auth_provider,

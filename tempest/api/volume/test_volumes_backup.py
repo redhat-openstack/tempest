@@ -30,10 +30,6 @@ class VolumesBackupsV2Test(base.BaseVolumeTest):
         if not CONF.volume_feature_enabled.backup:
             raise cls.skipException("Cinder backup feature disabled")
 
-    @classmethod
-    def resource_setup(cls):
-        super(VolumesBackupsV2Test, cls).resource_setup()
-
     @test.idempotent_id('a66eb488-8ee1-47d4-8e9f-575a095728c6')
     def test_volume_backup_create_get_detailed_list_restore_delete(self):
         # Create backup
@@ -50,8 +46,8 @@ class VolumesBackupsV2Test(base.BaseVolumeTest):
         self.assertEqual(backup_name, backup['name'])
         waiters.wait_for_volume_status(self.volumes_client,
                                        volume['id'], 'available')
-        self.backups_client.wait_for_backup_status(backup['id'],
-                                                   'available')
+        waiters.wait_for_backup_status(self.backups_client,
+                                       backup['id'], 'available')
 
         # Get a given backup
         backup = self.backups_client.show_backup(backup['id'])['backup']
@@ -71,8 +67,8 @@ class VolumesBackupsV2Test(base.BaseVolumeTest):
         self.addCleanup(self.volumes_client.delete_volume,
                         restore['volume_id'])
         self.assertEqual(backup['id'], restore['backup_id'])
-        self.backups_client.wait_for_backup_status(backup['id'],
-                                                   'available')
+        waiters.wait_for_backup_status(self.backups_client,
+                                       backup['id'], 'available')
         waiters.wait_for_volume_status(self.volumes_client,
                                        restore['volume_id'], 'available')
 
@@ -91,7 +87,6 @@ class VolumesBackupsV2Test(base.BaseVolumeTest):
         server_name = data_utils.rand_name(
             self.__class__.__name__ + '-instance')
         server = self.create_server(name=server_name, wait_until='ACTIVE')
-        self.addCleanup(self.servers_client.delete_server, server['id'])
         # Attach volume to instance
         self.servers_client.attach_volume(server['id'],
                                           volumeId=volume['id'])
@@ -108,8 +103,8 @@ class VolumesBackupsV2Test(base.BaseVolumeTest):
             volume_id=volume['id'],
             name=backup_name, force=True)['backup']
         self.addCleanup(self.backups_client.delete_backup, backup['id'])
-        self.backups_client.wait_for_backup_status(backup['id'],
-                                                   'available')
+        waiters.wait_for_backup_status(self.backups_client,
+                                       backup['id'], 'available')
         self.assertEqual(backup_name, backup['name'])
 
 

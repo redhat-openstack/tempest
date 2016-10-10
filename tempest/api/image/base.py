@@ -12,7 +12,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from six import moves
+import six
 
 from tempest.common import image as common_image
 from tempest.common.utils import data_utils
@@ -118,13 +118,12 @@ class BaseV1ImageMembersTest(BaseV1ImageTest):
         cls.alt_tenant_id = cls.alt_image_member_client.tenant_id
 
     def _create_image(self):
-        image_file = moves.cStringIO(data_utils.random_bytes())
+        image_file = six.BytesIO(data_utils.random_bytes())
         image = self.create_image(container_format='bare',
                                   disk_format='raw',
                                   is_public=False,
                                   data=image_file)
-        image_id = image['id']
-        return image_id
+        return image['id']
 
 
 class BaseV2ImageTest(BaseImageTest):
@@ -183,9 +182,8 @@ class BaseV2MemberImageTest(BaseV2ImageTest):
         image = self.client.create_image(name=name,
                                          container_format='bare',
                                          disk_format='raw')
-        image_id = image['id']
-        self.addCleanup(self.client.delete_image, image_id)
-        return image_id
+        self.addCleanup(self.client.delete_image, image['id'])
+        return image['id']
 
 
 class BaseV1ImageAdminTest(BaseImageTest):

@@ -26,16 +26,6 @@ class BaseVolumesClient(rest_client.RestClient):
 
     create_resp = 200
 
-    def __init__(self, auth_provider, service, region,
-                 default_volume_size=1, **kwargs):
-        super(BaseVolumesClient, self).__init__(
-            auth_provider, service, region, **kwargs)
-        self.default_volume_size = default_volume_size
-
-    def get_attachment_from_volume(self, volume):
-        """Return the element 'attachment' from input volumes."""
-        return volume['attachments'][0]
-
     def _prepare_params(self, params):
         """Prepares params for use in get or _ext_get methods.
 
@@ -62,34 +52,6 @@ class BaseVolumesClient(rest_client.RestClient):
         self.expected_success(200, resp.status)
         return rest_client.ResponseBody(resp, body)
 
-    def show_pools(self, detail=False):
-        """List all the volumes pools (hosts).
-
-        Output params: see http://developer.openstack.org/
-                           api-ref-blockstorage-v2.html#listPools
-        """
-        url = 'scheduler-stats/get_pools'
-        if detail:
-            url += '?detail=True'
-
-        resp, body = self.get(url)
-        body = json.loads(body)
-        self.expected_success(200, resp.status)
-        return rest_client.ResponseBody(resp, body)
-
-    def show_backend_capabilities(self, host):
-        """Shows capabilities for a storage back end.
-
-         Output params: see http://developer.openstack.org/
-                            api-ref-blockstorage-v2.html
-                            #showBackendCapabilities
-        """
-        url = 'capabilities/%s' % host
-        resp, body = self.get(url)
-        body = json.loads(body)
-        self.expected_success(200, resp.status)
-        return rest_client.ResponseBody(resp, body)
-
     def show_volume(self, volume_id):
         """Returns the details of a single volume."""
         url = "volumes/%s" % volume_id
@@ -104,8 +66,6 @@ class BaseVolumesClient(rest_client.RestClient):
         Available params: see http://developer.openstack.org/
                               api-ref-blockstorage-v2.html#createVolume
         """
-        if 'size' not in kwargs:
-            kwargs['size'] = self.default_volume_size
         post_body = json.dumps({'volume': kwargs})
         resp, body = self.post('volumes', post_body)
         body = json.loads(body)
@@ -325,28 +285,6 @@ class BaseVolumesClient(rest_client.RestClient):
         """Delete metadata item for the volume."""
         url = "volumes/%s/metadata/%s" % (volume_id, id)
         resp, body = self.delete(url)
-        self.expected_success(200, resp.status)
-        return rest_client.ResponseBody(resp, body)
-
-    def update_volume_image_metadata(self, volume_id, **kwargs):
-        """Update image metadata for the volume.
-
-        Available params: see http://developer.openstack.org/
-                              api-ref-blockstorage-v2.html
-                              #setVolumeimagemetadata
-        """
-        post_body = json.dumps({'os-set_image_metadata': {'metadata': kwargs}})
-        url = "volumes/%s/action" % (volume_id)
-        resp, body = self.post(url, post_body)
-        body = json.loads(body)
-        self.expected_success(200, resp.status)
-        return rest_client.ResponseBody(resp, body)
-
-    def delete_volume_image_metadata(self, volume_id, key_name):
-        """Delete image metadata item for the volume."""
-        post_body = json.dumps({'os-unset_image_metadata': {'key': key_name}})
-        url = "volumes/%s/action" % (volume_id)
-        resp, body = self.post(url, post_body)
         self.expected_success(200, resp.status)
         return rest_client.ResponseBody(resp, body)
 
