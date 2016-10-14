@@ -44,7 +44,8 @@ OS_TEST_PACKAGES = {
     "swift": "python-swift-tests",
     "trove": "python-trove-tests",
     "zaqar": "python-zaqar-tests",
-    "watcher": "python-watcher-tests-tempest"
+    "watcher": "python-watcher-tests-tempest",
+    "manila": "python-manila-tests"
     }
 
 
