@@ -1,4 +1,3 @@
-# Copyright 2012 OpenStack Foundation
 # All Rights Reserved.
 #
 #    Licensed under the Apache License, Version 2.0 (the "License"); you may
@@ -12,9 +11,15 @@
 #    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
 #    License for the specific language governing permissions and limitations
 #    under the License.
+import re
 
-from tempest.services.volume.base import base_volumes_client
+RE_OWNER = re.compile('^network:.*router_.*interface.*')
 
 
-class VolumesClient(base_volumes_client.BaseVolumesClient):
-    """Client class to send CRUD Volume V1 API requests"""
+def _is_owner_router_interface(owner):
+    return bool(RE_OWNER.match(owner))
+
+
+def is_router_interface_port(port):
+    """Based on the port attributes determines is it a router interface."""
+    return _is_owner_router_interface(port['device_owner'])
