@@ -776,7 +776,7 @@ def configure_discovered_services(conf, services):
 
     # set supported API versions for services with more of them
     for service, versions in SERVICE_VERSIONS.iteritems():
-        supported_versions = services[service]['versions']
+        supported_versions = services.get(service, {}).get('versions', [])
         section = service + '-feature-enabled'
         for version in versions:
             is_supported = any(version in item
