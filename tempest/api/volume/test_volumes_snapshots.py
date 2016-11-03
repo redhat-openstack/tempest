@@ -45,11 +45,7 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
     def test_snapshot_create_with_volume_in_use(self):
         # Create a snapshot when volume status is in-use
         # Create a test instance
-        server_name = data_utils.rand_name(
-            self.__class__.__name__ + '-instance')
-        server = self.create_server(
-            name=server_name,
-            wait_until='ACTIVE')
+        server = self.create_server(wait_until='ACTIVE')
         self.servers_client.attach_volume(
             server['id'], volumeId=self.volume_origin['id'],
             device='/dev/%s' % CONF.compute.volume_device_name)
@@ -68,9 +64,7 @@ class VolumesV2SnapshotTestJSON(base.BaseVolumeTest):
     @test.idempotent_id('2a8abbe4-d871-46db-b049-c41f5af8216e')
     def test_snapshot_create_get_list_update_delete(self):
         # Create a snapshot
-        s_name = data_utils.rand_name(self.__class__.__name__ + '-snap')
-        params = {self.name_field: s_name}
-        snapshot = self.create_snapshot(self.volume_origin['id'], **params)
+        snapshot = self.create_snapshot(self.volume_origin['id'])
 
         # Get the snap and check for some of its details
         snap_get = self.snapshots_client.show_snapshot(

@@ -26,6 +26,7 @@ from tempest.common import compute
 from tempest.common import image as common_image
 from tempest.common.utils import data_utils
 from tempest.common.utils.linux import remote_client
+from tempest.common.utils import net_utils
 from tempest.common import waiters
 from tempest import config
 from tempest import exceptions
@@ -80,12 +81,12 @@ class ScenarioTest(tempest.test.BaseTestCase):
         cls.security_group_rules_client = (
             cls.manager.security_group_rules_client)
 
-        if CONF.volume_feature_enabled.api_v1:
-            cls.volumes_client = cls.manager.volumes_client
-            cls.snapshots_client = cls.manager.snapshots_client
-        else:
+        if CONF.volume_feature_enabled.api_v2:
             cls.volumes_client = cls.manager.volumes_v2_client
             cls.snapshots_client = cls.manager.snapshots_v2_client
+        else:
+            cls.volumes_client = cls.manager.volumes_client
+            cls.snapshots_client = cls.manager.snapshots_client
 
     # ## Test functions library
     #
@@ -216,7 +217,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         if size is None:
             size = CONF.volume.volume_size
         if name is None:
-            name = data_utils.rand_name(self.__class__.__name__)
+            name = data_utils.rand_name(self.__class__.__name__ + "-volume")
         kwargs = {'display_name': name,
                   'snapshot_id': snapshot_id,
                   'imageRef': imageRef,
@@ -417,7 +418,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         # Compute client
         _images_client = self.compute_images_client
         if name is None:
-            name = data_utils.rand_name('scenario-snapshot')
+            name = data_utils.rand_name(self.__class__.__name__ + 'snapshot')
         LOG.debug("Creating a snapshot image for server: %s", server['name'])
         image = _images_client.create_image(server['id'], name=name)
         image_id = image.response['location'].split('images/')[1]
@@ -495,9 +496,18 @@ class ScenarioTest(tempest.test.BaseTestCase):
                                            server_id, 'ACTIVE')
 
     def ping_ip_address(self, ip_address, should_succeed=True,
-                        ping_timeout=None):
+                        ping_timeout=None, mtu=None):
         timeout = ping_timeout or CONF.validation.ping_timeout
-        cmd = ['ping', '-c1', '-w1', ip_address]
+        cmd = ['ping', '-c1', '-w1']
+
+        if mtu:
+            cmd += [
+                # don't fragment
+                '-M', 'do',
+                # ping receives just the size of ICMP payload
+                '-s', str(net_utils.get_ping_payload_size(mtu, 4))
+            ]
+        cmd.append(ip_address)
 
         def ping():
             proc = subprocess.Popen(cmd,
@@ -525,7 +535,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
     def check_vm_connectivity(self, ip_address,
                               username=None,
                               private_key=None,
-                              should_connect=True):
+                              should_connect=True,
+                              mtu=None):
         """Check server connectivity
 
         :param ip_address: server to test against
@@ -534,6 +545,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
         :param should_connect: True/False indicates positive/negative test
             positive - attempt ping and ssh
             negative - attempt ping and fail if succeed
+        :param mtu: network MTU to use for connectivity validation
 
         :raises: AssertError if the result of the connectivity check does
             not match the value of the should_connect param
@@ -543,7 +555,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
         else:
             msg = "ip address %s is reachable" % ip_address
         self.assertTrue(self.ping_ip_address(ip_address,
-                                             should_succeed=should_connect),
+                                             should_succeed=should_connect,
+                                             mtu=mtu),
                         msg=msg)
         if should_connect:
             # no need to check ssh for negative connectivity
@@ -551,7 +564,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
 
     def check_public_network_connectivity(self, ip_address, username,
                                           private_key, should_connect=True,
-                                          msg=None, servers=None):
+                                          msg=None, servers=None, mtu=None):
         # The target login is assumed to have been configured for
         # key-based authentication by cloud-init.
         LOG.debug('checking network connections to IP %s with user: %s' %
@@ -560,7 +573,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
             self.check_vm_connectivity(ip_address,
                                        username,
                                        private_key,
-                                       should_connect=should_connect)
+                                       should_connect=should_connect,
+                                       mtu=mtu)
         except Exception:
             ex_msg = 'Public network connectivity check failed'
             if msg:
@@ -789,7 +803,7 @@ class NetworkScenarioTest(ScenarioTest):
 
     def _get_server_port_id_and_ip4(self, server, ip_addr=None):
         ports = self._list_ports(device_id=server['id'], fixed_ip=ip_addr)
-        # A port can have more then one IP address in some cases.
+        # A port can have more than one IP address in some cases.
         # If the network is dual-stack (IPv4 + IPv6), this port is associated
         # with 2 subnets
         p_status = ['ACTIVE']
@@ -1363,14 +1377,14 @@ class EncryptionScenarioTest(ScenarioTest):
     @classmethod
     def setup_clients(cls):
         super(EncryptionScenarioTest, cls).setup_clients()
-        if CONF.volume_feature_enabled.api_v1:
-            cls.admin_volume_types_client = cls.os_adm.volume_types_client
-            cls.admin_encryption_types_client =\
-                cls.os_adm.encryption_types_client
-        else:
+        if CONF.volume_feature_enabled.api_v2:
             cls.admin_volume_types_client = cls.os_adm.volume_types_v2_client
             cls.admin_encryption_types_client =\
                 cls.os_adm.encryption_types_v2_client
+        else:
+            cls.admin_volume_types_client = cls.os_adm.volume_types_client
+            cls.admin_encryption_types_client =\
+                cls.os_adm.encryption_types_client
 
     def create_volume_type(self, client=None, name=None):
         if not client:

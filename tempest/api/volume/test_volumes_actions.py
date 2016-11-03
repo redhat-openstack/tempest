@@ -50,15 +50,11 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
         cls.volume = cls.create_volume()
 
     @test.idempotent_id('fff42874-7db5-4487-a8e1-ddda5fb5288d')
-    @test.stresstest(class_setup_per='process')
     @test.attr(type='smoke')
     @test.services('compute')
     def test_attach_detach_volume_to_instance(self):
         # Create a server
-        srv_name = data_utils.rand_name(self.__class__.__name__ + '-Instance')
-        server = self.create_server(
-            name=srv_name,
-            wait_until='ACTIVE')
+        server = self.create_server(wait_until='ACTIVE')
         # Volume is attached and detached successfully from an instance
         self.client.attach_volume(self.volume['id'],
                                   instance_uuid=server['id'],
@@ -85,14 +81,10 @@ class VolumesV2ActionsTest(base.BaseVolumeTest):
             self.assertEqual(bool_bootable, bool_flag)
 
     @test.idempotent_id('9516a2c8-9135-488c-8dd6-5677a7e5f371')
-    @test.stresstest(class_setup_per='process')
     @test.services('compute')
     def test_get_volume_attachment(self):
         # Create a server
-        srv_name = data_utils.rand_name(self.__class__.__name__ + '-Instance')
-        server = self.create_server(
-            name=srv_name,
-            wait_until='ACTIVE')
+        server = self.create_server(wait_until='ACTIVE')
         # Verify that a volume's attachment information is retrieved
         self.client.attach_volume(self.volume['id'],
                                   instance_uuid=server['id'],

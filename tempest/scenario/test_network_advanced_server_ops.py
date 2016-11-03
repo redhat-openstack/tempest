@@ -15,7 +15,6 @@
 
 import testtools
 
-from tempest.common.utils import data_utils
 from tempest.common import waiters
 from tempest import config
 from tempest.scenario import manager
@@ -56,9 +55,7 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
             security_group = self._create_security_group()
             security_groups = [{'name': security_group['name']}]
         network, subnet, router = self.create_networks()
-        server_name = data_utils.rand_name(self.__class__.__name__ + '-server')
         server = self.create_server(
-            name=server_name,
             networks=[{'uuid': network['id']}],
             key_name=keypair['name'],
             security_groups=security_groups,
@@ -98,7 +95,6 @@ class TestNetworkAdvancedServerOps(manager.NetworkScenarioTest):
         self._check_network_connectivity(server, keypair, floating_ip)
 
     @test.idempotent_id('61f1aa9a-1573-410e-9054-afa557cab021')
-    @test.stresstest(class_setup_per='process')
     @test.services('compute', 'network')
     def test_server_connectivity_stop_start(self):
         keypair = self.create_keypair()

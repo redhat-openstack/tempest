@@ -72,8 +72,7 @@ class PortsTestJSON(sec_base.BaseSecGroupTest):
     @test.idempotent_id('67f1b811-f8db-43e2-86bd-72c074d4a42c')
     def test_create_bulk_port(self):
         network1 = self.network
-        name = data_utils.rand_name('network-')
-        network2 = self.create_network(network_name=name)
+        network2 = self.create_network()
         network_list = [network1['id'], network2['id']]
         port_list = [{'network_id': net_id} for net_id in network_list]
         body = self.ports_client.create_bulk_ports(ports=port_list)
@@ -200,7 +199,7 @@ class PortsTestJSON(sec_base.BaseSecGroupTest):
         self.addCleanup(self.networks_client.delete_network, network['id'])
         subnet = self.create_subnet(network)
         self.addCleanup(self.subnets_client.delete_subnet, subnet['id'])
-        router = self.create_router(data_utils.rand_name('router-'))
+        router = self.create_router()
         self.addCleanup(self.routers_client.delete_router, router['id'])
         port = self.ports_client.create_port(network_id=network['id'])
         # Add router interface to port created above
