@@ -1,10 +1,11 @@
+# Updating file according to: https://github.com/openstack/requirements/blob/icehouse-eol/global-requirements.txt
 hacking>=0.8.0,<0.9
 # needed for doc build
 docutils==0.9.1
-sphinx>=1.1.2,<1.2
-python-subunit>=0.0.18
-oslosphinx
-mox>=0.5.3
-mock>=1.0
-coverage>=3.6
+sphinx>=1.1.2,<1.1.999
+python-subunit>=0.0.18,<=1.1.0
+oslosphinx<=2.5.0
+mox>=0.5.3,<=0.5.3
+mock>=1.0,<=1.0.1
+coverage>=3.6,<=3.7.1
 os-testr==0.1.0
