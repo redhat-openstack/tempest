@@ -45,8 +45,10 @@ OS_TEST_PACKAGES = {
     "trove": "python-trove-tests",
     "zaqar": "python-zaqar-tests",
     "watcher": "python-watcher-tests-tempest",
-    "manila": "python-manila-tests"
-    }
+    "manila": "python-manila-tests",
+    "murano": "python-murano-tests",
+    "magnum": "python-magnum-tests",
+    "ironic-inspector": "python-ironic-inspector-tests"}
 
 
 def get_installed_rpms():
