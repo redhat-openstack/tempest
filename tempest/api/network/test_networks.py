@@ -27,39 +27,11 @@ from tempest import test
 CONF = config.CONF
 
 
-class NetworksTest(base.BaseNetworkTest):
-    """Tests the following operations in the Neutron API:
-
-        create a network for a project
-        list project's networks
-        show a project network details
-        create a subnet for a project
-        list project's subnets
-        show a project subnet details
-        network update
-        subnet update
-        delete a network also deletes its subnets
-        list external networks
-
-        All subnet tests are run once with ipv4 and once with ipv6.
-
-    v2.0 of the Neutron API is assumed. It is also assumed that the following
-    options are defined in the [network] section of etc/tempest.conf:
-
-        project_network_cidr with a block of cidr's from which smaller blocks
-        can be allocated for project ipv4 subnets
-
-        project_network_v6_cidr is the equivalent for ipv6 subnets
-
-        project_network_mask_bits with the mask bits to be used to partition
-        the block defined by project_network_cidr
-
-        project_network_v6_mask_bits is the equivalent for ipv6 subnets
-    """
+class BaseNetworkTestResources(base.BaseNetworkTest):
 
     @classmethod
     def resource_setup(cls):
-        super(NetworksTest, cls).resource_setup()
+        super(BaseNetworkTestResources, cls).resource_setup()
         cls.network = cls.create_network()
         cls.name = cls.network['name']
         cls.subnet = cls._create_subnet_with_last_subnet_block(cls.network,
@@ -171,6 +143,37 @@ class NetworksTest(base.BaseNetworkTest):
         self.networks.pop()
         self.subnets.pop()
 
+
+class NetworksTest(BaseNetworkTestResources):
+    """Tests the following operations in the Neutron API:
+
+        create a network for a project
+        list project's networks
+        show a project network details
+        create a subnet for a project
+        list project's subnets
+        show a project subnet details
+        network update
+        subnet update
+        delete a network also deletes its subnets
+        list external networks
+
+        All subnet tests are run once with ipv4 and once with ipv6.
+
+    v2.0 of the Neutron API is assumed. It is also assumed that the following
+    options are defined in the [network] section of etc/tempest.conf:
+
+        project_network_cidr with a block of cidr's from which smaller blocks
+        can be allocated for project ipv4 subnets
+
+        project_network_v6_cidr is the equivalent for ipv6 subnets
+
+        project_network_mask_bits with the mask bits to be used to partition
+        the block defined by project_network_cidr
+
+        project_network_v6_mask_bits is the equivalent for ipv6 subnets
+    """
+
     @test.attr(type='smoke')
     @test.idempotent_id('0e269138-0da6-4efc-a46d-578161e7b221')
     def test_create_update_delete_network_subnet(self):
@@ -276,28 +279,21 @@ class NetworksTest(base.BaseNetworkTest):
     @test.idempotent_id('f04f61a9-b7f3-4194-90b2-9bcf660d1bfe')
     def test_delete_network_with_subnet(self):
         # Creates a network
-        name = data_utils.rand_name('network-')
-        body = self.networks_client.create_network(name=name)
-        network = body['network']
+        network = self.create_network()
         net_id = network['id']
         self.addCleanup(test_utils.call_and_ignore_notfound_exc,
-                        self.networks_client.delete_network, net_id)
+                        self._delete_network, network)
 
         # Find a cidr that is not in use yet and create a subnet with it
         subnet = self.create_subnet(network)
         subnet_id = subnet['id']
 
         # Delete network while the subnet still exists
-        body = self.networks_client.delete_network(net_id)
+        self.networks_client.delete_network(net_id)
 
         # Verify that the subnet got automatically deleted.
         self.assertRaises(lib_exc.NotFound, self.subnets_client.show_subnet,
                           subnet_id)
-
-        # Since create_subnet adds the subnet to the delete list, and it is
-        # actually deleted here - this will create and issue, hence remove
-        # it from the list.
-        self.subnets.pop()
 
     @test.idempotent_id('d2d596e2-8e76-47a9-ac51-d4648009f4d3')
     def test_create_delete_subnet_without_gateway(self):
@@ -566,7 +562,9 @@ class NetworksIpV6Test(NetworksTest):
                              'Subnet are not in the same network')
 
 
-class NetworksIpV6TestAttrs(NetworksIpV6Test):
+class NetworksIpV6TestAttrs(BaseNetworkTestResources):
+
+    _ip_version = 6
 
     @classmethod
     def skip_checks(cls):

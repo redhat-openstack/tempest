@@ -18,6 +18,7 @@ import mock
 
 from tempest.common import waiters
 from tempest import exceptions
+from tempest.lib import exceptions as lib_exc
 from tempest.lib.services.volume.v2 import volumes_client
 from tempest.tests import base
 import tempest.tests.utils as utils
@@ -36,14 +37,14 @@ class TestImageWaiters(base.TestCase):
         waiters.wait_for_image_status(self.client, 'fake_image_id', 'active')
         end_time = int(time.time())
         # Ensure waiter returns before build_timeout
-        self.assertTrue((end_time - start_time) < 10)
+        self.assertLess((end_time - start_time), 10)
 
     def test_wait_for_image_status_timeout(self):
         time_mock = self.patch('time.time')
         time_mock.side_effect = utils.generate_timeout_series(1)
 
         self.client.show_image.return_value = ({'status': 'saving'})
-        self.assertRaises(exceptions.TimeoutException,
+        self.assertRaises(lib_exc.TimeoutException,
                           waiters.wait_for_image_status,
                           self.client, 'fake_image_id', 'active')
 

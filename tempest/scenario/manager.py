@@ -141,6 +141,9 @@ class ScenarioTest(tempest.test.BaseTestCase):
         if clients is None:
             clients = self.manager
 
+        if name is None:
+            name = data_utils.rand_name(self.__class__.__name__ + "-server")
+
         vnic_type = CONF.network.port_vnic_type
 
         # If vnic_type is configured create port for
@@ -402,10 +405,14 @@ class ScenarioTest(tempest.test.BaseTestCase):
             servers = self.servers_client.list_servers()
             servers = servers['servers']
         for server in servers:
-            console_output = self.servers_client.get_console_output(
-                server['id'])['output']
-            LOG.debug('Console output for %s\nbody=\n%s',
-                      server['id'], console_output)
+            try:
+                console_output = self.servers_client.get_console_output(
+                    server['id'])['output']
+                LOG.debug('Console output for %s\nbody=\n%s',
+                          server['id'], console_output)
+            except lib_exc.NotFound:
+                LOG.debug("Server %s disappeared(deleted) while looking "
+                          "for the console log", server['id'])
 
     def _log_net_info(self, exc):
         # network debug is called as part of ssh init
@@ -675,11 +682,6 @@ class NetworkScenarioTest(ScenarioTest):
         super(NetworkScenarioTest, cls).skip_checks()
         if not CONF.service_available.neutron:
             raise cls.skipException('Neutron not available')
-
-    @classmethod
-    def resource_setup(cls):
-        super(NetworkScenarioTest, cls).resource_setup()
-        cls.tenant_id = cls.manager.identity_client.tenant_id
 
     def _create_network(self, networks_client=None,
                         routers_client=None, tenant_id=None,
@@ -1019,7 +1021,7 @@ class NetworkScenarioTest(ScenarioTest):
             if sg['tenant_id'] == tenant_id and sg['name'] == 'default'
         ]
         msg = "No default security group for tenant %s." % (tenant_id)
-        self.assertTrue(len(sgs) > 0, msg)
+        self.assertGreater(len(sgs), 0, msg)
         return sgs[0]
 
     def _create_security_group_rule(self, secgroup=None,
@@ -1287,7 +1289,7 @@ class BaremetalScenarioTest(ScenarioTest):
             check_state, timeout, interval):
             msg = ("Timed out waiting for node %s to reach %s state(s) %s" %
                    (node_id, state_attr, target_states))
-            raise exceptions.TimeoutException(msg)
+            raise lib_exc.TimeoutException(msg)
 
     def wait_provisioning_state(self, node_id, state, timeout):
         self._node_state_timeout(
@@ -1311,7 +1313,7 @@ class BaremetalScenarioTest(ScenarioTest):
             _get_node, CONF.baremetal.association_timeout, 1):
             msg = ('Timed out waiting to get Ironic node by instance id %s'
                    % instance_id)
-            raise exceptions.TimeoutException(msg)
+            raise lib_exc.TimeoutException(msg)
 
     def get_node(self, node_id=None, instance_id=None):
         if node_id:
