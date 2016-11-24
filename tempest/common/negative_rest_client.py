@@ -44,8 +44,7 @@ class NegativeRestClient(rest_client.RestClient):
             service_region = CONF.identity.region
         return service_region, service_endpoint_type
 
-    def _error_checker(self, method, url,
-                       headers, body, resp, resp_body):
+    def _error_checker(self, resp, resp_body):
         pass
 
     def send_request(self, method, url_template, resources, body=None):
