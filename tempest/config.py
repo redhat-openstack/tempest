@@ -278,6 +278,11 @@ ComputeGroup = [
                      'be utilized by some multinode specific tests to ensure '
                      'that requests match the expected size of the cluster '
                      'you are testing with.')),
+    cfg.StrOpt('hypervisor_type',
+               default=None,
+               help="Hypervisor type of the test target on heterogeneous "
+                    "compute environment. The value can be 'QEMU', 'xen' or "
+                    "something."),
     cfg.StrOpt('min_microversion',
                default=None,
                help="Lower version of the test target microversion range. "
@@ -397,7 +402,10 @@ ComputeFeaturesGroup = [
     cfg.BoolOpt('nova_cert',
                 default=False,
                 help='Does the test environment have the nova cert running?',
-                deprecated_for_removal=True),
+                deprecated_for_removal=True,
+                deprecated_reason="On Nova side, the nova-cert service is "
+                                  "deprecated and the service will be removed "
+                                  "as early as Ocata."),
     cfg.BoolOpt('personality',
                 default=False,
                 help='Does the test environment support server personality'),
@@ -780,11 +788,6 @@ VolumeFeaturesGroup = [
     cfg.BoolOpt('api_v3',
                 default=False,
                 help="Is the v3 volume API enabled"),
-    cfg.BoolOpt('bootable',
-                default=True,
-                help='Update bootable status of a volume '
-                     'Not implemented on icehouse ',
-                deprecated_for_removal=True),
     # TODO(ynesenenko): Remove volume_services once liberty-eol happens.
     cfg.BoolOpt('volume_services',
                 default=False,

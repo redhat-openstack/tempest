@@ -73,6 +73,7 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
             cls.volumes_extension_client = cls.os.volumes_extension_client
             cls.availability_zone_client = (
                 cls.os.volume_availability_zone_client)
+            cls.volume_limits_client = cls.os.volume_limits_client
         else:
             cls.snapshots_client = cls.os.snapshots_v2_client
             cls.volumes_client = cls.os.volumes_v2_client
@@ -80,6 +81,7 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
             cls.volumes_extension_client = cls.os.volumes_v2_extension_client
             cls.availability_zone_client = (
                 cls.os.volume_v2_availability_zone_client)
+            cls.volume_limits_client = cls.os.volume_v2_limits_client
 
     @classmethod
     def resource_setup(cls):
@@ -108,10 +110,19 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
         super(BaseVolumeTest, cls).resource_cleanup()
 
     @classmethod
-    def create_volume(cls, **kwargs):
-        """Wrapper utility that returns a test volume."""
+    def create_volume(cls, wait_until='available', **kwargs):
+        """Wrapper utility that returns a test volume.
+
+           :param wait_until: wait till volume status.
+        """
         if 'size' not in kwargs:
             kwargs['size'] = CONF.volume.volume_size
+
+        if 'imageRef' in kwargs:
+            image = cls.compute_images_client.show_image(
+                kwargs['imageRef'])['image']
+            min_disk = image.get('minDisk')
+            kwargs['size'] = max(kwargs['size'], min_disk)
 
         name_field = cls.special_fields['name_field']
         if name_field not in kwargs:
@@ -120,8 +131,8 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
 
         volume = cls.volumes_client.create_volume(**kwargs)['volume']
         cls.volumes.append(volume)
-        waiters.wait_for_volume_status(cls.volumes_client,
-                                       volume['id'], 'available')
+        waiters.wait_for_volume_status(cls.volumes_client, volume['id'],
+                                       wait_until)
         return volume
 
     @classmethod
@@ -139,6 +150,18 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
                                          snapshot['id'], 'available')
         return snapshot
 
+    def create_backup(self, volume_id, backup_client=None, **kwargs):
+        """Wrapper utility that returns a test backup."""
+        if backup_client is None:
+            backup_client = self.backups_client
+
+        backup = backup_client.create_backup(
+            volume_id=volume_id, **kwargs)['backup']
+        self.addCleanup(backup_client.delete_backup, backup['id'])
+        waiters.wait_for_backup_status(backup_client, backup['id'],
+                                       'available')
+        return backup
+
     # NOTE(afazekas): these create_* and clean_* could be defined
     # only in a single location in the source, and could be more general.
 
@@ -147,6 +170,18 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
         """Delete volume by the given client"""
         client.delete_volume(volume_id)
         client.wait_for_resource_deletion(volume_id)
+
+    def attach_volume(self, server_id, volume_id):
+        """Attachs a volume to a server"""
+        self.servers_client.attach_volume(
+            server_id, volumeId=volume_id,
+            device='/dev/%s' % CONF.compute.volume_device_name)
+        waiters.wait_for_volume_status(self.volumes_client,
+                                       volume_id, 'in-use')
+        self.addCleanup(waiters.wait_for_volume_status, self.volumes_client,
+                        volume_id, 'available')
+        self.addCleanup(self.servers_client.detach_volume, server_id,
+                        self.volume_origin['id'])
 
     @classmethod
     def clear_volumes(cls):
@@ -217,6 +252,7 @@ class BaseVolumeAdminTest(BaseVolumeTest):
             cls.admin_encryption_types_client = \
                 cls.os_adm.encryption_types_client
             cls.admin_quotas_client = cls.os_adm.volume_quotas_client
+            cls.admin_volume_limits_client = cls.os_adm.volume_limits_client
         elif cls._api_version == 2:
             cls.admin_volume_qos_client = cls.os_adm.volume_qos_v2_client
             cls.admin_volume_services_client = \
@@ -229,6 +265,7 @@ class BaseVolumeAdminTest(BaseVolumeTest):
             cls.admin_encryption_types_client = \
                 cls.os_adm.encryption_types_v2_client
             cls.admin_quotas_client = cls.os_adm.volume_quotas_v2_client
+            cls.admin_volume_limits_client = cls.os_adm.volume_v2_limits_client
 
     @classmethod
     def resource_setup(cls):
