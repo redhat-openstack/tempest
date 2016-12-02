@@ -111,6 +111,8 @@ SERVICE_EXTENSION_KEY = {
 
 
 def main():
+    logging.warning("tools/config_tempest will be deprecated soon, is going "
+                    "to be moved to its own repository")
     args = parse_arguments()
     logging.basicConfig(format=LOG_FORMAT)
 
