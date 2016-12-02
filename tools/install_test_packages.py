@@ -74,11 +74,19 @@ def get_required_testpkgs():
 
 def install_packages(pkgs):
     """Installs a list of package through yum"""
+    pkgs_not_available = []
     yb = yum.YumBase()
+    pkgs_in_configured_repo = [pkg.name for pkg in yb.rpmdb.returnPackages()]
     for package in pkgs:
-        yb.install(name=package)
+        if package in pkgs_in_configured_repo:
+            yb.install(name=package)
+        else:
+            pkgs_not_available.append(package)
     yb.resolveDeps()
     yb.processTransaction()
+
+    if pkgs_not_available:
+        print('%s packages are not available.' % ','.join(pkgs_not_available))
 
 if __name__ == '__main__':
     install_packages(get_required_testpkgs())
