@@ -417,8 +417,9 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
             should_connect=True, mtu=self.network['mtu'])
 
     @test.idempotent_id('1546850e-fbaa-42f5-8b5f-03d8a6a95f15')
-    @testtools.skipIf(CONF.baremetal.driver_enabled,
-                      'Baremetal relies on a shared physical network.')
+    @testtools.skipIf(CONF.network.shared_physical_network,
+                      'Connectivity can only be tested when in a '
+                      'multitenant network environment')
     @decorators.skip_because(bug="1610994")
     @test.services('compute', 'network')
     def test_connectivity_between_vms_on_different_networks(self):
@@ -492,9 +493,9 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         self._check_network_internal_connectivity(network=self.new_net)
 
     @test.idempotent_id('04b9fe4e-85e8-4aea-b937-ea93885ac59f')
-    @testtools.skipIf(CONF.baremetal.driver_enabled,
-                      'Router state cannot be altered on a shared baremetal '
-                      'network')
+    @testtools.skipIf(CONF.network.shared_physical_network,
+                      'Router state can be altered only with multitenant '
+                      'networks capabilities')
     @test.services('compute', 'network')
     def test_update_router_admin_state(self):
         """Test to update admin state up of router
@@ -524,8 +525,8 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
             "admin_state_up of router to True")
 
     @test.idempotent_id('d8bb918e-e2df-48b2-97cd-b73c95450980')
-    @testtools.skipIf(CONF.baremetal.driver_enabled,
-                      'network isolation not available for baremetal nodes')
+    @testtools.skipIf(CONF.network.shared_physical_network,
+                      'network isolation not available')
     @testtools.skipUnless(CONF.scenario.dhcp_client,
                           "DHCP client is not available.")
     @test.services('compute', 'network')
@@ -607,9 +608,6 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
                             "new DNS nameservers")
 
     @test.idempotent_id('f5dfcc22-45fd-409f-954c-5bd500d7890b')
-    @testtools.skipIf(CONF.baremetal.driver_enabled,
-                      'admin_state of instance ports cannot be altered '
-                      'for baremetal nodes')
     @testtools.skipUnless(CONF.network_feature_enabled.port_admin_state_change,
                           "Changing a port's admin state is not supported "
                           "by the test environment")
@@ -617,29 +615,44 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
     def test_update_instance_port_admin_state(self):
         """Test to update admin_state_up attribute of instance port
 
-        1. Check public connectivity before updating
+        1. Check public and project connectivity before updating
                 admin_state_up attribute of instance port to False
-        2. Check public connectivity after updating
+        2. Check public and project connectivity after updating
                 admin_state_up attribute of instance port to False
-        3. Check public connectivity after updating
+        3. Check public and project connectivity after updating
                 admin_state_up attribute of instance port to True
         """
         self._setup_network_and_servers()
         floating_ip, server = self.floating_ip_tuple
         server_id = server['id']
         port_id = self._list_ports(device_id=server_id)[0]['id']
+        server_pip = server['addresses'][self.network['name']][0]['addr']
+
+        server2 = self._create_server(self.network)
+        server2_fip = self.create_floating_ip(server2)
+
+        private_key = self._get_server_key(server2)
+        ssh_client = self.get_remote_client(server2_fip['floating_ip_address'],
+                                            private_key=private_key)
+
         self.check_public_network_connectivity(
             should_connect=True, msg="before updating "
             "admin_state_up of instance port to False")
+        self._check_remote_connectivity(ssh_client, dest=server_pip,
+                                        should_succeed=True)
         self.ports_client.update_port(port_id, admin_state_up=False)
         self.check_public_network_connectivity(
             should_connect=False, msg="after updating "
             "admin_state_up of instance port to False",
             should_check_floating_ip_status=False)
+        self._check_remote_connectivity(ssh_client, dest=server_pip,
+                                        should_succeed=False)
         self.ports_client.update_port(port_id, admin_state_up=True)
         self.check_public_network_connectivity(
             should_connect=True, msg="after updating "
             "admin_state_up of instance port to True")
+        self._check_remote_connectivity(ssh_client, dest=server_pip,
+                                        should_succeed=True)
 
     @test.idempotent_id('759462e1-8535-46b0-ab3a-33aa45c55aaa')
     @test.services('compute', 'network')
@@ -748,7 +761,6 @@ class TestNetworkBasicOps(manager.NetworkScenarioTest):
         self.check_public_network_connectivity(
             should_connect=False,
             msg='after router unscheduling',
-            should_check_floating_ip_status=False
         )
 
         # schedule resource to new agent

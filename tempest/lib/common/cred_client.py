@@ -78,8 +78,8 @@ class CredsClient(object):
                                                           user['id'],
                                                           role['id'])
         except lib_exc.Conflict:
-            LOG.debug("Role %s already assigned on project %s for user %s" % (
-                role['id'], project['id'], user['id']))
+            LOG.debug("Role %s already assigned on project %s for user %s",
+                      role['id'], project['id'], user['id'])
 
     @abc.abstractmethod
     def get_credentials(self, user, project, password):
@@ -140,7 +140,7 @@ class V3CredsClient(CredsClient):
             # Domain names must be unique, in any case a list is returned,
             # selecting the first (and only) element
             self.creds_domain = self.domains_client.list_domains(
-                params={'name': domain_name})['domains'][0]
+                name=domain_name)['domains'][0]
         except lib_exc.NotFound:
             # TODO(andrea) we could probably create the domain on the fly
             msg = "Requested domain %s could not be found" % domain_name

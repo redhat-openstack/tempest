@@ -33,15 +33,13 @@ class LiveBlockMigrationNegativeTestJSON(base.BaseV2ComputeAdminTest):
     @classmethod
     def setup_clients(cls):
         super(LiveBlockMigrationNegativeTestJSON, cls).setup_clients()
-        cls.admin_hosts_client = cls.os_adm.hosts_client
         cls.admin_servers_client = cls.os_adm.servers_client
 
     def _migrate_server_to(self, server_id, dest_host):
         bmflm = CONF.compute_feature_enabled.block_migration_for_live_migration
-        body = self.admin_servers_client.live_migrate_server(
+        self.admin_servers_client.live_migrate_server(
             server_id, host=dest_host, block_migration=bmflm,
             disk_over_commit=False)
-        return body
 
     @test.attr(type=['negative'])
     @test.idempotent_id('7fb7856e-ae92-44c9-861a-af62d7830bcb')

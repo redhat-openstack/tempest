@@ -171,7 +171,20 @@ IdentityGroup = [
     cfg.BoolOpt('admin_domain_scope',
                 default=False,
                 help="Whether keystone identity v3 policy required "
-                     "a domain scoped token to use admin APIs")
+                     "a domain scoped token to use admin APIs"),
+    # Security Compliance (PCI-DSS)
+    cfg.IntOpt('user_lockout_failure_attempts',
+               default=2,
+               help="The number of unsuccessful login attempts the user is "
+                    "allowed before having the account locked."),
+    cfg.IntOpt('user_lockout_duration',
+               default=5,
+               help="The number of seconds a user account will remain "
+                    "locked."),
+    cfg.IntOpt('user_unique_last_password_count',
+               default=2,
+               help="The number of passwords for a user that must be unique "
+                    "before an old password can be reused."),
 ]
 
 service_clients_group = cfg.OptGroup(name='service-clients',
@@ -207,8 +220,15 @@ IdentityFeatureGroup = [
     # TODO(rodrigods): Remove the reseller flag when Kilo and Liberty is end
     # of life.
     cfg.BoolOpt('reseller',
+                default=True,
+                help='Does the environment support reseller?',
+                deprecated_for_removal=True,
+                deprecated_reason="All supported version of OpenStack now "
+                                  "supports the 'reseller' feature"),
+    cfg.BoolOpt('security_compliance',
                 default=False,
-                help='Does the environment support reseller?')
+                help='Does the environment have the security compliance '
+                     'settings enabled?')
 ]
 
 compute_group = cfg.OptGroup(name='compute',
@@ -422,10 +442,16 @@ ComputeFeaturesGroup = [
                 default=['all'],
                 help="A list of enabled filters that nova will accept as hints"
                      " to the scheduler when creating a server. A special "
-                     "entry 'all' indicates all filters are enabled. Empty "
-                     "list indicates all filters are disabled. The full "
-                     "available list of filters is in nova.conf: "
-                     "DEFAULT.scheduler_available_filters"),
+                     "entry 'all' indicates all filters that are included "
+                     "with nova are enabled. Empty list indicates all filters "
+                     "are disabled. The full list of available filters is in "
+                     "nova.conf: DEFAULT.scheduler_available_filters. If the "
+                     "default value is overridden in nova.conf by the test "
+                     "environment (which means that a different set of "
+                     "filters is enabled than what is included in Nova by "
+                     "default) then, this option must be configured to "
+                     "contain the same filters that Nova uses in the test "
+                     "environment."),
     cfg.BoolOpt('swap_volume',
                 default=False,
                 help='Does the test environment support in-place swapping of '
@@ -565,6 +591,10 @@ NetworkGroup = [
                 default=["1.0.0.0/16", "2.0.0.0/16"],
                 help="List of ip pools"
                      " for subnetpools creation"),
+    cfg.BoolOpt('shared_physical_network',
+                default=False,
+                help="The environment does not support network separation "
+                     "between tenants."),
     # TODO(ylobankov): Delete this option once the Liberty release is EOL.
     cfg.BoolOpt('dvr_extra_resources',
                 default=True,
@@ -790,8 +820,11 @@ VolumeFeaturesGroup = [
                 help="Is the v3 volume API enabled"),
     # TODO(ynesenenko): Remove volume_services once liberty-eol happens.
     cfg.BoolOpt('volume_services',
-                default=False,
-                help='Extract correct host info from host@backend')
+                default=True,
+                help='Extract correct host info from host@backend',
+                deprecated_for_removal=True,
+                deprecated_reason='This config switch was added for Liberty '
+                                  'which is not supported anymore.')
 ]
 
 
@@ -969,9 +1002,6 @@ ServiceAvailableGroup = [
     cfg.BoolOpt('sahara',
                 default=False,
                 help="Whether or not Sahara is expected to be available"),
-    cfg.BoolOpt('ironic',
-                default=False,
-                help="Whether or not Ironic is expected to be available"),
 ]
 
 debug_group = cfg.OptGroup(name="debug",
@@ -1026,64 +1056,6 @@ InputScenarioGroup = [
                deprecated_for_removal=True),
 ]
 
-
-baremetal_group = cfg.OptGroup(name='baremetal',
-                               title='Baremetal provisioning service options',
-                               help='When enabling baremetal tests, Nova '
-                                    'must be configured to use the Ironic '
-                                    'driver. The following parameters for the '
-                                    '[compute] section must be disabled: '
-                                    'console_output, interface_attach, '
-                                    'live_migration, pause, rescue, resize '
-                                    'shelve, snapshot, and suspend')
-
-
-# NOTE(deva): Ironic tests have been ported to tempest.lib. New config options
-#             should be added to ironic/ironic_tempest_plugin/config.py.
-#             However, these options need to remain here for testing stable
-#             branches until Liberty release reaches EOL.
-BaremetalGroup = [
-    cfg.StrOpt('catalog_type',
-               default='baremetal',
-               help="Catalog type of the baremetal provisioning service"),
-    cfg.BoolOpt('driver_enabled',
-                default=False,
-                help="Whether the Ironic nova-compute driver is enabled"),
-    cfg.StrOpt('driver',
-               default='fake',
-               help="Driver name which Ironic uses"),
-    cfg.StrOpt('endpoint_type',
-               default='publicURL',
-               choices=['public', 'admin', 'internal',
-                        'publicURL', 'adminURL', 'internalURL'],
-               help="The endpoint type to use for the baremetal provisioning "
-                    "service"),
-    cfg.IntOpt('active_timeout',
-               default=300,
-               help="Timeout for Ironic node to completely provision"),
-    cfg.IntOpt('association_timeout',
-               default=30,
-               help="Timeout for association of Nova instance and Ironic "
-                    "node"),
-    cfg.IntOpt('power_timeout',
-               default=60,
-               help="Timeout for Ironic power transitions."),
-    cfg.IntOpt('unprovision_timeout',
-               default=300,
-               help="Timeout for unprovisioning an Ironic node. "
-                    "Takes longer since Kilo as Ironic performs an extra "
-                    "step in Node cleaning.")
-]
-
-negative_group = cfg.OptGroup(name='negative', title="Negative Test Options")
-
-NegativeGroup = [
-    cfg.StrOpt('test_generator',
-               default='tempest.common.' +
-               'generator.negative_generator.NegativeTestGenerator',
-               help="Test generator class for all negative tests"),
-]
-
 DefaultGroup = [
     cfg.StrOpt('resources_prefix',
                default='tempest',
@@ -1113,9 +1085,7 @@ _opts = [
     (scenario_group, ScenarioGroup),
     (service_available_group, ServiceAvailableGroup),
     (debug_group, DebugGroup),
-    (baremetal_group, BaremetalGroup),
     (input_scenario_group, InputScenarioGroup),
-    (negative_group, NegativeGroup),
     (None, DefaultGroup)
 ]
 
@@ -1177,9 +1147,7 @@ class TempestConfigPrivate(object):
         self.scenario = _CONF.scenario
         self.service_available = _CONF.service_available
         self.debug = _CONF.debug
-        self.baremetal = _CONF.baremetal
         self.input_scenario = _CONF['input-scenario']
-        self.negative = _CONF.negative
         logging.tempest_set_log_file('tempest.log')
 
     def __init__(self, parse_conf=True, config_path=None):
@@ -1221,7 +1189,7 @@ class TempestConfigPrivate(object):
 
         logging.setup(_CONF, 'tempest')
         LOG = logging.getLogger('tempest')
-        LOG.info("Using tempest config file %s" % path)
+        LOG.info("Using tempest config file %s", path)
         register_opts()
         self._set_attrs()
         if parse_conf:

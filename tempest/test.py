@@ -64,7 +64,6 @@ def get_service_list():
     service_list = {
         'compute': CONF.service_available.nova,
         'image': CONF.service_available.glance,
-        'baremetal': CONF.service_available.ironic,
         'volume': CONF.service_available.cinder,
         'network': True,
         'identity': True,
@@ -141,8 +140,38 @@ def is_extension_enabled(extension_name, service):
     return False
 
 
+def related_bug(bug, status_code=None):
+    """A decorator useful to know solutions from launchpad bug reports
+
+    @param bug: The launchpad bug number causing the test
+    @param status_code: The status code related to the bug report
+    """
+    def decorator(f):
+        @functools.wraps(f)
+        def wrapper(self, *func_args, **func_kwargs):
+            try:
+                return f(self, *func_args, **func_kwargs)
+            except Exception as exc:
+                exc_status_code = getattr(exc, 'status_code', None)
+                if status_code is None or status_code == exc_status_code:
+                    LOG.error('Hints: This test was made for the bug %s. '
+                              'The failure could be related to '
+                              'https://launchpad.net/bugs/%s', bug, bug)
+                raise exc
+        return wrapper
+    return decorator
+
+
 def is_scheduler_filter_enabled(filter_name):
-    """Check the list of enabled compute scheduler filters from config. """
+    """Check the list of enabled compute scheduler filters from config.
+
+    This function checks whether the given compute scheduler filter is
+    available and configured in the config file. If the
+    scheduler_available_filters option is set to 'all' (Default value. which
+    means default filters are configured in nova) in tempest.conf then, this
+    function returns True with assumption that requested filter 'filter_name'
+    is one of available filter in nova ("nova.scheduler.filters.all_filters").
+    """
 
     filters = CONF.compute_feature_enabled.scheduler_available_filters
     if len(filters) == 0:
@@ -190,7 +219,6 @@ class BaseTestCase(testtools.testcase.WithAttributes,
     """
 
     setUpClassCalled = False
-    _service = None
 
     # NOTE(andreaf) credentials holds a list of the credentials to be allocated
     # at class setup time. Credential types can be 'primary', 'alt', 'admin' or
@@ -234,8 +262,8 @@ class BaseTestCase(testtools.testcase.WithAttributes,
             cls.resource_setup()
         except Exception:
             etype, value, trace = sys.exc_info()
-            LOG.info("%s raised in %s.setUpClass. Invoking tearDownClass." % (
-                     etype, cls.__name__))
+            LOG.info("%s raised in %s.setUpClass. Invoking tearDownClass.",
+                     etype, cls.__name__)
             cls.tearDownClass()
             try:
                 six.reraise(etype, value, trace)
@@ -267,9 +295,9 @@ class BaseTestCase(testtools.testcase.WithAttributes,
                 # resources that were successfully setup in resource_cleanup,
                 # log AttributeError as info instead of exception.
                 if tetype is AttributeError and name == 'resources':
-                    LOG.info("tearDownClass of %s failed: %s" % (name, te))
+                    LOG.info("tearDownClass of %s failed: %s", name, te)
                 else:
-                    LOG.exception("teardown of %s failed: %s" % (name, te))
+                    LOG.exception("teardown of %s failed: %s", name, te)
                 if not etype:
                     etype, value, trace = sys_exec_info
         # If exceptions were raised during teardown, and not before, re-raise
@@ -504,8 +532,11 @@ class BaseTestCase(testtools.testcase.WithAttributes,
             else:
                 raise lib_exc.InvalidCredentials(
                     "Invalid credentials type %s" % credential_type)
-        return cls.client_manager(credentials=creds.credentials,
-                                  service=cls._service)
+        manager = cls.client_manager(credentials=creds.credentials)
+        # NOTE(andreaf) Ensure credentials have user and project id fields.
+        # It may not be the case when using pre-provisioned credentials.
+        manager.auth_provider.set_auth()
+        return manager
 
     @classmethod
     def clear_credentials(cls):
@@ -532,18 +563,17 @@ class BaseTestCase(testtools.testcase.WithAttributes,
         """
         if not CONF.validation.run_validation:
             return
+
         if keypair is None:
-            if CONF.validation.auth_method.lower() == "keypair":
-                keypair = True
-            else:
-                keypair = False
+            keypair = (CONF.validation.auth_method.lower() == "keypair")
+
         if floating_ip is None:
-            if CONF.validation.connect_method.lower() == "floating":
-                floating_ip = True
-            else:
-                floating_ip = False
+            floating_ip = (CONF.validation.connect_method.lower() ==
+                           "floating")
+
         if security_group is None:
             security_group = CONF.validation.security_group
+
         if security_group_rules is None:
             security_group_rules = CONF.validation.security_group_rules
 

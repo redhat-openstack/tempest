@@ -46,7 +46,6 @@ class AttachInterfacesTestJSON(base.BaseV2ComputeTest):
     @classmethod
     def setup_clients(cls):
         super(AttachInterfacesTestJSON, cls).setup_clients()
-        cls.networks_client = cls.os.networks_client
         cls.subnets_client = cls.os.subnets_client
         cls.ports_client = cls.os.ports_client
 
@@ -269,9 +268,7 @@ class AttachInterfacesTestJSON(base.BaseV2ComputeTest):
             self.os, tenant_network=network, wait_until='ACTIVE', min_count=2)
         # add our cleanups for the servers since we bypassed the base class
         for server in servers:
-            self.addCleanup(waiters.wait_for_server_termination,
-                            self.servers_client, server['id'])
-            self.addCleanup(self.servers_client.delete_server, server['id'])
+            self.addCleanup(self.delete_server, server['id'])
 
         for server in servers:
             # attach the port to the server

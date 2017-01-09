@@ -68,8 +68,8 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
                                            volume_id, 'available')
         except lib_exc.NotFound:
             LOG.warning("Unable to detach volume %s from server %s "
-                        "possibly it was already detached" % (volume_id,
-                                                              server_id))
+                        "possibly it was already detached", volume_id,
+                        server_id)
 
     def _attach_volume(self, server_id, volume_id, device=None):
         # Attach the volume to the server
@@ -111,9 +111,9 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
                 server=server,
                 servers_client=self.servers_client)
 
-            partitions = linux_client.get_partitions()
-            device_name_to_match = ' ' + self.device + '\n'
-            self.assertIn(device_name_to_match, partitions)
+            disks = linux_client.get_disks()
+            device_name_to_match = '\n' + self.device + ' '
+            self.assertIn(device_name_to_match, disks)
 
         self._detach_volume(server['id'], attachment['volumeId'])
         self.servers_client.stop_server(server['id'])
@@ -133,8 +133,8 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
                 server=server,
                 servers_client=self.servers_client)
 
-            partitions = linux_client.get_partitions()
-            self.assertNotIn(device_name_to_match, partitions)
+            disks = linux_client.get_disks()
+            self.assertNotIn(device_name_to_match, disks)
 
     @test.idempotent_id('7fa563fe-f0f7-43eb-9e22-a1ece036b513')
     def test_list_get_volume_attachments(self):
@@ -155,6 +155,36 @@ class AttachVolumeTestJSON(base.BaseV2ComputeTest):
         self.assertEqual(server['id'], body['serverId'])
         self.assertEqual(volume['id'], body['volumeId'])
         self.assertEqual(attachment['id'], body['id'])
+
+    @test.idempotent_id('757d488b-a951-4bc7-b3cd-f417028da08a')
+    def test_list_get_two_volume_attachments(self):
+        # NOTE: This test is using the volume device auto-assignment
+        # without specifying the device ("/dev/sdb", etc). The feature
+        # is supported since Nova Liberty release or later. So this should
+        # be skipped on older clouds.
+        server = self._create_server()
+        volume_1st = self.create_volume()
+        volume_2nd = self.create_volume()
+        attachment_1st = self._attach_volume(server['id'], volume_1st['id'])
+        attachment_2nd = self._attach_volume(server['id'], volume_2nd['id'])
+
+        body = self.servers_client.list_volume_attachments(
+            server['id'])['volumeAttachments']
+        self.assertEqual(2, len(body))
+
+        body = self.servers_client.show_volume_attachment(
+            server['id'],
+            attachment_1st['id'])['volumeAttachment']
+        self.assertEqual(server['id'], body['serverId'])
+        self.assertEqual(attachment_1st['volumeId'], body['volumeId'])
+        self.assertEqual(attachment_1st['id'], body['id'])
+
+        body = self.servers_client.show_volume_attachment(
+            server['id'],
+            attachment_2nd['id'])['volumeAttachment']
+        self.assertEqual(server['id'], body['serverId'])
+        self.assertEqual(attachment_2nd['volumeId'], body['volumeId'])
+        self.assertEqual(attachment_2nd['id'], body['id'])
 
 
 class AttachVolumeShelveTestJSON(AttachVolumeTestJSON):

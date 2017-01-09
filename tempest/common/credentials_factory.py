@@ -88,7 +88,7 @@ def get_credentials_provider(name, network_resources=None,
             project_network_mask_bits=CONF.network.project_network_mask_bits,
             public_network_id=CONF.network.public_network_id,
             create_networks=(CONF.auth.create_isolated_networks and not
-                             CONF.baremetal.driver_enabled),
+                             CONF.network.shared_physical_network),
             resource_prefix=CONF.resources_prefix,
             **get_dynamic_provider_params())
     else:
@@ -233,7 +233,6 @@ def get_credentials(fill_in=True, identity_version=None, **kwargs):
 class AdminManager(clients.Manager):
     """Manager that uses admin credentials for its managed client objects"""
 
-    def __init__(self, service=None):
+    def __init__(self):
         super(AdminManager, self).__init__(
-            credentials=get_configured_admin_credentials(),
-            service=service)
+            credentials=get_configured_admin_credentials())

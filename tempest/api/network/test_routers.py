@@ -14,7 +14,6 @@
 #    under the License.
 
 import netaddr
-import six
 
 from tempest.api.network import base_routers as base
 from tempest.common.utils import data_utils
@@ -32,11 +31,6 @@ class RoutersTest(base.BaseRouterTest):
         if not test.is_extension_enabled('router', 'network'):
             msg = "router extension not enabled."
             raise cls.skipException(msg)
-
-    @classmethod
-    def setup_clients(cls):
-        super(RoutersTest, cls).setup_clients()
-        cls.identity_admin_client = cls.os_adm.identity_client
 
     @classmethod
     def resource_setup(cls):
@@ -168,7 +162,7 @@ class RoutersTest(base.BaseRouterTest):
             self.assertIsNone(actual_ext_gw_info)
             return
         # Verify only keys passed in exp_ext_gw_info
-        for k, v in six.iteritems(exp_ext_gw_info):
+        for k, v in exp_ext_gw_info.items():
             self.assertEqual(v, actual_ext_gw_info[k])
 
     def _verify_gateway_port(self, router_id):

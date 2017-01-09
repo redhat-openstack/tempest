@@ -120,7 +120,7 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
             if 'resources' in account:
                 resources = account.pop('resources')
             temp_hash = hashlib.md5()
-            account_for_hash = dict((k, v) for (k, v) in six.iteritems(account)
+            account_for_hash = dict((k, v) for (k, v) in account.items()
                                     if k in cls.HASH_CRED_FIELDS)
             temp_hash.update(six.text_type(account_for_hash).encode('utf-8'))
             temp_hash_key = temp_hash.hexdigest()
@@ -158,8 +158,10 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
                 if resource == 'network':
                     hash_dict['networks'][temp_hash_key] = resources[resource]
                 else:
-                    LOG.warning('Unknown resource type %s, ignoring this field'
-                                % resource)
+                    LOG.warning(
+                        'Unknown resource type %s, ignoring this field',
+                        resource
+                    )
         return hash_dict
 
     def is_multi_user(self):
@@ -245,7 +247,7 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
         free_hash = self._get_free_hash(useable_hashes)
         clean_creds = self._sanitize_creds(
             self.hash_dict['creds'][free_hash])
-        LOG.info('%s allocated creds:\n%s' % (self.name, clean_creds))
+        LOG.info('%s allocated creds:\n%s', self.name, clean_creds)
         return self._wrap_creds_with_network(free_hash)
 
     @lockutils.synchronized('test_accounts_io', external=True)
@@ -253,7 +255,7 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
         hash_path = os.path.join(self.accounts_dir, hash_string)
         if not os.path.isfile(hash_path):
             LOG.warning('Expected an account lock file %s to remove, but '
-                        'one did not exist' % hash_path)
+                        'one did not exist', hash_path)
         else:
             os.remove(hash_path)
             if not os.listdir(self.accounts_dir):
@@ -278,7 +280,7 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
         _hash = self.get_hash(creds)
         clean_creds = self._sanitize_creds(self.hash_dict['creds'][_hash])
         self.remove_hash(_hash)
-        LOG.info("%s returned allocated creds:\n%s" % (self.name, clean_creds))
+        LOG.info("%s returned allocated creds:\n%s", self.name, clean_creds)
 
     def get_primary_creds(self):
         if self._creds.get('primary'):
@@ -304,7 +306,9 @@ class PreProvisionedCredentialProvider(cred_provider.CredentialProvider):
         if exist_creds and not force_new:
             return exist_creds
         elif exist_creds and force_new:
-            new_index = six.text_type(roles).encode('utf-8') + '-' + \
+            # NOTE(andreaf) In py3.x encode returns bytes, and b'' is bytes
+            # In py2.7 encode returns strings, and b'' is still string
+            new_index = six.text_type(roles).encode('utf-8') + b'-' + \
                 six.text_type(len(self._creds)).encode('utf-8')
             self._creds[new_index] = exist_creds
         net_creds = self._get_creds(roles=roles)

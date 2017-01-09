@@ -28,8 +28,6 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
 
     @classmethod
     def skip_checks(cls):
-        msg = "Skipped until Bug: 1547261 is resolved."
-        raise cls.skipException(msg)
         super(NeutronResourcesTestJSON, cls).skip_checks()
         if not CONF.service_available.neutron:
             raise cls.skipException("Neutron support is required")
@@ -44,6 +42,7 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
         super(NeutronResourcesTestJSON, cls).setup_clients()
         cls.subnets_client = cls.os.subnets_client
         cls.ports_client = cls.os.ports_client
+        cls.routers_client = cls.os.routers_client
 
     @classmethod
     def resource_setup(cls):
@@ -77,7 +76,7 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
             cls.client.wait_for_stack_status(cls.stack_id, 'CREATE_COMPLETE')
             resources = (cls.client.list_resources(cls.stack_identifier)
                          ['resources'])
-        except exceptions.TimeoutException as e:
+        except exceptions.TimeoutException:
             if CONF.compute_feature_enabled.console_output:
                 # attempt to log the server console to help with debugging
                 # the cause of the server not signalling the waitcondition
@@ -89,7 +88,7 @@ class NeutronResourcesTestJSON(base.BaseOrchestrationTest):
                 output = cls.servers_client.get_console_output(
                     server_id)['output']
                 LOG.debug(output)
-            raise e
+            raise
 
         cls.test_resources = {}
         for resource in resources:

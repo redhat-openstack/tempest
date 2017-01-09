@@ -75,7 +75,6 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
             cls.os.compute_security_group_rules_client)
         cls.security_groups_client = cls.os.compute_security_groups_client
         cls.quotas_client = cls.os.quotas_client
-        cls.quota_classes_client = cls.os.quota_classes_client
         cls.compute_networks_client = cls.os.compute_networks_client
         cls.limits_client = cls.os.limits_client
         cls.volumes_extensions_client = cls.os.volumes_extensions_client
@@ -140,15 +139,15 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
                 test_utils.call_and_ignore_notfound_exc(
                     cls.servers_client.delete_server, server['id'])
             except Exception:
-                LOG.exception('Deleting server %s failed' % server['id'])
+                LOG.exception('Deleting server %s failed', server['id'])
 
         for server in cls.servers:
             try:
                 waiters.wait_for_server_termination(cls.servers_client,
                                                     server['id'])
             except Exception:
-                LOG.exception('Waiting for deletion of server %s failed'
-                              % server['id'])
+                LOG.exception('Waiting for deletion of server %s failed',
+                              server['id'])
 
     @classmethod
     def server_check_teardown(cls):
@@ -180,7 +179,7 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
                 test_utils.call_and_ignore_notfound_exc(
                     cls.compute_images_client.delete_image, image_id)
             except Exception:
-                LOG.exception('Exception raised deleting image %s' % image_id)
+                LOG.exception('Exception raised deleting image %s', image_id)
 
     @classmethod
     def clear_security_groups(cls):
@@ -284,7 +283,7 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
             volumes_client.wait_for_resource_deletion(volume_id)
         except lib_exc.NotFound:
             LOG.warning("Unable to delete volume '%s' since it was not found. "
-                        "Maybe it was already deleted?" % volume_id)
+                        "Maybe it was already deleted?", volume_id)
 
     @classmethod
     def prepare_instance_network(cls):
@@ -319,12 +318,7 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
     def rebuild_server(cls, server_id, validatable=False, **kwargs):
         # Destroy an existing server and creates a new one
         if server_id:
-            try:
-                cls.servers_client.delete_server(server_id)
-                waiters.wait_for_server_termination(cls.servers_client,
-                                                    server_id)
-            except Exception:
-                LOG.exception('Failed to delete server %s' % server_id)
+            cls.delete_server(server_id)
 
         cls.password = data_utils.rand_password()
         server = cls.create_test_server(
@@ -342,7 +336,16 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
             waiters.wait_for_server_termination(cls.servers_client,
                                                 server_id)
         except Exception:
-            LOG.exception('Failed to delete server %s' % server_id)
+            LOG.exception('Failed to delete server %s', server_id)
+
+    @classmethod
+    def resize_server(cls, server_id, new_flavor_id, **kwargs):
+        """resize and confirm_resize an server, waits for it to be ACTIVE."""
+        cls.servers_client.resize_server(server_id, new_flavor_id, **kwargs)
+        waiters.wait_for_server_status(cls.servers_client, server_id,
+                                       'VERIFY_RESIZE')
+        cls.servers_client.confirm_resize_server(server_id)
+        waiters.wait_for_server_status(cls.servers_client, server_id, 'ACTIVE')
 
     @classmethod
     def delete_volume(cls, volume_id):
@@ -373,14 +376,21 @@ class BaseV2ComputeTest(api_version_utils.BaseMicroversionTest,
             self.request_microversion))
 
     @classmethod
-    def create_volume(cls):
+    def create_volume(cls, image_ref=None, **kwargs):
         """Create a volume and wait for it to become 'available'.
 
+        :param image_ref: Specify an image id to create a bootable volume.
+        :**kwargs: other parameters to create volume.
         :returns: The available volume.
         """
-        vol_name = data_utils.rand_name(cls.__name__ + '-volume')
-        volume = cls.volumes_client.create_volume(
-            size=CONF.volume.volume_size, display_name=vol_name)['volume']
+        if 'size' not in kwargs:
+            kwargs['size'] = CONF.volume.volume_size
+        if 'display_name' not in kwargs:
+            vol_name = data_utils.rand_name(cls.__name__ + '-volume')
+            kwargs['display_name'] = vol_name
+        if image_ref is not None:
+            kwargs['imageRef'] = image_ref
+        volume = cls.volumes_client.create_volume(**kwargs)['volume']
         cls.volumes.append(volume)
         waiters.wait_for_volume_status(cls.volumes_client,
                                        volume['id'], 'available')

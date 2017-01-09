@@ -87,7 +87,7 @@ class RemoteClient(object):
         # Shell options below add more clearness on failures,
         # path is extended for some non-cirros guest oses (centos7)
         cmd = CONF.validation.ssh_shell_prologue + " " + cmd
-        LOG.debug("Remote command: %s" % cmd)
+        LOG.debug("Remote command: %s", cmd)
         return self.ssh_client.exec_command(cmd)
 
     @debug_ssh
@@ -112,11 +112,22 @@ class RemoteClient(object):
         output = self.exec_command('grep -c ^processor /proc/cpuinfo')
         return int(output)
 
-    def get_partitions(self):
-        # Return the contents of /proc/partitions
-        command = 'cat /proc/partitions'
+    def get_disks(self):
+        # Select root disk devices as shown by lsblk
+        command = 'lsblk -lb --nodeps'
         output = self.exec_command(command)
-        return output
+        selected = []
+        pos = None
+        for l in output.splitlines():
+            if pos is None and l.find("TYPE") > 0:
+                pos = l.find("TYPE")
+                # Show header line too
+                selected.append(l)
+            # lsblk lists disk type in a column right-aligned with TYPE
+            elif pos > 0 and l[pos:pos + 4] == "disk":
+                selected.append(l)
+
+        return "\n".join(selected)
 
     def get_boot_time(self):
         cmd = 'cut -f1 -d. /proc/uptime'
@@ -237,5 +248,5 @@ class RemoteClient(object):
         except tempest.lib.exceptions.SSHExecCommandFailed:
             LOG.error("Couldn't mke2fs")
             cmd_why = 'sudo ls -lR /dev'
-            LOG.info("Contents of /dev: %s" % self.exec_command(cmd_why))
+            LOG.info("Contents of /dev: %s", self.exec_command(cmd_why))
             raise

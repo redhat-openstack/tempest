@@ -20,7 +20,6 @@ import netaddr
 from oslo_log import log
 from oslo_serialization import jsonutils as json
 from oslo_utils import netutils
-import six
 
 from tempest.common import compute
 from tempest.common import image as common_image
@@ -157,7 +156,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
                 # Convert security group names to security group ids
                 # to pass to create_port
                 if 'security_groups' in kwargs:
-                    security_groups =\
+                    security_groups = \
                         clients.security_groups_client.list_security_groups(
                         ).get('security_groups')
                     sec_dict = dict([(s['name'], s['id'])
@@ -380,9 +379,9 @@ class ScenarioTest(tempest.test.BaseTestCase):
         img_disk_format = CONF.scenario.img_disk_format
         img_properties = CONF.scenario.img_properties
         LOG.debug("paths: img: %s, container_format: %s, disk_format: %s, "
-                  "properties: %s, ami: %s, ari: %s, aki: %s" %
-                  (img_path, img_container_format, img_disk_format,
-                   img_properties, ami_img_path, ari_img_path, aki_img_path))
+                  "properties: %s, ami: %s, ari: %s, aki: %s",
+                  img_path, img_container_format, img_disk_format,
+                  img_properties, ami_img_path, ari_img_path, aki_img_path)
         try:
             image = self._image_create('scenario-img',
                                        img_container_format,
@@ -397,7 +396,7 @@ class ScenarioTest(tempest.test.BaseTestCase):
             image = self._image_create('scenario-ami', 'ami',
                                        path=ami_img_path,
                                        properties=properties)
-        LOG.debug("image:%s" % image)
+        LOG.debug("image:%s", image)
 
         return image
 
@@ -530,14 +529,14 @@ class ScenarioTest(tempest.test.BaseTestCase):
 
         caller = test_utils.find_test_caller()
         LOG.debug('%(caller)s begins to ping %(ip)s in %(timeout)s sec and the'
-                  ' expected result is %(should_succeed)s' % {
+                  ' expected result is %(should_succeed)s', **{
                       'caller': caller, 'ip': ip_address, 'timeout': timeout,
                       'should_succeed':
                       'reachable' if should_succeed else 'unreachable'
                   })
         result = test_utils.call_until_true(ping, timeout, 1)
         LOG.debug('%(caller)s finishes ping %(ip)s in %(timeout)s sec and the '
-                  'ping result is %(result)s' % {
+                  'ping result is %(result)s', **{
                       'caller': caller, 'ip': ip_address, 'timeout': timeout,
                       'result': 'expected' if result else 'unexpected'
                   })
@@ -578,8 +577,8 @@ class ScenarioTest(tempest.test.BaseTestCase):
                                           msg=None, servers=None, mtu=None):
         # The target login is assumed to have been configured for
         # key-based authentication by cloud-init.
-        LOG.debug('checking network connections to IP %s with user: %s' %
-                  (ip_address, username))
+        LOG.debug('checking network connections to IP %s with user: %s',
+                  ip_address, username)
         try:
             self.check_vm_connectivity(ip_address,
                                        username,
@@ -817,7 +816,7 @@ class NetworkScenarioTest(ScenarioTest):
         # servers. Neutron does not bind ports for Ironic instances, as a
         # result the port remains in the DOWN state.
         # TODO(vsaienko) remove once bug: #1599836 is resolved.
-        if CONF.service_available.ironic:
+        if getattr(CONF.service_available, 'ironic', False):
             p_status.append('DOWN')
         port_map = [(p["id"], fxip["ip_address"])
                     for p in ports
@@ -920,7 +919,7 @@ class NetworkScenarioTest(ScenarioTest):
         # The target login is assumed to have been configured for
         # key-based authentication by cloud-init.
         try:
-            for net_name, ip_addresses in six.iteritems(server['addresses']):
+            for net_name, ip_addresses in server['addresses'].items():
                 for ip_address in ip_addresses:
                     self.check_vm_connectivity(ip_address['addr'],
                                                username,
@@ -948,7 +947,7 @@ class NetworkScenarioTest(ScenarioTest):
                 source.ping_host(dest, nic=nic)
             except lib_exc.SSHExecCommandFailed:
                 LOG.warning('Failed to ping IP: %s via a ssh connection '
-                            'from: %s.' % (dest, source.ssh_client.host))
+                            'from: %s.', dest, source.ssh_client.host)
                 return not should_succeed
             return should_succeed
 
@@ -1189,7 +1188,7 @@ class NetworkScenarioTest(ScenarioTest):
         :param dns_nameservers: list of dns servers to send to subnet.
         :returns: network, subnet, router
         """
-        if CONF.baremetal.driver_enabled:
+        if CONF.network.shared_physical_network:
             # NOTE(Shrews): This exception is for environments where tenant
             # credential isolation is available, but network separation is
             # not (the current baremetal case). Likely can be removed when
@@ -1228,151 +1227,6 @@ class NetworkScenarioTest(ScenarioTest):
                             routers_client.remove_router_interface, router_id,
                             subnet_id=subnet['id'])
         return network, subnet, router
-
-
-# power/provision states as of icehouse
-class BaremetalPowerStates(object):
-    """Possible power states of an Ironic node."""
-    POWER_ON = 'power on'
-    POWER_OFF = 'power off'
-    REBOOT = 'rebooting'
-    SUSPEND = 'suspended'
-
-
-class BaremetalProvisionStates(object):
-    """Possible provision states of an Ironic node."""
-    NOSTATE = None
-    INIT = 'initializing'
-    ACTIVE = 'active'
-    BUILDING = 'building'
-    DEPLOYWAIT = 'wait call-back'
-    DEPLOYING = 'deploying'
-    DEPLOYFAIL = 'deploy failed'
-    DEPLOYDONE = 'deploy complete'
-    DELETING = 'deleting'
-    DELETED = 'deleted'
-    ERROR = 'error'
-
-
-class BaremetalScenarioTest(ScenarioTest):
-
-    credentials = ['primary', 'admin']
-
-    @classmethod
-    def skip_checks(cls):
-        super(BaremetalScenarioTest, cls).skip_checks()
-        if (not CONF.service_available.ironic or
-           not CONF.baremetal.driver_enabled):
-            msg = 'Ironic not available or Ironic compute driver not enabled'
-            raise cls.skipException(msg)
-
-    @classmethod
-    def setup_clients(cls):
-        super(BaremetalScenarioTest, cls).setup_clients()
-
-        cls.baremetal_client = cls.admin_manager.baremetal_client
-
-    @classmethod
-    def resource_setup(cls):
-        super(BaremetalScenarioTest, cls).resource_setup()
-        # allow any issues obtaining the node list to raise early
-        cls.baremetal_client.list_nodes()
-
-    def _node_state_timeout(self, node_id, state_attr,
-                            target_states, timeout=10, interval=1):
-        if not isinstance(target_states, list):
-            target_states = [target_states]
-
-        def check_state():
-            node = self.get_node(node_id=node_id)
-            if node.get(state_attr) in target_states:
-                return True
-            return False
-
-        if not test_utils.call_until_true(
-            check_state, timeout, interval):
-            msg = ("Timed out waiting for node %s to reach %s state(s) %s" %
-                   (node_id, state_attr, target_states))
-            raise lib_exc.TimeoutException(msg)
-
-    def wait_provisioning_state(self, node_id, state, timeout):
-        self._node_state_timeout(
-            node_id=node_id, state_attr='provision_state',
-            target_states=state, timeout=timeout)
-
-    def wait_power_state(self, node_id, state):
-        self._node_state_timeout(
-            node_id=node_id, state_attr='power_state',
-            target_states=state, timeout=CONF.baremetal.power_timeout)
-
-    def wait_node(self, instance_id):
-        """Waits for a node to be associated with instance_id."""
-
-        def _get_node():
-            node = test_utils.call_and_ignore_notfound_exc(
-                self.get_node, instance_id=instance_id)
-            return node is not None
-
-        if not test_utils.call_until_true(
-            _get_node, CONF.baremetal.association_timeout, 1):
-            msg = ('Timed out waiting to get Ironic node by instance id %s'
-                   % instance_id)
-            raise lib_exc.TimeoutException(msg)
-
-    def get_node(self, node_id=None, instance_id=None):
-        if node_id:
-            _, body = self.baremetal_client.show_node(node_id)
-            return body
-        elif instance_id:
-            _, body = self.baremetal_client.show_node_by_instance_uuid(
-                instance_id)
-            if body['nodes']:
-                return body['nodes'][0]
-
-    def get_ports(self, node_uuid):
-        ports = []
-        _, body = self.baremetal_client.list_node_ports(node_uuid)
-        for port in body['ports']:
-            _, p = self.baremetal_client.show_port(port['uuid'])
-            ports.append(p)
-        return ports
-
-    def add_keypair(self):
-        self.keypair = self.create_keypair()
-
-    def boot_instance(self):
-        self.instance = self.create_server(
-            key_name=self.keypair['name'])
-
-        self.wait_node(self.instance['id'])
-        self.node = self.get_node(instance_id=self.instance['id'])
-
-        self.wait_power_state(self.node['uuid'], BaremetalPowerStates.POWER_ON)
-
-        self.wait_provisioning_state(
-            self.node['uuid'],
-            [BaremetalProvisionStates.DEPLOYWAIT,
-             BaremetalProvisionStates.ACTIVE],
-            timeout=15)
-
-        self.wait_provisioning_state(self.node['uuid'],
-                                     BaremetalProvisionStates.ACTIVE,
-                                     timeout=CONF.baremetal.active_timeout)
-
-        waiters.wait_for_server_status(self.servers_client,
-                                       self.instance['id'], 'ACTIVE')
-        self.node = self.get_node(instance_id=self.instance['id'])
-        self.instance = (self.servers_client.show_server(self.instance['id'])
-                         ['server'])
-
-    def terminate_instance(self):
-        self.servers_client.delete_server(self.instance['id'])
-        self.wait_power_state(self.node['uuid'],
-                              BaremetalPowerStates.POWER_OFF)
-        self.wait_provisioning_state(
-            self.node['uuid'],
-            BaremetalProvisionStates.NOSTATE,
-            timeout=CONF.baremetal.unprovision_timeout)
 
 
 class EncryptionScenarioTest(ScenarioTest):
@@ -1460,7 +1314,7 @@ class ObjectStorageScenarioTest(ScenarioTest):
         self.container_client.create_container(name)
         # look for the container to assure it is created
         self.list_and_check_container_objects(name)
-        LOG.debug('Container %s created' % (name))
+        LOG.debug('Container %s created', name)
         self.addCleanup(test_utils.call_and_ignore_notfound_exc,
                         self.container_client.delete_container,
                         name)
@@ -1468,7 +1322,7 @@ class ObjectStorageScenarioTest(ScenarioTest):
 
     def delete_container(self, container_name):
         self.container_client.delete_container(container_name)
-        LOG.debug('Container %s deleted' % (container_name))
+        LOG.debug('Container %s deleted', container_name)
 
     def upload_object_to_container(self, container_name, obj_name=None):
         obj_name = obj_name or data_utils.rand_name('swift-scenario-object')

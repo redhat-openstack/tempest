@@ -51,7 +51,7 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
                 raise cls.skipException(msg)
         else:
             msg = ("Invalid Cinder API version (%s)" % cls._api_version)
-            raise exceptions.InvalidConfiguration(message=msg)
+            raise exceptions.InvalidConfiguration(msg)
 
     @classmethod
     def setup_credentials(cls):
@@ -181,7 +181,7 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
         self.addCleanup(waiters.wait_for_volume_status, self.volumes_client,
                         volume_id, 'available')
         self.addCleanup(self.servers_client.detach_volume, server_id,
-                        self.volume_origin['id'])
+                        volume_id)
 
     @classmethod
     def clear_volumes(cls):
@@ -200,16 +200,13 @@ class BaseVolumeTest(tempest.test.BaseTestCase):
     @classmethod
     def clear_snapshots(cls):
         for snapshot in cls.snapshots:
-            try:
-                cls.snapshots_client.delete_snapshot(snapshot['id'])
-            except Exception:
-                pass
+            test_utils.call_and_ignore_notfound_exc(
+                cls.snapshots_client.delete_snapshot, snapshot['id'])
 
         for snapshot in cls.snapshots:
-            try:
-                cls.snapshots_client.wait_for_resource_deletion(snapshot['id'])
-            except Exception:
-                pass
+            test_utils.call_and_ignore_notfound_exc(
+                cls.snapshots_client.wait_for_resource_deletion,
+                snapshot['id'])
 
     def create_server(self, **kwargs):
         name = kwargs.pop(
@@ -266,6 +263,10 @@ class BaseVolumeAdminTest(BaseVolumeTest):
                 cls.os_adm.encryption_types_v2_client
             cls.admin_quotas_client = cls.os_adm.volume_quotas_v2_client
             cls.admin_volume_limits_client = cls.os_adm.volume_v2_limits_client
+            cls.admin_capabilities_client = \
+                cls.os_adm.volume_capabilities_v2_client
+            cls.admin_scheduler_stats_client = \
+                cls.os_adm.volume_scheduler_stats_v2_client
 
     @classmethod
     def resource_setup(cls):

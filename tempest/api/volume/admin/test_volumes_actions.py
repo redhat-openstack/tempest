@@ -14,31 +14,10 @@
 #    under the License.
 
 from tempest.api.volume import base
-from tempest import config
 from tempest import test
-
-CONF = config.CONF
 
 
 class VolumesActionsV2Test(base.BaseVolumeAdminTest):
-
-    @classmethod
-    def setup_clients(cls):
-        super(VolumesActionsV2Test, cls).setup_clients()
-        cls.client = cls.volumes_client
-
-    @classmethod
-    def resource_setup(cls):
-        super(VolumesActionsV2Test, cls).resource_setup()
-
-        # Create a test shared volume for tests
-        cls.volume = cls.create_volume()
-
-    def tearDown(self):
-        # Set volume's status to available after test
-        self.admin_volume_client.reset_volume_status(
-            self.volume['id'], status='available')
-        super(VolumesActionsV2Test, self).tearDown()
 
     def _create_reset_and_force_delete_temp_volume(self, status=None):
         # Create volume, reset volume status, and force delete temp volume
@@ -47,16 +26,18 @@ class VolumesActionsV2Test(base.BaseVolumeAdminTest):
             self.admin_volume_client.reset_volume_status(
                 temp_volume['id'], status=status)
         self.admin_volume_client.force_delete_volume(temp_volume['id'])
-        self.client.wait_for_resource_deletion(temp_volume['id'])
+        self.volumes_client.wait_for_resource_deletion(temp_volume['id'])
 
     @test.idempotent_id('d063f96e-a2e0-4f34-8b8a-395c42de1845')
     def test_volume_reset_status(self):
         # test volume reset status : available->error->available
-        self.admin_volume_client.reset_volume_status(
-            self.volume['id'], status='error')
-        volume_get = self.admin_volume_client.show_volume(
-            self.volume['id'])['volume']
-        self.assertEqual('error', volume_get['status'])
+        volume = self.create_volume()
+        for status in ['error', 'available']:
+            self.admin_volume_client.reset_volume_status(
+                volume['id'], status=status)
+            volume_get = self.admin_volume_client.show_volume(
+                volume['id'])['volume']
+            self.assertEqual(status, volume_get['status'])
 
     @test.idempotent_id('21737d5a-92f2-46d7-b009-a0cc0ee7a570')
     def test_volume_force_delete_when_volume_is_creating(self):

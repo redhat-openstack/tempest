@@ -19,7 +19,6 @@ import testtools
 from tempest.api.compute import base
 from tempest.common.utils import data_utils
 from tempest.common.utils.linux import remote_client
-from tempest.common import waiters
 from tempest import config
 from tempest import test
 
@@ -178,12 +177,7 @@ class ServersTestJSON(base.BaseV2ComputeTest):
         # when trying to delete the subnet. The tear down in the base class
         # will try to delete the server and get a 404 but it's ignored so
         # we're OK.
-        def cleanup_server():
-            self.client.delete_server(server_multi_nics['id'])
-            waiters.wait_for_server_termination(self.client,
-                                                server_multi_nics['id'])
-
-        self.addCleanup(cleanup_server)
+        self.addCleanup(self.delete_server, server_multi_nics['id'])
 
         addresses = (self.client.list_addresses(server_multi_nics['id'])
                      ['addresses'])
@@ -215,13 +209,7 @@ class ServersTestJSON(base.BaseV2ComputeTest):
 
         server_multi_nics = self.create_test_server(
             networks=networks, wait_until='ACTIVE')
-
-        def cleanup_server():
-            self.client.delete_server(server_multi_nics['id'])
-            waiters.wait_for_server_termination(self.client,
-                                                server_multi_nics['id'])
-
-        self.addCleanup(cleanup_server)
+        self.addCleanup(self.delete_server, server_multi_nics['id'])
 
         addresses = (self.client.list_addresses(server_multi_nics['id'])
                      ['addresses'])
@@ -265,24 +253,18 @@ class ServersWithSpecificFlavorTestJSON(base.BaseV2ComputeAdminTest):
             self.flavor_ref)['flavor']
 
         def create_flavor_with_ephemeral(ephem_disk):
-            flavor_with_eph_disk_id = data_utils.rand_int_id(start=1000)
+            flavor_id = data_utils.rand_int_id(start=1000)
+            name = 'flavor_with_ephemeral_%s' % ephem_disk
+            flavor_name = data_utils.rand_name(name)
 
             ram = flavor_base['ram']
             vcpus = flavor_base['vcpus']
             disk = flavor_base['disk']
 
-            if ephem_disk > 0:
-                # Create a flavor with ephemeral disk
-                flavor_name = data_utils.rand_name('eph_flavor')
-                flavor = self.flavor_client.create_flavor(
-                    name=flavor_name, ram=ram, vcpus=vcpus, disk=disk,
-                    id=flavor_with_eph_disk_id, ephemeral=ephem_disk)['flavor']
-            else:
-                # Create a flavor without ephemeral disk
-                flavor_name = data_utils.rand_name('no_eph_flavor')
-                flavor = self.flavor_client.create_flavor(
-                    name=flavor_name, ram=ram, vcpus=vcpus, disk=disk,
-                    id=flavor_with_eph_disk_id)['flavor']
+            # Create a flavor with ephemeral disk
+            flavor = self.flavor_client.create_flavor(
+                name=flavor_name, ram=ram, vcpus=vcpus, disk=disk,
+                id=flavor_id, ephemeral=ephem_disk)['flavor']
             self.addCleanup(flavor_clean_up, flavor['id'])
 
             return flavor['id']
@@ -312,7 +294,7 @@ class ServersWithSpecificFlavorTestJSON(base.BaseV2ComputeAdminTest):
             self.validation_resources['keypair']['private_key'],
             server=server_no_eph_disk,
             servers_client=self.client)
-        partition_num = len(linux_client.get_partitions().split('\n'))
+        disks_num = len(linux_client.get_disks().split('\n'))
 
         # Explicit server deletion necessary for Juno compatibility
         self.client.delete_server(server_no_eph_disk['id'])
@@ -332,8 +314,8 @@ class ServersWithSpecificFlavorTestJSON(base.BaseV2ComputeAdminTest):
             self.validation_resources['keypair']['private_key'],
             server=server_with_eph_disk,
             servers_client=self.client)
-        partition_num_emph = len(linux_client.get_partitions().split('\n'))
-        self.assertEqual(partition_num + 1, partition_num_emph)
+        disks_num_eph = len(linux_client.get_disks().split('\n'))
+        self.assertEqual(disks_num + 1, disks_num_eph)
 
 
 class ServersTestManualDisk(ServersTestJSON):

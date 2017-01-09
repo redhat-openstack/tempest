@@ -31,7 +31,6 @@ class MigrationsAdminTest(base.BaseV2ComputeAdminTest):
         super(MigrationsAdminTest, cls).setup_clients()
         cls.client = cls.os_adm.migrations_client
         cls.flavors_admin_client = cls.os_adm.flavors_client
-        cls.admin_hosts_client = cls.os_adm.hosts_client
         cls.admin_servers_client = cls.os_adm.servers_client
 
     @test.idempotent_id('75c0b83d-72a0-4cf8-a153-631e83e7d53f')
@@ -47,12 +46,7 @@ class MigrationsAdminTest(base.BaseV2ComputeAdminTest):
         server = self.create_test_server(wait_until="ACTIVE")
         server_id = server['id']
 
-        self.servers_client.resize_server(server_id, self.flavor_ref_alt)
-        waiters.wait_for_server_status(self.servers_client,
-                                       server_id, 'VERIFY_RESIZE')
-        self.servers_client.confirm_resize_server(server_id)
-        waiters.wait_for_server_status(self.servers_client,
-                                       server_id, 'ACTIVE')
+        self.resize_server(server_id, self.flavor_ref_alt)
 
         body = self.client.list_migrations()['migrations']
 

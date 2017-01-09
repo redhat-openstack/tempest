@@ -15,7 +15,6 @@
 from oslo_log import log
 import testtools
 
-from tempest import clients
 from tempest.common.utils import data_utils
 from tempest.common.utils import net_info
 from tempest import config
@@ -113,9 +112,9 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
             access point
         """
 
-        def __init__(self, credentials):
-            self.manager = clients.Manager(credentials)
+        def __init__(self, clients):
             # Credentials from manager are filled with both names and IDs
+            self.manager = clients
             self.creds = self.manager.credentials
             self.network = None
             self.subnet = None
@@ -131,9 +130,6 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
     @classmethod
     def skip_checks(cls):
         super(TestSecurityGroupsBasicOps, cls).skip_checks()
-        if CONF.baremetal.driver_enabled:
-            msg = ('Not currently supported by baremetal.')
-            raise cls.skipException(msg)
         if CONF.network.port_vnic_type in ['direct', 'macvtap']:
             msg = ('Not currently supported when using vnic_type'
                    ' direct or macvtap')
@@ -146,17 +142,16 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
         if not test.is_extension_enabled('security-group', 'network'):
             msg = "security-group extension not enabled."
             raise cls.skipException(msg)
+        if CONF.network.shared_physical_network:
+            msg = ('Deployment uses a shared physical network, security '
+                   'groups not supported')
+            raise cls.skipException(msg)
 
     @classmethod
     def setup_credentials(cls):
         # Create no network resources for these tests.
         cls.set_network_resources()
         super(TestSecurityGroupsBasicOps, cls).setup_credentials()
-        # TODO(mnewby) Consider looking up entities as needed instead
-        # of storing them as collections on the class.
-
-        # Credentials from the manager are filled with both IDs and Names
-        cls.alt_creds = cls.alt_manager.credentials
 
     @classmethod
     def resource_setup(cls):
@@ -171,9 +166,8 @@ class TestSecurityGroupsBasicOps(manager.NetworkScenarioTest):
 
         cls.floating_ips = {}
         cls.tenants = {}
-        creds = cls.manager.credentials
-        cls.primary_tenant = cls.TenantProperties(creds)
-        cls.alt_tenant = cls.TenantProperties(cls.alt_creds)
+        cls.primary_tenant = cls.TenantProperties(cls.os)
+        cls.alt_tenant = cls.TenantProperties(cls.os_alt)
         for tenant in [cls.primary_tenant, cls.alt_tenant]:
             cls.tenants[tenant.creds.tenant_id] = tenant
 

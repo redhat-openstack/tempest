@@ -14,7 +14,6 @@
 
 import re
 
-import six
 from testtools import helpers
 
 
@@ -85,7 +84,7 @@ class ExistsAllResponseHeaders(object):
                     return NonExistentHeader('x-account-container-count')
                 if 'x-account-object-count' not in actual:
                     return NonExistentHeader('x-account-object-count')
-                if actual['x-account-container-count'] > 0:
+                if int(actual['x-account-container-count']) > 0:
                     acct_header = "x-account-storage-policy-"
                     matched_policy_count = 0
 
@@ -217,7 +216,7 @@ class AreAllWellFormatted(object):
     """
 
     def match(self, actual):
-        for key, value in six.iteritems(actual):
+        for key, value in actual.items():
             if key in ('content-length', 'x-account-bytes-used',
                        'x-account-container-count', 'x-account-object-count',
                        'x-container-bytes-used', 'x-container-object-count')\
