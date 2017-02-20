@@ -179,6 +179,7 @@ DEFAULT_TEMPLATES = {
         ('1.3.1', copy.deepcopy(BASE_SPARK_DESC))
     ]),
     'cdh': OrderedDict([
+        ('5.5.0', copy.deepcopy(BASE_CDH_DESC)),
         ('5.4.0', copy.deepcopy(BASE_CDH_DESC)),
         ('5.3.0', copy.deepcopy(BASE_CDH_DESC)),
         ('5', copy.deepcopy(BASE_CDH_DESC))
