@@ -1180,6 +1180,12 @@ class TempestConfigPrivate(object):
         return getattr(_CONF, attr)
 
     def _set_attrs(self):
+        # This methods ensures that config options in Tempest as well as
+        # in Tempest plugins can be accessed via:
+        #     CONF.<normalised_group_name>.<key_name>
+        # where:
+        #     normalised_group_name = group_name.replace('-', '_')
+        # Attributes are set at __init__ time *only* for known option groups
         self.auth = _CONF.auth
         self.compute = _CONF.compute
         self.compute_feature_enabled = _CONF['compute-feature-enabled']
@@ -1207,6 +1213,23 @@ class TempestConfigPrivate(object):
         self.input_scenario = _CONF['input-scenario']
         self.negative = _CONF.negative
         logging.tempest_set_log_file('tempest.log')
+        # Setting attributes for plugins
+        # NOTE(andreaf) Plugins have no access to the TempestConfigPrivate
+        # instance at discovery time, so they have no way of setting these
+        # aliases themselves.
+        ext_plugins = plugins.TempestTestPluginManager()
+        for group, _ in ext_plugins.get_plugin_options_list():
+            if isinstance(group, cfg.OptGroup):
+                # If we have an OptGroup
+                group_name = group.name
+                group_dest = group.dest
+            else:
+                # If we have a group name as a string
+                group_name = group
+                group_dest = group.replace('-', '_')
+            # NOTE(andreaf) We can set the attribute safely here since in
+            # case of name conflict we would not have reached this point.
+            setattr(self, group_dest, _CONF[group_name])
 
     def __init__(self, parse_conf=True, config_path=None):
         """Initialize a configuration from a conf directory and conf file."""
